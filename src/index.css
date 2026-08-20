@@ -2069,3 +2069,217 @@ input:checked + .slider-round:before {
   70% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
   100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
 }
+
+/* Snapshot Time-Travel Styles */
+.global-floating-toast {
+  position: fixed;
+  top: 70px;
+  right: 40px;
+  background: #09090b;
+  color: #ffffff;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #27272a;
+}
+
+.stepper-scroll-container {
+  overflow-x: auto;
+  max-width: 520px;
+  padding-bottom: 4px;
+}
+
+.stepper-scroll-container::-webkit-scrollbar {
+  height: 4px;
+}
+
+.stepper-scroll-container::-webkit-scrollbar-thumb {
+  background: #e4e4e7;
+  border-radius: 4px;
+}
+
+.stepper-node-pill.can-inspect {
+  cursor: pointer !important;
+  transition: all 0.15s ease;
+}
+
+.stepper-node-pill.can-inspect:hover {
+  border-color: var(--accent-black);
+  background: #ffffff;
+  transform: translateY(-1px);
+}
+
+.snapshot-camera-icon {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+.step-node.clickable {
+  cursor: pointer !important;
+}
+
+.step-node.clickable:hover {
+  border-color: var(--accent-black);
+  background: #ffffff;
+}
+
+/* Snapshot Modal Overlay */
+.snapshot-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.snapshot-modal-card {
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  animation: slideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.snapshot-modal-header {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fafafa;
+}
+
+.snapshot-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.snapshot-icon {
+  font-size: 22px;
+}
+
+.snapshot-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.snapshot-modal-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.close-snapshot-btn {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+.close-snapshot-btn:hover {
+  color: var(--text-primary);
+}
+
+.snapshot-modal-body {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.snapshot-info-box {
+  background: #fafafa;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snapshot-info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+}
+
+.info-key {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.info-val {
+  color: var(--text-primary);
+  font-weight: 600;
+  text-align: right;
+}
+
+.info-val.monospace {
+  font-family: var(--font-mono);
+  color: #10b981;
+}
+
+.snapshot-caution-text {
+  font-size: 12px;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 10px 12px;
+  border-radius: 8px;
+  line-height: 1.45;
+}
+
+.snapshot-modal-footer {
+  padding: 14px 22px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  background: #fafafa;
+}
+
+.snapshot-cancel-btn {
+  padding: 8px 16px;
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.snapshot-cancel-btn:hover {
+  background: #f4f4f5;
+  color: var(--text-primary);
+}
+
+.snapshot-rollback-btn {
+  padding: 8px 16px;
+  background: var(--accent-black);
+  color: #ffffff;
+  border: 1px solid var(--accent-black);
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.snapshot-rollback-btn:hover {
+  background: #27272a;
+}
