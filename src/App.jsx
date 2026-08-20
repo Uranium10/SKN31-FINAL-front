@@ -7,6 +7,7 @@ import LoginPage from './components/auth/LoginPage';
 import Sidebar from './components/sidebar/Sidebar';
 import ChatWorkspace from './components/chat/ChatWorkspace';
 import SchedulerDashboard from './components/scheduler/SchedulerDashboard';
+import OperationsWorkspace from './components/operations/OperationsWorkspace';
 
 const initialSessions = [
   {
@@ -82,8 +83,8 @@ export function App() {
   const [error, setError] = useState('');
   const [isWiping, setIsWiping] = useState(false);
 
-  // Workspace Mode: 'chat' vs 'scheduler'
-  const [currentMode, setCurrentMode] = useState('chat');
+  // Workspace Mode: 'chat' | 'scheduler' | 'operations'
+  const [currentMode, setCurrentMode] = useState('operations'); // Default to 'operations' to showcase new tab immediately
 
   // Chat State
   const [sessions, setSessions] = useState(initialSessions);
@@ -154,6 +155,7 @@ export function App() {
     setSessions([newSession, ...sessions]);
     setActiveSessionId(newId);
     setInput('');
+    setCurrentMode('chat');
   };
 
   const handleDeleteSession = (sessionId, e) => {
@@ -271,6 +273,13 @@ export function App() {
     ]);
   };
 
+  const handleNavigateToChat = (promptTitle) => {
+    handleCreateNewSession();
+    setTimeout(() => {
+      handleSendMessage(`${promptTitle} 진행 현황 및 상세 분석 요청`);
+    }, 100);
+  };
+
   const handleLogout = () => {
     clearTokens();
     setTokenState(null);
@@ -310,14 +319,14 @@ export function App() {
           />
 
           <main className="gemini-main">
-            {/* Topbar Mode Switcher */}
+            {/* Topbar Mode Switcher with 3 Tabs */}
             <div className="main-topbar">
               <div className="mode-switcher-group">
                 <button
                   className={`mode-tab-btn ${currentMode === 'chat' ? 'active' : ''}`}
                   onClick={() => setCurrentMode('chat')}
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                   </svg>
                   <span>대화형 구매 에이전트</span>
@@ -326,11 +335,21 @@ export function App() {
                   className={`mode-tab-btn ${currentMode === 'scheduler' ? 'active' : ''}`}
                   onClick={() => setCurrentMode('scheduler')}
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" />
                     <polyline points="12 6 12 12 16 14" />
                   </svg>
                   <span>Flow Scheduler</span>
+                </button>
+                <button
+                  className={`mode-tab-btn ${currentMode === 'operations' ? 'active' : ''}`}
+                  onClick={() => setCurrentMode('operations')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                  </svg>
+                  <span>작업 (Operations)</span>
                 </button>
               </div>
 
@@ -340,7 +359,7 @@ export function App() {
               </div>
             </div>
 
-            {/* Mode Views */}
+            {/* Mode Content Views */}
             {currentMode === 'chat' ? (
               <ChatWorkspace
                 currentSession={currentSession}
@@ -351,7 +370,7 @@ export function App() {
                 handleKeyDown={handleKeyDown}
                 setCurrentMode={setCurrentMode}
               />
-            ) : (
+            ) : currentMode === 'scheduler' ? (
               <SchedulerDashboard
                 pipelines={pipelines}
                 approvals={approvals}
@@ -360,6 +379,8 @@ export function App() {
                 handleRunNow={handleRunNow}
                 handleResolveApproval={handleResolveApproval}
               />
+            ) : (
+              <OperationsWorkspace onNavigateToChat={handleNavigateToChat} />
             )}
           </main>
         </div>
