@@ -13,6 +13,8 @@ export const Sidebar = ({
   handleDeleteSession,
   pipelinesCount,
   approvalsCount,
+  operationCounts,
+  onStartOperation,
   handleLogout
 }) => (
   <aside className={`gemini-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -95,7 +97,7 @@ export const Sidebar = ({
             </div>
           )}
         </>
-      ) : (
+      ) : currentMode === 'scheduler' ? (
         /* Scheduler Mode Sidebar */
         <>
           <button className="new-chat-btn" onClick={() => alert('새 파이프라인 생성 마법사를 시작합니다.')}>
@@ -129,6 +131,51 @@ export const Sidebar = ({
                   <line x1="12" y1="19" x2="20" y2="19" />
                 </svg>
                 <span>실시간 로그</span>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        /* Operations Mode Sidebar */
+        <>
+          <button className="new-chat-btn new-chat-btn--operations" onClick={onStartOperation}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            {!sidebarCollapsed && <span>새 구매 작업</span>}
+          </button>
+
+          {!sidebarCollapsed && (
+            <div className="sidebar-quick-nav operations-nav">
+              <div className="quick-nav-item active">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M7 8h10M7 12h7M7 16h5" />
+                </svg>
+                <span>전체 작업</span>
+                <small>{operationCounts.total}</small>
+              </div>
+              <div className="quick-nav-item">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+                <span>내 확인 필요</span>
+                <small>{operationCounts.needsAction}</small>
+              </div>
+              <div className="quick-nav-item">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M15 8l4 4-4 4" />
+                </svg>
+                <span>외부 응답 대기</span>
+                <small>{operationCounts.waiting}</small>
+              </div>
+              <div className="quick-nav-item">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                <span>최근 완료</span>
               </div>
             </div>
           )}

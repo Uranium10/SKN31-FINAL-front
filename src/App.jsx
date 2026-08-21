@@ -85,6 +85,8 @@ export function App() {
 
   // Workspace Mode: 'chat' | 'scheduler' | 'operations'
   const [currentMode, setCurrentMode] = useState('operations'); // Default to 'operations' to showcase new tab immediately
+  const [operationStartRequest, setOperationStartRequest] = useState(0);
+  const [operationCounts, setOperationCounts] = useState({ total: 4, needsAction: 1, waiting: 1 });
 
   // Chat State
   const [sessions, setSessions] = useState(initialSessions);
@@ -137,7 +139,7 @@ export function App() {
       } else {
         setError(data.message || '로그인에 실패했습니다. 계정 정보를 확인해주세요.');
       }
-    } catch (err) {
+    } catch {
       setError('서버와 통신할 수 없습니다. 백엔드 서버 상태를 확인해주세요.');
     } finally {
       setLoading(false);
@@ -211,7 +213,7 @@ export function App() {
           setSending(false);
         }, 600);
       }
-    } catch (err) {
+    } catch {
       setTimeout(() => {
         const errorMsg = { sender: 'agent', text: '서버와 통신 중 오류가 발생했습니다.' };
         setSessions((prev) =>
@@ -315,6 +317,8 @@ export function App() {
             handleDeleteSession={handleDeleteSession}
             pipelinesCount={pipelines.length}
             approvalsCount={approvals.length}
+            operationCounts={operationCounts}
+            onStartOperation={() => setOperationStartRequest((request) => request + 1)}
             handleLogout={handleLogout}
           />
 
@@ -355,7 +359,7 @@ export function App() {
 
               <div className="live-status-pill">
                 <div className="status-dot" />
-                <span>ERP SYSTEM CONNECTED</span>
+                <span>ERP 연결됨</span>
               </div>
             </div>
 
@@ -380,7 +384,11 @@ export function App() {
                 handleResolveApproval={handleResolveApproval}
               />
             ) : (
-              <OperationsWorkspace onNavigateToChat={handleNavigateToChat} />
+              <OperationsWorkspace
+                onNavigateToChat={handleNavigateToChat}
+                startRequest={operationStartRequest}
+                onCountsChange={setOperationCounts}
+              />
             )}
           </main>
         </div>

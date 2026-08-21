@@ -27,13 +27,16 @@ export const LoginPage = ({
 
       <form onSubmit={handleLogin} className="login-form">
         <input
-          type="email"
-          placeholder="ERPNext 계정 이메일"
+          type="text"
+          name="username"
+          placeholder="ERPNext 계정 ID 또는 이메일"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="input-field"
           disabled={loading}
           autoComplete="username"
+          autoCapitalize="none"
+          spellCheck="false"
         />
         <input
           type="password"
