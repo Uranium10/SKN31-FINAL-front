@@ -37,35 +37,37 @@ export const ChatWorkspace = ({
                 <SailboatIcon className="agent-icon-svg" />
               </div>
               <div className="chat-bubble-agent" style={{ color: 'var(--text-muted)' }}>
-                자율 구매 파이프라인 분석 중...
+                안내 내용을 정리하고 있습니다...
               </div>
             </div>
           )}
         </div>
       ) : (
         <div className="gemini-hero-view">
-          <h1 className="hero-title-greeting">무엇을 구매해 드릴까요?</h1>
+          <span className="guide-hero-kicker">BIDDINGFLOW GUIDE</span>
+          <h1 className="hero-title-greeting">무엇이 궁금하신가요?</h1>
+          <p className="guide-hero-description">화면 사용법과 구매 자동화 흐름을 안내합니다. 실제 구매 작업은 통합 작업함에서 진행됩니다.</p>
           <div className="suggestion-chips-grid">
             <div
               className="suggestion-chip-card"
-              onClick={() => handleSendMessage('SF-001 안전모 50개 재고 확인 및 발주 진행해줘')}
+              onClick={() => handleSendMessage('통합 작업함 사용 방법을 알려줘')}
             >
-              <div className="chip-card-title">자재 재고 파악</div>
-              <div className="chip-card-desc">SF-001 안전모 50개 재고 및 부족 수량 확인</div>
+              <div className="chip-card-title">통합 작업함</div>
+              <div className="chip-card-desc">작업 카드, 상태 필터와 실행 단계 확인 방법</div>
             </div>
             <div
               className="suggestion-chip-card"
-              onClick={() => handleSendMessage('기존 공급사 단가와 최신 시장 견적 비교해줘')}
+              onClick={() => handleSendMessage('확인 필요 상태와 인터럽트 폼을 설명해줘')}
             >
-              <div className="chip-card-title">대체 공급사 견적</div>
-              <div className="chip-card-desc">Tavily 웹 검색 및 ERP 가격 통계 비교</div>
+              <div className="chip-card-title">사용자 확인</div>
+              <div className="chip-card-desc">자동화가 멈추는 조건과 폼 처리 방법</div>
             </div>
             <div
               className="suggestion-chip-card"
-              onClick={() => handleSendMessage('승인 대기 중인 구매 요청서(MR) 분석해줘')}
+              onClick={() => handleSendMessage('RFQ부터 PO 발주까지 자동화 단계를 알려줘')}
             >
-              <div className="chip-card-title">구매 요청서 검토</div>
-              <div className="chip-card-desc">자동 발주 승인 및 RFQ 발송 프로세스 진행</div>
+              <div className="chip-card-title">구매 자동화 흐름</div>
+              <div className="chip-card-desc">MR 접수부터 견적 비교와 발주까지</div>
             </div>
           </div>
         </div>
@@ -77,7 +79,7 @@ export const ChatWorkspace = ({
         <div className="input-textarea-row">
           <textarea
             rows="1"
-            placeholder="구매 요청 또는 ERP 재고 관련 질문을 입력하세요..."
+            placeholder="BiddingFlow 기능이나 사용 방법을 물어보세요..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -87,8 +89,8 @@ export const ChatWorkspace = ({
         </div>
         <div className="input-actions-row">
           <div className="input-tools-left">
-            <button className="tool-chip-btn">
-              자재 코드
+            <button className="tool-chip-btn" onClick={() => setCurrentMode('operations')}>
+              통합 작업함
             </button>
             <button className="tool-chip-btn" onClick={() => setCurrentMode('scheduler')}>
               Flow Scheduler
@@ -108,7 +110,7 @@ export const ChatWorkspace = ({
         </div>
       </div>
       <div className="footer-disclaimer-text">
-        BiddingFlow Autonomous Procurement Engine
+        제품 안내 챗봇 · 실제 구매 작업을 실행하지 않습니다
       </div>
     </div>
   </>

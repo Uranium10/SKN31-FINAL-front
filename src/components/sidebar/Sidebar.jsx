@@ -14,9 +14,15 @@ export const Sidebar = ({
   pipelinesCount,
   approvalsCount,
   operationCounts,
-  onStartOperation,
+  currentUser,
   handleLogout
-}) => (
+}) => {
+  const displayName = currentUser?.full_name || currentUser?.username || currentUser?.email || currentUser?.id || 'ERPNext 사용자';
+  const accountId = currentUser?.id || currentUser?.username || currentUser?.email || '';
+  const accountLabel = accountId && accountId !== displayName ? accountId : 'ERPNext 계정';
+  const avatarLabel = displayName.trim().slice(0, 1).toUpperCase() || 'U';
+
+  return (
   <aside className={`gemini-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
     <div className="sidebar-top">
       {/* Brand Header */}
@@ -48,7 +54,7 @@ export const Sidebar = ({
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            {!sidebarCollapsed && <span>새 채팅</span>}
+            {!sidebarCollapsed && <span>새 도움말</span>}
           </button>
 
           {!sidebarCollapsed && (
@@ -58,7 +64,14 @@ export const Sidebar = ({
                   <circle cx="11" cy="11" r="8" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
-                <span>채팅 검색</span>
+                <span>도움말 검색</span>
+              </div>
+              <div className="quick-nav-item" onClick={() => setCurrentMode('operations')}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M7 8h10M7 12h7M7 16h5" />
+                </svg>
+                <span>통합 작업함</span>
               </div>
               <div className="quick-nav-item" onClick={() => setCurrentMode('scheduler')}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -72,7 +85,7 @@ export const Sidebar = ({
 
           {!sidebarCollapsed && (
             <div className="sidebar-history-section">
-              <div className="history-label">최근 대화</div>
+              <div className="history-label">최근 도움말</div>
               <div className="session-list">
                 {sessions.map((sess) => (
                   <div
@@ -138,13 +151,10 @@ export const Sidebar = ({
       ) : (
         /* Operations Mode Sidebar */
         <>
-          <button className="new-chat-btn new-chat-btn--operations" onClick={onStartOperation}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            {!sidebarCollapsed && <span>새 구매 작업</span>}
-          </button>
+          <div className="operations-listener">
+            <i />
+            {!sidebarCollapsed && <span><strong>MR 자동 수신 중</strong><small>ERPNext Webhook</small></span>}
+          </div>
 
           {!sidebarCollapsed && (
             <div className="sidebar-quick-nav operations-nav">
@@ -153,7 +163,7 @@ export const Sidebar = ({
                   <rect x="3" y="4" width="18" height="16" rx="2" />
                   <path d="M7 8h10M7 12h7M7 16h5" />
                 </svg>
-                <span>전체 작업</span>
+                <span>통합 작업함</span>
                 <small>{operationCounts.total}</small>
               </div>
               <div className="quick-nav-item">
@@ -161,7 +171,7 @@ export const Sidebar = ({
                   <circle cx="12" cy="12" r="9" />
                   <path d="M12 7v5l3 2" />
                 </svg>
-                <span>내 확인 필요</span>
+                <span>확인 필요</span>
                 <small>{operationCounts.needsAction}</small>
               </div>
               <div className="quick-nav-item">
@@ -188,10 +198,10 @@ export const Sidebar = ({
       {!sidebarCollapsed ? (
         <>
           <div className="user-profile-info">
-            <div className="user-avatar">A</div>
+            <div className="user-avatar">{avatarLabel}</div>
             <div className="user-meta">
-              <span className="user-email-text">Administrator</span>
-              <span className="user-role-badge">Procurement Team</span>
+              <span className="user-email-text" title={displayName}>{displayName}</span>
+              <span className="user-role-badge" title={`${accountLabel} · 구매 담당자`}>{accountLabel} · 구매 담당자</span>
             </div>
           </div>
           <button className="logout-icon-btn" onClick={handleLogout} title="로그아웃">
@@ -213,6 +223,7 @@ export const Sidebar = ({
       )}
     </div>
   </aside>
-);
+  );
+};
 
 export default Sidebar;

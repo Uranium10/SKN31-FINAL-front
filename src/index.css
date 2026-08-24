@@ -410,6 +410,178 @@ body {
   box-shadow: 0 9px 22px rgba(22, 78, 61, .2);
 }
 
+.operations-listener {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid #d8e6df;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #214f3e;
+  background: linear-gradient(135deg, #f5faf7, #edf6f1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85);
+}
+
+.operations-listener > i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #249a6d;
+  box-shadow: 0 0 0 4px rgba(36, 154, 109, .11);
+  animation: operations-listener-pulse 2.2s ease-in-out infinite;
+}
+
+.operations-listener > span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.operations-listener strong {
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.operations-listener small {
+  color: #71867c;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  line-height: 1.25;
+}
+
+.collapsed .operations-listener {
+  width: 40px;
+  padding: 0;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+@keyframes operations-listener-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .55; transform: scale(.84); }
+}
+
+/* Calm application chrome for the assigned-work experience. */
+.gemini-sidebar {
+  width: 236px;
+  min-width: 236px;
+  padding: 18px 12px 14px;
+  border-right-color: rgba(29,29,31,.08);
+  background: #f7f7f8;
+}
+
+.sidebar-brand-row { padding-inline: 8px; }
+.brand-badge { color: #29292c; font-size: 14px; letter-spacing: -.018em; }
+
+.operations-listener {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: #67676c;
+  background: transparent;
+  box-shadow: none;
+}
+
+.operations-listener > i {
+  width: 6px;
+  height: 6px;
+  background: #2c9a70;
+  box-shadow: none;
+}
+
+.operations-listener strong { font-size: 10.5px; font-weight: 620; }
+.operations-listener small { display: none; }
+
+.sidebar-quick-nav { gap: 2px; }
+
+.quick-nav-item {
+  min-height: 39px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 10px;
+  color: #68686d;
+  font-size: 12px;
+}
+
+.quick-nav-item:hover { color: #29292c; background: #ededf0; }
+
+.quick-nav-item.active {
+  border: 0;
+  color: #29292c;
+  background: #e9e9ec;
+  font-weight: 650;
+}
+
+.operations-nav .quick-nav-item small,
+.operations-nav .quick-nav-item.active small {
+  min-width: 19px;
+  height: 19px;
+  color: #737378;
+  background: rgba(255,255,255,.72);
+}
+
+.sidebar-footer {
+  padding: 14px 7px 3px;
+  border-top-color: rgba(29,29,31,.08);
+}
+
+.user-avatar {
+  border-radius: 50%;
+  background: #356e5a;
+}
+
+.user-email-text { color: #353538; font-size: 11.5px; }
+.user-role-badge { color: #929297; font-size: 9.5px; }
+
+.main-topbar {
+  height: 58px;
+  min-height: 58px;
+  padding: 0 28px;
+  border-bottom-color: rgba(29,29,31,.08);
+  background: rgba(255,255,255,.76);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+
+.mode-switcher-group {
+  padding: 3px;
+  border: 0;
+  border-radius: 10px;
+  gap: 2px;
+  background: #ededf0;
+}
+
+.mode-tab-btn {
+  min-height: 29px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  color: #737378;
+  font-size: 11.5px;
+  font-weight: 580;
+}
+
+.mode-tab-btn.active {
+  color: #262628;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+
+.live-status-pill {
+  padding: 5px 8px;
+  border: 0;
+  color: #7d7d82;
+  background: transparent;
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 580;
+}
+
+.status-dot { width: 6px; height: 6px; box-shadow: none; }
+
 .collapsed .new-chat-btn {
   padding: 0;
   justify-content: center;
@@ -909,6 +1081,28 @@ body {
   letter-spacing: -0.04em;
   color: var(--text-primary);
   margin-bottom: 28px;
+}
+
+.guide-hero-kicker {
+  margin-bottom: 12px;
+  color: #147a59;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+.gemini-hero-view .hero-title-greeting {
+  margin-bottom: 10px;
+  font-size: 38px;
+  letter-spacing: -.045em;
+}
+
+.guide-hero-description {
+  max-width: 540px;
+  margin: 0 0 30px;
+  color: #77777c;
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
 .suggestion-chips-grid {
@@ -2325,3 +2519,37 @@ input:checked + .slider-round:before {
 .snapshot-rollback-btn:hover {
   background: #27272a;
 }
+
+/* Final chrome overrides live at the end so legacy workspace styles cannot
+   reintroduce heavier borders or dashboard-like controls. */
+.gemini-sidebar .sidebar-quick-nav { gap: 2px; }
+.gemini-sidebar .quick-nav-item {
+  min-height: 39px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 10px;
+  color: #68686d;
+  font-size: 12px;
+}
+.gemini-sidebar .quick-nav-item:hover { color: #29292c; background: #ededf0; }
+.gemini-sidebar .quick-nav-item.active { border: 0; color: #29292c; background: #e9e9ec; font-weight: 650; }
+.gemini-sidebar .operations-nav .quick-nav-item small,
+.gemini-sidebar .operations-nav .quick-nav-item.active small { min-width: 19px; height: 19px; color: #737378; background: rgba(255,255,255,.72); }
+.gemini-sidebar .sidebar-footer { padding: 14px 7px 3px; border-top-color: rgba(29,29,31,.08); }
+.gemini-sidebar .user-avatar { border-radius: 50%; background: #356e5a; }
+.gemini-sidebar .user-email-text { color: #353538; font-size: 11.5px; }
+.gemini-sidebar .user-role-badge { color: #929297; font-size: 9.5px; }
+.gemini-sidebar .user-role-badge { max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gemini-main > .main-topbar {
+  height: 58px;
+  min-height: 58px;
+  padding: 0 28px;
+  border-bottom-color: rgba(29,29,31,.08);
+  background: rgba(255,255,255,.76);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+.main-topbar .mode-switcher-group { padding: 3px; border: 0; border-radius: 10px; gap: 2px; background: #ededf0; }
+.main-topbar .mode-tab-btn { min-height: 29px; padding: 5px 12px; border-radius: 8px; color: #737378; font-size: 11.5px; font-weight: 580; }
+.main-topbar .mode-tab-btn.active { color: #262628; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.main-topbar .live-status-pill { padding: 5px 8px; border: 0; color: #7d7d82; background: transparent; font-family: inherit; font-size: 9.5px; font-weight: 580; }
+.main-topbar .status-dot { width: 6px; height: 6px; box-shadow: none; }

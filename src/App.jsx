@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import './index.css';
-import { getAccessToken, setTokens, clearTokens, fetchWithAuth } from './utils/auth';
+import { getAccessToken, getCurrentUser, setTokens, clearTokens } from './utils/auth';
 
 import WaveTransition from './components/common/WaveTransition';
 import LoginPage from './components/auth/LoginPage';
@@ -12,20 +12,20 @@ import OperationsWorkspace from './components/operations/OperationsWorkspace';
 const initialSessions = [
   {
     id: 'session-1',
-    title: 'SF-001 안전모 50개 재고 확인',
+    title: '통합 작업함 사용 방법',
     createdAt: '2026-08-18',
     messages: [
-      { sender: 'user', text: 'SF-001 안전모 50개 재고 확인 및 구매 요청 현황 알려줘.' },
-      { sender: 'agent', text: 'ERPNext 창고 재고 확인 결과:\n- 현재 창고 수량: 12개\n- 부족 수량: 38개\n- 승인 대기 중인 구매 요청서(MR-2026-003)가 확인되었습니다. 최적 공급사 단가 비교를 시작할까요?' }
+      { sender: 'user', text: '통합 작업함에서는 무엇을 할 수 있어?' },
+      { sender: 'agent', text: 'ERPNext에서 수신한 구매 요청을 한 곳에서 확인할 수 있습니다.\n- 작업 카드를 누르면 전체 자동화 단계를 펼칠 수 있습니다.\n- 열기를 누르면 현재 단계와 필요한 입력 폼을 확인할 수 있습니다.\n- 완료된 작업은 회색으로 구분되며 실행 이력은 계속 열람할 수 있습니다.' }
     ]
   },
   {
     id: 'session-2',
-    title: '3M 방진마스크 대체품 견적 비교',
+    title: '자동화와 사용자 확인 안내',
     createdAt: '2026-08-17',
     messages: [
-      { sender: 'user', text: '기존 방진마스크 공급사 납기가 지연되는데 대체 공급업체 있어?' },
-      { sender: 'agent', text: 'Tavily 시장 조사 및 ERP 과거 이력 분석 결과:\n- [공급사 A] 단가 1,200원 / 납기 2일\n- [공급사 B] 단가 1,150원 / 납기 3일\n공급사 A가 긴급 납기에 적합합니다.' }
+      { sender: 'user', text: '자동화가 멈추고 내 확인을 요청하는 경우를 알려줘.' },
+      { sender: 'agent', text: '정보가 모호하거나 최종 판단이 필요한 단계에서는 자동화가 안전하게 일시정지됩니다. 통합 작업함의 ‘확인 필요’ 상태에서 해당 작업을 열고, 제공된 폼으로 값을 확정하면 다음 단계가 이어집니다.' }
     ]
   }
 ];
@@ -77,6 +77,7 @@ const initialApprovals = [
 
 export function App() {
   const [token, setTokenState] = useState(getAccessToken());
+  const [currentUser, setCurrentUser] = useState(getCurrentUser());
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,7 +86,6 @@ export function App() {
 
   // Workspace Mode: 'chat' | 'scheduler' | 'operations'
   const [currentMode, setCurrentMode] = useState('operations'); // Default to 'operations' to showcase new tab immediately
-  const [operationStartRequest, setOperationStartRequest] = useState(0);
   const [operationCounts, setOperationCounts] = useState({ total: 4, needsAction: 1, waiting: 1 });
 
   // Chat State
@@ -126,7 +126,8 @@ export function App() {
       const data = await res.json();
 
       if (data.success) {
-        setTokens(data.access_token, data.refresh_token);
+        setTokens(data.access_token, data.refresh_token, data.user);
+        setCurrentUser(getCurrentUser());
         setIsWiping(true);
 
         setTimeout(() => {
@@ -150,7 +151,7 @@ export function App() {
     const newId = `session-${Date.now()}`;
     const newSession = {
       id: newId,
-      title: '새로운 구매 대화',
+      title: '새 도움말 대화',
       createdAt: new Date().toISOString().split('T')[0],
       messages: []
     };
@@ -183,7 +184,7 @@ export function App() {
     const userMsg = { sender: 'user', text: messageText };
     const updatedMessages = [...(currentSession?.messages || []), userMsg];
 
-    const updatedTitle = (currentSession?.messages.length === 0 || currentSession?.title === '새로운 구매 대화')
+    const updatedTitle = (currentSession?.messages.length === 0 || currentSession?.title === '새 도움말 대화')
       ? (messageText.length > 18 ? messageText.slice(0, 18) + '...' : messageText)
       : currentSession.title;
 
@@ -195,37 +196,27 @@ export function App() {
       )
     );
 
-    try {
-      const res = await fetchWithAuth('/api/health');
-      if (res.ok) {
-        setTimeout(() => {
-          const agentMsg = {
-            sender: 'agent',
-            text: `"${messageText}" 요청을 접수했습니다. ERP 재고 확인 및 자율 구매 파이프라인 분석을 진행 중입니다.`
-          };
-          setSessions((prev) =>
-            prev.map((s) =>
-              s.id === activeSessionId
-                ? { ...s, messages: [...updatedMessages, agentMsg] }
-                : s
-            )
-          );
-          setSending(false);
-        }, 600);
-      }
-    } catch {
-      setTimeout(() => {
-        const errorMsg = { sender: 'agent', text: '서버와 통신 중 오류가 발생했습니다.' };
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === activeSessionId
-              ? { ...s, messages: [...updatedMessages, errorMsg] }
-              : s
-          )
-        );
-        setSending(false);
-      }, 400);
+    const normalizedQuestion = messageText.toLowerCase();
+    let guideText = 'BiddingFlow는 ERPNext의 구매 요청을 감지해 재고 확인, 대체품 검토, 공급사 탐색, RFQ, 견적 비교, 승인과 발주 단계를 이어서 관리합니다. 궁금한 화면이나 기능 이름을 함께 입력해 주세요.';
+    if (/(작업함|작업 목록|mr)/i.test(normalizedQuestion)) {
+      guideText = '통합 작업함에는 ERPNext에서 수신한 모든 MR이 표시됩니다. 카드를 누르면 현재 단계 주변의 워크플로를 펼칠 수 있고, ‘열기’를 누르면 필요한 입력과 자동화 이력을 확인할 수 있습니다.';
+    } else if (/(확인|인터럽트|폼|중단|멈)/i.test(normalizedQuestion)) {
+      guideText = '자동화 도중 모호한 정보나 사람의 판단이 필요하면 작업 상태가 ‘확인 필요’로 바뀝니다. 해당 작업을 열어 폼의 표준값을 확인한 뒤 재개하거나 요청자에게 보완을 요청할 수 있습니다.';
+    } else if (/(알림|벨|토스트)/i.test(normalizedQuestion)) {
+      guideText = '우측 상단 알림에는 견적 도착, 사용자 확인 필요, 발주 완료 같은 상태 변화가 쌓입니다. 알림을 누르면 관련 작업으로 바로 이동합니다.';
+    } else if (/(스케줄|scheduler|파이프라인)/i.test(normalizedQuestion)) {
+      guideText = 'Flow Scheduler에서는 반복 실행하거나 감시할 자동화 파이프라인의 상태와 실행 기록을 확인합니다. 상단의 Flow Scheduler 탭에서 이동할 수 있습니다.';
+    } else if (/(rfq|견적|공급사|발주|po)/i.test(normalizedQuestion)) {
+      guideText = '구매 작업은 공급사 후보 탐색과 RFQ 발송, 견적 회신 대기, 비교 추천, 담당자 최종 승인, PO 발주 순으로 이어집니다. 자동화는 추천까지만 수행하며 최종 선택은 사용자가 결정합니다.';
     }
+
+    setTimeout(() => {
+      const agentMsg = { sender: 'agent', text: guideText };
+      setSessions((prev) => prev.map((session) => session.id === activeSessionId
+        ? { ...session, messages: [...updatedMessages, agentMsg] }
+        : session));
+      setSending(false);
+    }, 450);
   };
 
   const handleKeyDown = (e) => {
@@ -275,16 +266,10 @@ export function App() {
     ]);
   };
 
-  const handleNavigateToChat = (promptTitle) => {
-    handleCreateNewSession();
-    setTimeout(() => {
-      handleSendMessage(`${promptTitle} 진행 현황 및 상세 분석 요청`);
-    }, 100);
-  };
-
   const handleLogout = () => {
     clearTokens();
     setTokenState(null);
+    setCurrentUser(null);
     setEmail('');
     setPassword('');
   };
@@ -318,7 +303,7 @@ export function App() {
             pipelinesCount={pipelines.length}
             approvalsCount={approvals.length}
             operationCounts={operationCounts}
-            onStartOperation={() => setOperationStartRequest((request) => request + 1)}
+            currentUser={currentUser}
             handleLogout={handleLogout}
           />
 
@@ -331,9 +316,9 @@ export function App() {
                   onClick={() => setCurrentMode('chat')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
                   </svg>
-                  <span>대화형 구매 에이전트</span>
+                  <span>도움말 챗봇</span>
                 </button>
                 <button
                   className={`mode-tab-btn ${currentMode === 'scheduler' ? 'active' : ''}`}
@@ -353,7 +338,7 @@ export function App() {
                     <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
                     <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
                   </svg>
-                  <span>작업 (Operations)</span>
+                  <span>구매 작업</span>
                 </button>
               </div>
 
@@ -385,8 +370,7 @@ export function App() {
               />
             ) : (
               <OperationsWorkspace
-                onNavigateToChat={handleNavigateToChat}
-                startRequest={operationStartRequest}
+                currentUser={currentUser}
                 onCountsChange={setOperationCounts}
               />
             )}

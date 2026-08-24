@@ -11,6 +11,11 @@ const STATUS_META = {
   completed: { label: '완료', tone: 'green' },
 };
 
+const CURRENT_USER = {
+  id: 'erp-user',
+  name: 'ERPNext 사용자',
+};
+
 const WORKFLOW_STEPS = [
   ['요청 접수', '구매 목적과 요청 품목을 구조화했습니다.'],
   ['정보 검증', '필수 규격·수량·희망일을 확인했습니다.'],
@@ -38,14 +43,29 @@ const initialStrips = [
     reference: 'MR-2026-003',
     title: '3M 방진마스크 200개 긴급 조달',
     status: 'needs_action',
-    currentStepIndex: 3,
+    currentStepIndex: 1,
     updatedAt: '10분 전',
-    nextAction: '대체품 2종의 규격 차이를 확인해 주세요.',
+    nextAction: '요청서의 무의미한 값을 정리하고 표준값을 확정해 주세요.',
+    category: '안전용품',
+    intakeSource: 'ERPNext Webhook',
+    requester: '안전관리팀 · 정우진',
+    receivedAt: '08.24 09:12',
+    dueAt: '오늘 16:00',
+    priority: '긴급',
+    interrupt: {
+      id: 'interrupt-cleanse-001',
+      type: 'data_cleansing',
+      title: '요청 정보 정리가 필요합니다',
+      description: 'ERP 자동 실행 전에 무의미하거나 표기가 다른 값 3건을 표준화해야 합니다.',
+      fields: [
+        { key: 'specification', label: '품목 규격', original: '.', suggested: '3M 8822 또는 동급', type: 'text' },
+        { key: 'warehouse', label: '납품 장소', original: '`', suggested: '안전용품 창고 - SKN31', type: 'select', options: ['안전용품 창고 - SKN31', '본사 창고 - SKN31', '생산1팀 창고 - SKN31'] },
+        { key: 'uom', label: '단위', original: '개 / ea', suggested: 'EA', type: 'select', options: ['EA', 'BOX', 'SET'] },
+      ],
+    },
     steps: makeSteps({
       0: { summary: '안전관리팀 요청, 200개, 8월 28일까지 입고.', time: '08.21 09:12' },
-      1: { summary: '3M 8822 또는 동급, 1급 방진 기준을 확인.', time: '08.21 09:14' },
-      2: { summary: '가용 12개, 부족 수량 188개로 확인.', time: '08.21 09:15' },
-      3: { summary: '동급 후보 2종을 찾았습니다. 담당자 확인이 필요합니다.', time: '' },
+      1: { summary: '규격·납품 장소·단위에 정리가 필요한 값 3건을 발견했습니다.', time: '' },
     }),
     messages: [
       { sender: 'user', text: '3M 방진마스크 200개가 급해. 재고 확인하고 부족하면 구매를 진행해 줘.' },
@@ -61,6 +81,12 @@ const initialStrips = [
     currentStepIndex: 7,
     updatedAt: '35분 전',
     nextAction: '3개 공급사의 견적 회신을 기다리는 중입니다.',
+    category: '안전용품',
+    intakeSource: 'ERPNext Webhook',
+    requester: '전기설비팀 · 윤지호',
+    receivedAt: '08.24 08:41',
+    dueAt: '08.26 18:00',
+    priority: '보통',
     steps: makeSteps({
       1: { summary: 'KS IEC 60903 Class 2, 100켤레, 시험성적서 필수.', time: '08.21 08:43' },
       2: { summary: '가용 재고가 없어 전량 구매가 필요합니다.', time: '08.21 08:45' },
@@ -82,6 +108,12 @@ const initialStrips = [
     currentStepIndex: 1,
     updatedAt: '1시간 전',
     nextAction: '요청자에게 토크 범위와 교정성적서 조건을 요청했습니다.',
+    category: '시설',
+    intakeSource: 'ERPNext Webhook',
+    requester: '생산1팀 · 이도현',
+    receivedAt: '08.24 08:02',
+    dueAt: '요청자 응답 후',
+    priority: '보통',
     steps: makeSteps({
       0: { summary: '생산1팀이 토크렌치 6개 구매를 요청했습니다.', time: '08.21 08:02' },
       1: { summary: '토크 범위와 교정성적서 조건이 누락되었습니다.', time: '' },
@@ -100,9 +132,15 @@ const initialStrips = [
     currentStepIndex: 10,
     updatedAt: '어제 16:30',
     nextAction: 'PO-2026-088 발송 완료 · 입고 예정 8월 25일',
+    category: '안전용품',
+    intakeSource: 'ERPNext Webhook',
+    requester: '용접생산팀 · 서지훈',
+    receivedAt: '08.20 14:10',
+    dueAt: '완료',
+    priority: '보통',
     steps: makeSteps({
       8: { summary: '도착 견적 3건을 비교하고 추천 근거를 제시했습니다.', time: '08.20 16:20' },
-      9: { summary: '구매 담당자 김민지가 공급사 B를 최종 승인했습니다.', time: '08.20 16:25' },
+      9: { summary: '구매 담당자가 공급사 B를 최종 승인했습니다.', time: '08.20 16:25' },
       10: { summary: 'PO-2026-088을 생성하고 공급사에 발송했습니다.', time: '08.20 16:30' },
     }),
     messages: [
@@ -237,6 +275,10 @@ function Icon({ name, size = 18 }) {
     spark: <><path d="m12 3-1.4 4.2L6 9l4.6 1.8L12 15l1.4-4.2L18 9l-4.6-1.8Z"/><path d="m5 16-.7 2.1L2 19l2.3.9L5 22l.7-2.1L8 19l-2.3-.9Z"/></>,
     tool: <><path d="M14.7 6.3a4 4 0 0 0-5-5L12 3.6 9.6 6 7.3 3.7a4 4 0 0 0 5 5L5 16l3 3 7.3-7.3a4 4 0 0 0 5-5L18 9l-2.4-2.4 2.3-2.3a4 4 0 0 0-3.2 2Z"/></>,
     eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></>,
+    user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
+    transfer: <><path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="m7 21-4-4 4-4"/><path d="M21 17H3"/></>,
+    inbox: <><path d="M4 4h16l2 10v6H2v-6Z"/><path d="M2 14h5l2 3h6l2-3h5"/></>,
+    route: <><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v5a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3"/></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -246,7 +288,11 @@ function StatusBadge({ status }) {
   return <span className={`work-status work-status--${meta.tone}`}><i />{meta.label}</span>;
 }
 
-export default function OperationsWorkspace({ startRequest = 0, onCountsChange }) {
+export default function OperationsWorkspace({ currentUser, onCountsChange }) {
+  const viewer = useMemo(() => ({
+    id: currentUser?.id || currentUser?.username || currentUser?.email || CURRENT_USER.id,
+    name: currentUser?.full_name || currentUser?.username || currentUser?.email || currentUser?.id || CURRENT_USER.name,
+  }), [currentUser]);
   const [screen, setScreen] = useState('list');
   const [filter, setFilter] = useState('all');
   const [strips, setStrips] = useState(initialStrips);
@@ -269,25 +315,27 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
   const [interruptOther, setInterruptOther] = useState('');
   const [buildOutcome, setBuildOutcome] = useState(null);
   const [createdStripId, setCreatedStripId] = useState(null);
-  const [sessionInput, setSessionInput] = useState('');
+  const [interruptValues, setInterruptValues] = useState({});
   const timersRef = useRef([]);
   const toastTimersRef = useRef(new Map());
   const eventFeedRef = useRef(null);
 
   const activeStrip = strips.find((strip) => strip.id === activeStripId);
   const unreadCount = notifications.filter((notice) => notice.unread).length;
+  // 모든 MR은 별도 담당자 분류 없이 하나의 통합 작업함에 표시됩니다.
+  const inboxStrips = strips;
   const visibleStrips = useMemo(
-    () => strips.filter((strip) => filter === 'all' || strip.status === filter),
-    [filter, strips],
+    () => inboxStrips.filter((strip) => filter === 'all' || strip.status === filter),
+    [filter, inboxStrips],
   );
 
   useEffect(() => {
     onCountsChange?.({
-      total: strips.length,
-      needsAction: strips.filter((strip) => strip.status === 'needs_action').length,
-      waiting: strips.filter((strip) => strip.status === 'waiting_external').length,
+      total: inboxStrips.length,
+      needsAction: inboxStrips.filter((strip) => strip.status === 'needs_action').length,
+      waiting: inboxStrips.filter((strip) => strip.status === 'waiting_external').length,
     });
-  }, [strips, onCountsChange]);
+  }, [inboxStrips, onCountsChange]);
 
   useEffect(() => () => {
     timersRef.current.forEach(clearTimeout);
@@ -389,16 +437,34 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
 
       // 페이지 전체를 움직이지 않고 스트립 내부에서만 현재 단계를 중앙 정렬합니다.
       // 카드 폭을 기준으로 좌우 약 2단계가 기본 뷰포트에 남습니다.
-      const targetLeft = currentStep.offsetLeft - ((timeline.clientWidth - currentStep.offsetWidth) / 2);
+      const timelineRect = timeline.getBoundingClientRect();
+      const stepRect = currentStep.getBoundingClientRect();
+      const targetLeft = timeline.scrollLeft + (stepRect.left - timelineRect.left) - ((timeline.clientWidth - stepRect.width) / 2);
       timeline.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
     }, 120);
   };
 
   const openSession = (stripId) => {
+    const strip = strips.find((item) => item.id === stripId);
     setActiveStripId(stripId);
-    setScreen('session');
+    setInterruptValues(Object.fromEntries((strip?.interrupt?.fields || []).map((field) => [field.key, field.suggested || ''])));
+    setScreen('detail');
     setNotifications((previous) => previous.map((notice) => notice.stripId === stripId ? { ...notice, unread: false } : notice));
   };
+
+  useEffect(() => {
+    if (screen !== 'detail' || !activeStripId) return;
+    const timer = setTimeout(() => {
+      const timeline = document.querySelector('.work-detail__content .work-timeline');
+      const currentStep = timeline?.querySelector('[data-current="true"]');
+      if (!timeline || !currentStep) return;
+      const timelineRect = timeline.getBoundingClientRect();
+      const stepRect = currentStep.getBoundingClientRect();
+      const targetLeft = timeline.scrollLeft + (stepRect.left - timelineRect.left) - ((timeline.clientWidth - stepRect.width) / 2);
+      timeline.scrollTo({ left: Math.max(0, targetLeft), behavior: 'auto' });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [activeStripId, screen]);
 
   const openSnapshot = (strip, stepIndex) => {
     if (stepIndex >= strip.currentStepIndex) return;
@@ -451,28 +517,6 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
     setBuildOutcome(null);
     setCreatedStripId(null);
   };
-
-  const startNewWork = () => {
-    clearBuildTimers();
-    setScreen('new');
-    setDraft('');
-    setBuilding(false);
-    setBuildProgress(0);
-    setBuildMessages([]);
-    setBuildEvents([]);
-    setExpandedBuildEvents(new Set());
-    setActiveInterrupt(null);
-    setInterruptOtherOpen(false);
-    setInterruptOther('');
-    setBuildOutcome(null);
-    setCreatedStripId(null);
-  };
-
-  useEffect(() => {
-    if (startRequest > 0) startNewWork();
-    // startRequest is an explicit command token from the persistent sidebar.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startRequest]);
 
   const finishMockPipeline = (request) => {
     const id = `work-${Date.now()}`;
@@ -603,17 +647,32 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
     scheduleBuildStage(0, request);
   };
 
-  const sendSessionMessage = () => {
-    const message = sessionInput.trim();
-    if (!message || !activeStrip) return;
-    setSessionInput('');
+  const resolveWorkInterrupt = (action = 'apply') => {
+    if (!activeStrip?.interrupt) return;
+    const isReturned = action === 'return';
     setStrips((previous) => previous.map((strip) => strip.id !== activeStrip.id ? strip : {
       ...strip,
-      messages: [...strip.messages,
-        { sender: 'user', text: message },
-        { sender: 'agent', text: '요청을 이 작업의 기존 문맥에 추가했습니다. 실제 실행 전 영향 범위를 확인하는 목업 응답입니다.' },
-      ],
+      status: isReturned ? 'returned' : 'running',
+      updatedAt: '방금',
+      currentStepIndex: isReturned ? strip.currentStepIndex : Math.min(strip.currentStepIndex + 1, strip.steps.length - 1),
+      nextAction: isReturned
+        ? '요청자에게 원본 정보 보완을 요청했습니다.'
+        : '정규화된 값을 반영해 재고 확인을 자동으로 진행하고 있습니다.',
+      interrupt: null,
+      normalizedFields: isReturned ? null : interruptValues,
+      assignmentHistory: [...(strip.assignmentHistory || []), {
+        type: isReturned ? 'requester_return' : 'interrupt_resolved',
+        actor: viewer.name,
+        at: '방금',
+        detail: isReturned ? '요청자 정보 보완 요청' : '데이터 정규화 폼 승인',
+      }],
     }));
+    announceRealtimeUpdate({
+      stripId: activeStrip.id,
+      title: isReturned ? '요청자에게 보완을 요청했습니다' : '입력값을 반영했습니다',
+      detail: isReturned ? '응답이 도착하면 작업이 자동으로 재개됩니다.' : '정보 검증을 완료하고 다음 단계를 실행합니다.',
+      tone: isReturned ? 'warning' : 'success',
+    });
   };
 
   const renderTimeline = (strip) => (
@@ -652,9 +711,15 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
     <div className="work-page">
       <header className="work-page__header">
         <div>
-          <span className="work-eyebrow">PURCHASE OPERATIONS</span>
-          <h1>작업</h1>
-          <p>대화에서 시작된 구매 업무를 단계별로 이어서 관리합니다.</p>
+          <h1>통합 작업함</h1>
+          <p>ERPNext에서 수신한 모든 구매 요청을 한 곳에서 확인하고 이어서 처리하세요.</p>
+          <div className="work-page__summaryline" aria-label="작업 요약">
+            <span><strong>{inboxStrips.filter((strip) => strip.status !== 'completed').length}</strong> 진행 중</span>
+            <i />
+            <span className="is-urgent"><strong>{inboxStrips.filter((strip) => strip.status === 'needs_action').length}</strong> 확인 필요</span>
+            <i />
+            <span><strong>{inboxStrips.filter((strip) => strip.status === 'waiting_external').length}</strong> 응답 대기</span>
+          </div>
         </div>
         <div className="work-page__actions">
           <div className="work-notifications">
@@ -676,20 +741,22 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
               </div>
             )}
           </div>
-          <button type="button" className="work-primary-button" onClick={startNewWork}><Icon name="plus" size={17} />새 작업</button>
         </div>
       </header>
 
       <div className="work-toolbar">
+        <div className="work-toolbar__heading">
+          <strong>수신된 구매 작업</strong>
+          <span>{visibleStrips.length}개</span>
+        </div>
         <label className="work-filter">
-          <span>필터</span>
+          <span>보기</span>
           <select value={filter} onChange={(event) => setFilter(event.target.value)}>
             {Object.entries(STATUS_META).map(([value, meta]) => (
-              <option key={value} value={value}>{meta.label} · {value === 'all' ? strips.length : strips.filter((strip) => strip.status === value).length}</option>
+              <option key={value} value={value}>{meta.label} · {value === 'all' ? inboxStrips.length : inboxStrips.filter((strip) => strip.status === value).length}</option>
             ))}
           </select>
         </label>
-        <span className="work-toolbar__hint"><Icon name="history" size={15} />완료된 단계를 누르면 스냅숏과 정정 분기를 확인할 수 있습니다.</span>
       </div>
 
       <div className="work-strip-list">
@@ -714,33 +781,28 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
                   }
                 }}
                 >
-                <div className="work-strip__stage-tab">
-                  <span className="work-strip__stage-info">
-                    <b>{currentStep.name}</b>
-                    <small>{strip.currentStepIndex + 1} / {strip.steps.length}</small>
-                  </span>
-                  <span className="work-strip__state-info">
-                    <i />
-                    <span>{statusMeta.label}</span>
-                  </span>
-                  <Icon name={isExpanded ? 'down' : 'chevron'} size={12} />
-                </div>
+                <span className="work-strip__disclosure"><Icon name={isExpanded ? 'down' : 'chevron'} size={16} /></span>
                 <div className="work-strip__identity">
-                  <span>{strip.reference}</span>
-                  <div className="work-strip__title-row"><strong>{strip.title}</strong></div>
+                  <span>{strip.reference}<i />{strip.category}</span>
+                  <div className="work-strip__title-row"><strong>{strip.title}</strong><span className={`work-strip__status-dot work-strip__status-dot--${statusMeta.tone}`}><i />{statusMeta.label}</span></div>
                   <p>{strip.nextAction}</p>
                 </div>
+                <div className="work-strip__phase">
+                  <span>{strip.currentStepIndex + 1} / {strip.steps.length} 단계</span>
+                  <strong>{currentStep.name}</strong>
+                  <i><b style={{ width: `${((strip.currentStepIndex + 1) / strip.steps.length) * 100}%` }} /></i>
+                </div>
                 <span className="work-strip__updated">{strip.updatedAt}</span>
-                <button type="button" className="work-strip__enter" onClick={(event) => { event.stopPropagation(); openSession(strip.id); }} aria-label={`${strip.title} 에이전트 세션 열기`}>
-                  <Icon name="chevron" size={20} />
+                <button type="button" className="work-strip__enter" onClick={(event) => { event.stopPropagation(); openSession(strip.id); }} aria-label={`${strip.title} 상세 작업 열기`}>
+                  <span>열기</span><Icon name="chevron" size={16} />
                 </button>
               </div>
               {isExpanded && (
                 <div className="work-strip__details">
                   <div className="work-strip__context">
-                    <span>{strip.revision ? <><Icon name="branch" size={15} />정정 분기 검토 중</> : '다음 안내'}</span>
-                    <p>{strip.nextAction}</p>
-                    {strip.revision && <small>원본 실행 이력과 외부 전송 기록은 그대로 보존됩니다.</small>}
+                    <span>{strip.revision ? <><Icon name="branch" size={15} />정정 분기 검토 중</> : <><Icon name="inbox" size={15} />자동 접수</>}</span>
+                    <p>{strip.intakeSource} · {strip.receivedAt} 수신</p>
+                    <small>{strip.requester} 요청 · {strip.category} · 우선순위 {strip.priority}</small>
                   </div>
                   {renderTimeline(strip)}
                 </div>
@@ -748,7 +810,7 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
             </article>
           );
         })}
-        {visibleStrips.length === 0 && <div className="work-empty"><strong>조건에 맞는 작업이 없습니다.</strong><span>필터를 바꾸거나 새 구매 작업을 시작해 보세요.</span></div>}
+        {visibleStrips.length === 0 && <div className="work-empty"><strong>현재 표시할 작업이 없습니다.</strong><span>새 MR이 수신되면 이 목록과 실시간 알림에 자동으로 표시됩니다.</span></div>}
       </div>
     </div>
   );
@@ -925,25 +987,106 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
   const renderSession = () => {
     if (!activeStrip) return null;
     const currentStep = activeStrip.steps[activeStrip.currentStepIndex];
+    const completedSteps = activeStrip.steps.slice(0, activeStrip.currentStepIndex + 1).filter((step) => step.time);
     return (
-      <div className="work-session">
-        <header className="work-subheader work-subheader--session">
+      <div className="work-detail">
+        <header className="work-subheader work-subheader--detail">
           <button type="button" className="work-back-button" onClick={() => setScreen('list')}><Icon name="back" />작업 목록</button>
           <div><span>{activeStrip.reference}</span><strong>{activeStrip.title}</strong></div>
-          <StatusBadge status={activeStrip.status} />
+          <div className="work-detail__header-actions">
+            <StatusBadge status={activeStrip.status} />
+          </div>
         </header>
-        <div className="work-session__body">
-          <aside className="work-session__rail">
-            <span>현재 작업</span><strong>{currentStep.name}</strong><p>{activeStrip.nextAction}</p>
+        <div className="work-detail__body">
+          <aside className="work-detail__rail">
+            <span className="work-detail__rail-label">현재 단계</span>
+            <strong>{currentStep.name}</strong>
+            <p>{activeStrip.nextAction}</p>
             <div className="work-session__progress"><i style={{ width: `${((activeStrip.currentStepIndex + 1) / activeStrip.steps.length) * 100}%` }} /></div>
             <small>{activeStrip.currentStepIndex + 1} / {activeStrip.steps.length} 단계</small>
+
+            <div className="work-assignment-card">
+              <div className="work-assignment-card__head"><Icon name="inbox" size={16} /><span><small>통합 접수 정보</small><strong>{activeStrip.intakeSource}</strong></span></div>
+              <dl>
+                <div><dt>처리 담당자</dt><dd>{viewer.name}</dd></div>
+                <div><dt>카테고리</dt><dd>{activeStrip.category}</dd></div>
+                <div><dt>우선순위</dt><dd>{activeStrip.priority}</dd></div>
+                <div><dt>수신 시각</dt><dd>{activeStrip.receivedAt}</dd></div>
+              </dl>
+              <p><Icon name="user" size={13} />신규 MR은 통합 작업함으로 자동 접수되며 현재 구매 담당자가 이어서 처리합니다.</p>
+            </div>
+
+            <div className="work-case-meta">
+              <div><span>요청자</span><strong>{activeStrip.requester}</strong></div>
+              <div><span>수신 시각</span><strong>{activeStrip.receivedAt}</strong></div>
+              <div><span>처리 기한</span><strong>{activeStrip.dueAt}</strong></div>
+            </div>
             {activeStrip.revision && <div className="work-revision-note"><Icon name="branch" size={16} /><span><strong>{activeStrip.steps[activeStrip.revision.sourceStepIndex].name}에서 정정 분기</strong>기존 문맥을 상속하고 후속 단계만 재검증합니다.</span></div>}
           </aside>
-          <main className="work-session__conversation">
-            <div className="work-chat-stream">
-              {activeStrip.messages.map((message, index) => <div key={`${message.sender}-${index}`} className={`work-message work-message--${message.sender} ${message.kind === 'idle' ? 'is-idle' : ''}`}>{message.sender === 'agent' && <div className="work-agent-avatar"><SailboatIcon /></div>}<p>{message.text}</p></div>)}
-            </div>
-            <div className="work-session__dock"><div className="work-prompt-box"><textarea rows="2" value={sessionInput} onChange={(event) => setSessionInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendSessionMessage(); } }} placeholder="이 작업의 문맥을 이어서 질문하거나 지시하세요"/><button type="button" onClick={sendSessionMessage} disabled={!sessionInput.trim()} aria-label="메시지 전송"><Icon name="send" size={17} /></button></div></div>
+          <main className="work-detail__content">
+            {activeStrip.interrupt ? (
+              <section className="work-form-card" aria-labelledby="interrupt-form-title">
+                <header>
+                  <span><Icon name="pause" size={18} /></span>
+                  <div><small>사용자 확인이 필요합니다</small><h2 id="interrupt-form-title">{activeStrip.interrupt.title}</h2><p>{activeStrip.interrupt.description}</p></div>
+                </header>
+                <div className="work-cleanse-table">
+                  {activeStrip.interrupt.fields.map((field) => (
+                    <div className="work-cleanse-row" key={field.key}>
+                      <div className="work-cleanse-row__context">
+                        <span><strong>{field.label}</strong><small>{field.key}</small></span>
+                        <p>요청 원문 <code>{field.original}</code></p>
+                      </div>
+                      <label>
+                        <span>적용할 표준값</span>
+                        {field.type === 'select' ? (
+                          <select value={interruptValues[field.key] || ''} onChange={(event) => setInterruptValues((previous) => ({ ...previous, [field.key]: event.target.value }))}>
+                            {field.options.map((option) => <option value={option} key={option}>{option}</option>)}
+                          </select>
+                        ) : (
+                          <input value={interruptValues[field.key] || ''} onChange={(event) => setInterruptValues((previous) => ({ ...previous, [field.key]: event.target.value }))} />
+                        )}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                <div className="work-form-card__notice"><Icon name="history" size={14} /><span>원문은 감사 이력에 그대로 보존되며, 확정한 표준값만 후속 단계에 사용됩니다.</span></div>
+                <footer>
+                  <button type="button" className="work-form-secondary" onClick={() => resolveWorkInterrupt('return')}>요청자에게 보완 요청</button>
+                  <button type="button" className="work-form-primary" onClick={() => resolveWorkInterrupt('apply')}><Icon name="check" size={15} />표준값 적용 후 재개</button>
+                </footer>
+              </section>
+            ) : (
+              <section className={`work-state-panel work-state-panel--${activeStrip.status}`}>
+                <span><Icon name={activeStrip.status === 'completed' ? 'check' : activeStrip.status === 'waiting_external' ? 'bell' : 'tool'} size={19} /></span>
+                <div><small>AUTOMATION STATUS</small><h2>{STATUS_META[activeStrip.status].label}</h2><p>{activeStrip.nextAction}</p></div>
+              </section>
+            )}
+
+            <section className="work-detail-section">
+              <header><div><span>실행 단계</span><h3>현재 워크플로</h3></div><small>현재 단계 중심으로 좌우 스크롤</small></header>
+              {renderTimeline(activeStrip)}
+            </section>
+
+            <section className="work-detail-section work-audit-section">
+              <header><div><span>검증 가능한 실행 기록</span><h3>자동화 이력</h3></div><small>도구 결과와 담당자 개입만 표시</small></header>
+              <div className="work-audit-list">
+                {completedSteps.slice().reverse().map((step) => (
+                  <article key={`${step.name}-${step.time}`}>
+                    <span><Icon name="check" size={14} /></span>
+                    <div><strong>{step.name}</strong><p>{step.summary}</p></div>
+                    <time>{step.time}</time>
+                  </article>
+                ))}
+                {(activeStrip.assignmentHistory || []).slice().reverse().map((history, index) => (
+                  <article className="is-human" key={`${history.type}-${index}`}>
+                    <span><Icon name="user" size={14} /></span>
+                    <div><strong>사용자 처리 · {history.actor}</strong><p>{history.detail}</p></div>
+                    <time>{history.at}</time>
+                  </article>
+                ))}
+              </div>
+            </section>
           </main>
         </div>
       </div>
@@ -957,7 +1100,7 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
     <div className="operations-mockup">
       {screen === 'list' && renderList()}
       {screen === 'new' && renderComposer()}
-      {screen === 'session' && renderSession()}
+      {screen === 'detail' && renderSession()}
       <div className="work-toast-region" aria-live="polite" aria-label="실시간 알림">
         {toasts.map((toast) => (
           <article className={`work-toast work-toast--${toast.tone}`} key={toast.id}>
@@ -1010,6 +1153,7 @@ export default function OperationsWorkspace({ startRequest = 0, onCountsChange }
           </section>
         </div>
       )}
+
     </div>
   );
 }
