@@ -3,12 +3,22 @@ import SailboatIcon from '../common/SailboatIcon';
 import './OperationsWorkspace.css';
 
 const STATUS_META = {
-  all: { label: '전체 작업' },
   needs_action: { label: '내 확인 필요', tone: 'amber' },
   waiting_external: { label: '외부 응답 대기', tone: 'blue' },
   running: { label: '진행 중', tone: 'violet' },
   returned: { label: '요청자 보완 대기', tone: 'rose' },
   completed: { label: '완료', tone: 'green' },
+};
+
+// 업무 진행 상태(status)와 사용자의 개입 필요도(attention)를 분리합니다.
+// 같은 "견적 대기" 단계라도 정상 대기인지, 기한 초과로 검토가 필요한지에
+// 따라 프론트에서 서로 다른 신호와 필터를 제공할 수 있습니다.
+const ATTENTION_META = {
+  all: { label: '전체 작업' },
+  required: { label: '내 개입 필요', tone: 'red' },
+  recommended: { label: '검토 권고', tone: 'orange' },
+  normal: { label: '정상 진행', tone: 'green' },
+  completed: { label: '완료', tone: 'gray' },
 };
 
 const CURRENT_USER = {
@@ -43,6 +53,8 @@ const initialStrips = [
     reference: 'MR-2026-003',
     title: '3M 방진마스크 200개 긴급 조달',
     status: 'needs_action',
+    attention: 'required',
+    attentionLabel: '요청 정보 승인 필요',
     currentStepIndex: 1,
     updatedAt: '10분 전',
     nextAction: '요청서의 무의미한 값을 정리하고 표준값을 확정해 주세요.',
@@ -78,6 +90,8 @@ const initialStrips = [
     reference: 'PUR-RFQ-2026-00270',
     title: '고전압 절연장갑 100켤레 정기 구매',
     status: 'waiting_external',
+    attention: 'normal',
+    attentionLabel: '견적 회신 정상 대기 중',
     currentStepIndex: 7,
     updatedAt: '35분 전',
     nextAction: '3개 공급사의 견적 회신을 기다리는 중입니다.',
@@ -105,6 +119,8 @@ const initialStrips = [
     reference: 'MR-2026-006',
     title: '생산라인 토크렌치 6개 구매',
     status: 'returned',
+    attention: 'recommended',
+    attentionLabel: '보완 요청 내용 검토 권고',
     currentStepIndex: 1,
     updatedAt: '1시간 전',
     nextAction: '요청자에게 토크 범위와 교정성적서 조건을 요청했습니다.',
@@ -129,6 +145,8 @@ const initialStrips = [
     reference: 'MR-2026-001',
     title: '용접 보안경 50개 소액 구매',
     status: 'completed',
+    attention: 'completed',
+    attentionLabel: '발주 완료',
     currentStepIndex: 10,
     updatedAt: '어제 16:30',
     nextAction: 'PO-2026-088 발송 완료 · 입고 예정 8월 25일',
@@ -325,7 +343,7 @@ export default function OperationsWorkspace({ currentUser, onCountsChange }) {
   // 모든 MR은 별도 담당자 분류 없이 하나의 통합 작업함에 표시됩니다.
   const inboxStrips = strips;
   const visibleStrips = useMemo(
-    () => inboxStrips.filter((strip) => filter === 'all' || strip.status === filter),
+    () => inboxStrips.filter((strip) => filter === 'all' || strip.attention === filter),
     [filter, inboxStrips],
   );
 
@@ -480,6 +498,8 @@ export default function OperationsWorkspace({ currentUser, onCountsChange }) {
     setStrips((previous) => previous.map((strip) => strip.id !== target.id ? strip : {
       ...strip,
       status: 'needs_action',
+      attention: 'required',
+      attentionLabel: `${sourceStep.name} 정정 승인 필요`,
       updatedAt: '방금',
       revision: {
         sourceStepIndex: snapshot.stepIndex,
@@ -525,6 +545,8 @@ export default function OperationsWorkspace({ currentUser, onCountsChange }) {
       reference: 'DRAFT-MR-2026-021',
       title: request.length > 34 ? `${request.slice(0, 34)}…` : request,
       status: 'waiting_external',
+      attention: 'normal',
+      attentionLabel: '견적 회신 정상 대기 중',
       currentStepIndex: 7,
       updatedAt: '방금',
       nextAction: '공급사 견적 회신을 기다리는 중입니다.',
@@ -653,6 +675,8 @@ export default function OperationsWorkspace({ currentUser, onCountsChange }) {
     setStrips((previous) => previous.map((strip) => strip.id !== activeStrip.id ? strip : {
       ...strip,
       status: isReturned ? 'returned' : 'running',
+      attention: 'normal',
+      attentionLabel: isReturned ? '요청자 보완 응답 대기 중' : '재고 확인 자동 진행 중',
       updatedAt: '방금',
       currentStepIndex: isReturned ? strip.currentStepIndex : Math.min(strip.currentStepIndex + 1, strip.steps.length - 1),
       nextAction: isReturned
@@ -750,10 +774,10 @@ export default function OperationsWorkspace({ currentUser, onCountsChange }) {
           <span>{visibleStrips.length}개</span>
         </div>
         <label className="work-filter">
-          <span>보기</span>
+          <span>개입 상태</span>
           <select value={filter} onChange={(event) => setFilter(event.target.value)}>
-            {Object.entries(STATUS_META).map(([value, meta]) => (
-              <option key={value} value={value}>{meta.label} · {value === 'all' ? inboxStrips.length : inboxStrips.filter((strip) => strip.status === value).length}</option>
+            {Object.entries(ATTENTION_META).map(([value, meta]) => (
+              <option key={value} value={value}>{meta.label} · {value === 'all' ? inboxStrips.length : inboxStrips.filter((strip) => strip.attention === value).length}</option>
             ))}
           </select>
         </label>
@@ -763,7 +787,7 @@ export default function OperationsWorkspace({ currentUser, onCountsChange }) {
         {visibleStrips.map((strip) => {
           const isExpanded = expanded.has(strip.id);
           const currentStep = strip.steps[strip.currentStepIndex];
-          const statusMeta = STATUS_META[strip.status];
+          const attentionMeta = ATTENTION_META[strip.attention] || ATTENTION_META.normal;
           return (
             <article className={`work-strip work-strip--${strip.status} ${isExpanded ? 'is-expanded' : ''}`} id={strip.id} key={strip.id}>
               <div
@@ -781,10 +805,16 @@ export default function OperationsWorkspace({ currentUser, onCountsChange }) {
                   }
                 }}
                 >
+                <span
+                  className={`work-strip__attention work-strip__attention--${attentionMeta.tone}`}
+                  aria-label={`개입 상태: ${strip.attentionLabel || attentionMeta.label}`}
+                >
+                  <i />{strip.attentionLabel || attentionMeta.label}
+                </span>
                 <span className="work-strip__disclosure"><Icon name={isExpanded ? 'down' : 'chevron'} size={16} /></span>
                 <div className="work-strip__identity">
                   <span>{strip.reference}<i />{strip.category}</span>
-                  <div className="work-strip__title-row"><strong>{strip.title}</strong><span className={`work-strip__status-dot work-strip__status-dot--${statusMeta.tone}`}><i />{statusMeta.label}</span></div>
+                  <div className="work-strip__title-row"><strong>{strip.title}</strong></div>
                   <p>{strip.nextAction}</p>
                 </div>
                 <div className="work-strip__phase">
