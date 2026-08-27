@@ -2,6 +2,7 @@
 export const getRefreshToken = () => localStorage.getItem('refresh_token');
 
 const USER_PROFILE_KEY = 'erp_user_profile';
+let refreshPromise = null;
 
 const normalizeUser = (user = {}) => {
   const metadata = user.user_metadata || {};
@@ -61,6 +62,34 @@ export const clearTokens = () => {
   localStorage.removeItem(USER_PROFILE_KEY);
 };
 
+const refreshSession = async () => {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) throw new Error('Refresh token not found');
+
+    const response = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.detail || 'Failed to refresh token');
+    }
+
+    // Refresh tokens are one-time credentials. Persist the newly rotated pair.
+    setTokens(data.access_token, data.refresh_token);
+    return data.access_token;
+  })().finally(() => {
+    refreshPromise = null;
+  });
+
+  return refreshPromise;
+};
+
 export const fetchWithAuth = async (url, options = {}) => {
   let accessToken = getAccessToken();
   
@@ -79,39 +108,14 @@ export const fetchWithAuth = async (url, options = {}) => {
 
   // 2. 만료된 경우 (401 Unauthorized) -> Refresh Token으로 갱신 시도
   if (response.status === 401) {
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-      clearTokens();
-      window.location.reload(); // 로그아웃 처리
-      throw new Error('Refresh token not found');
-    }
-
     try {
-      const refreshResponse = await fetch('/api/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken })
+      accessToken = await refreshSession();
+
+      // 3. 실패했던 원래 요청 재시도
+      response = await fetch(url, {
+        ...options,
+        headers: createHeaders(accessToken)
       });
-
-      if (!refreshResponse.ok) {
-        throw new Error('Failed to refresh token');
-      }
-
-      const refreshData = await refreshResponse.json();
-      
-      if (refreshData.success) {
-        // 새 액세스 토큰 저장
-        accessToken = refreshData.access_token;
-        setTokens(accessToken, null); // 리프레시는 기존 것 유지
-
-        // 3. 실패했던 원래 요청 재시도
-        response = await fetch(url, {
-          ...options,
-          headers: createHeaders(accessToken)
-        });
-      } else {
-        throw new Error('Refresh failed');
-      }
     } catch (error) {
       clearTokens();
       window.location.reload();
@@ -120,4 +124,14 @@ export const fetchWithAuth = async (url, options = {}) => {
   }
 
   return response;
+};
+
+export const logoutSession = async () => {
+  try {
+    if (getAccessToken()) {
+      await fetchWithAuth('/api/logout', { method: 'POST' });
+    }
+  } finally {
+    clearTokens();
+  }
 };

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import './index.css';
-import { getAccessToken, getCurrentUser, setTokens, clearTokens } from './utils/auth';
+import { getAccessToken, getCurrentUser, setTokens, logoutSession } from './utils/auth';
 
 import WaveTransition from './components/common/WaveTransition';
 import LoginPage from './components/auth/LoginPage';
 import Sidebar from './components/sidebar/Sidebar';
-import ChatWorkspace from './components/chat/ChatWorkspace';
+import AssistantDock from './components/assistant/AssistantDock';
 import SchedulerDashboard from './components/scheduler/SchedulerDashboard';
 import OperationsWorkspace from './components/operations/OperationsWorkspace';
 
@@ -84,13 +84,21 @@ export function App() {
   const [error, setError] = useState('');
   const [isWiping, setIsWiping] = useState(false);
 
-  // Workspace Mode: 'chat' | 'scheduler' | 'operations'
+  // 도움말은 전역 플로팅 코파일럿으로 제공하고, 기본 워크스페이스는 두 개만 유지합니다.
+  // Workspace Mode: 'scheduler' | 'operations'
   const [currentMode, setCurrentMode] = useState('operations'); // Default to 'operations' to showcase new tab immediately
   const [operationCounts, setOperationCounts] = useState({ total: 4, needsAction: 1, waiting: 1 });
 
-  // Chat State
+  // Global assistant state
   const [sessions, setSessions] = useState(initialSessions);
   const [activeSessionId, setActiveSessionId] = useState('session-1');
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantCommand, setAssistantCommand] = useState(null);
+  const [operationsContext, setOperationsContext] = useState({
+    eyebrow: 'PURCHASE OPERATIONS',
+    title: '통합 작업함',
+    detail: '수신된 구매 작업과 사용자 개입 상태를 확인합니다.',
+  });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -106,6 +114,9 @@ export function App() {
   ]);
 
   const currentSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+  const assistantContext = currentMode === 'scheduler'
+    ? { eyebrow: 'FLOW SCHEDULER', title: '자동화 파이프라인', detail: `${pipelines.length}개 파이프라인 · 승인 대기 ${approvals.length}건` }
+    : operationsContext;
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -125,7 +136,7 @@ export function App() {
       });
       const data = await res.json();
 
-      if (data.success) {
+      if (res.ok && data.success) {
         setTokens(data.access_token, data.refresh_token, data.user);
         setCurrentUser(getCurrentUser());
         setIsWiping(true);
@@ -138,7 +149,7 @@ export function App() {
           setIsWiping(false);
         }, 1300);
       } else {
-        setError(data.message || '로그인에 실패했습니다. 계정 정보를 확인해주세요.');
+        setError(data.message || data.detail || '로그인에 실패했습니다. 계정 정보를 확인해주세요.');
       }
     } catch {
       setError('서버와 통신할 수 없습니다. 백엔드 서버 상태를 확인해주세요.');
@@ -158,20 +169,7 @@ export function App() {
     setSessions([newSession, ...sessions]);
     setActiveSessionId(newId);
     setInput('');
-    setCurrentMode('chat');
-  };
-
-  const handleDeleteSession = (sessionId, e) => {
-    e.stopPropagation();
-    const filtered = sessions.filter((s) => s.id !== sessionId);
-    setSessions(filtered);
-    if (activeSessionId === sessionId) {
-      if (filtered.length > 0) {
-        setActiveSessionId(filtered[0].id);
-      } else {
-        handleCreateNewSession();
-      }
-    }
+    setAssistantOpen(true);
   };
 
   const handleSendMessage = async (customText = null) => {
@@ -197,8 +195,32 @@ export function App() {
     );
 
     const normalizedQuestion = messageText.toLowerCase();
-    let guideText = 'BiddingFlow는 ERPNext의 구매 요청을 감지해 재고 확인, 대체품 검토, 공급사 탐색, RFQ, 견적 비교, 승인과 발주 단계를 이어서 관리합니다. 궁금한 화면이나 기능 이름을 함께 입력해 주세요.';
-    if (/(작업함|작업 목록|mr)/i.test(normalizedQuestion)) {
+    let guideText = 'BiddingFlow는 ERPNext의 구매 요청을 감지해 재고 확인, 대체품 검토, 공급사 탐색, RFQ, 견적 비교, 승인과 발주 단계를 이어서 관리합니다. 화면 이동이나 작업 필터링도 요청할 수 있습니다.';
+    if (/(내\s*(승인|확인).*필요|개입\s*필요)/i.test(normalizedQuestion)) {
+      setCurrentMode('operations');
+      setAssistantCommand({ id: Date.now(), type: 'set_attention_filter', value: 'required' });
+      guideText = '구매 작업으로 이동해 지금 사용자의 승인이 필요한 작업만 표시했습니다. 빨간 상태점이 있는 작업부터 확인해 주세요.';
+    } else if (/검토\s*권고/i.test(normalizedQuestion)) {
+      setCurrentMode('operations');
+      setAssistantCommand({ id: Date.now(), type: 'set_attention_filter', value: 'recommended' });
+      guideText = '구매 작업으로 이동해 검토가 권고된 작업만 표시했습니다. 즉시 중단된 작업은 아니지만 조건을 살펴보는 편이 좋습니다.';
+    } else if (/정상\s*진행/i.test(normalizedQuestion)) {
+      setCurrentMode('operations');
+      setAssistantCommand({ id: Date.now(), type: 'set_attention_filter', value: 'normal' });
+      guideText = '자동화가 정상적으로 진행 중이거나 외부 응답을 기다리는 작업만 표시했습니다.';
+    } else if (/(전체\s*작업).*(보여|열|필터|이동)?/i.test(normalizedQuestion)) {
+      setCurrentMode('operations');
+      setAssistantCommand({ id: Date.now(), type: 'set_attention_filter', value: 'all' });
+      guideText = '통합 작업함의 필터를 초기화하고 전체 작업을 표시했습니다.';
+    } else if (/(스케줄|scheduler|파이프라인).*(열|보여|이동)/i.test(normalizedQuestion)) {
+      setCurrentMode('scheduler');
+      guideText = 'Flow Scheduler로 이동했습니다. 파이프라인 상태와 실행 기록, 승인 대기 항목을 확인할 수 있습니다.';
+    } else if (/(작업함|구매\s*작업).*(열|보여|이동)/i.test(normalizedQuestion)) {
+      setCurrentMode('operations');
+      guideText = '통합 작업함으로 이동했습니다. 상단 개입 상태 필터로 우선 확인할 작업을 좁힐 수 있습니다.';
+    } else if (/현재\s*(화면|작업)/i.test(normalizedQuestion)) {
+      guideText = `현재 보고 있는 곳은 '${assistantContext.title}'입니다. ${assistantContext.detail || ''}`.trim();
+    } else if (/(작업함|작업 목록|mr)/i.test(normalizedQuestion)) {
       guideText = '통합 작업함에는 ERPNext에서 수신한 모든 MR이 표시됩니다. 카드를 누르면 현재 단계 주변의 워크플로를 펼칠 수 있고, ‘열기’를 누르면 필요한 입력과 자동화 이력을 확인할 수 있습니다.';
     } else if (/(확인|인터럽트|폼|중단|멈)/i.test(normalizedQuestion)) {
       guideText = '자동화 도중 모호한 정보나 사람의 판단이 필요하면 작업 상태가 ‘확인 필요’로 바뀝니다. 해당 작업을 열어 폼의 표준값을 확인한 뒤 재개하거나 요청자에게 보완을 요청할 수 있습니다.';
@@ -217,13 +239,6 @@ export function App() {
         : session));
       setSending(false);
     }, 450);
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
   };
 
   const handleTogglePipeline = (pipeId) => {
@@ -266,8 +281,8 @@ export function App() {
     ]);
   };
 
-  const handleLogout = () => {
-    clearTokens();
+  const handleLogout = async () => {
+    await logoutSession().catch(() => {});
     setTokenState(null);
     setCurrentUser(null);
     setEmail('');
@@ -289,17 +304,11 @@ export function App() {
           handleLogin={handleLogin}
         />
       ) : (
-        <div className="gemini-container">
+        <div className={`gemini-container ${assistantOpen ? 'assistant-is-open' : ''}`}>
           <Sidebar
             sidebarCollapsed={sidebarCollapsed}
             setSidebarCollapsed={setSidebarCollapsed}
             currentMode={currentMode}
-            setCurrentMode={setCurrentMode}
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            setActiveSessionId={setActiveSessionId}
-            handleCreateNewSession={handleCreateNewSession}
-            handleDeleteSession={handleDeleteSession}
             pipelinesCount={pipelines.length}
             approvalsCount={approvals.length}
             operationCounts={operationCounts}
@@ -308,18 +317,9 @@ export function App() {
           />
 
           <main className="gemini-main">
-            {/* Topbar Mode Switcher with 3 Tabs */}
+            {/* Primary workspaces. The assistant is available globally at bottom-right. */}
             <div className="main-topbar">
               <div className="mode-switcher-group">
-                <button
-                  className={`mode-tab-btn ${currentMode === 'chat' ? 'active' : ''}`}
-                  onClick={() => setCurrentMode('chat')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
-                  </svg>
-                  <span>도움말 챗봇</span>
-                </button>
                 <button
                   className={`mode-tab-btn ${currentMode === 'scheduler' ? 'active' : ''}`}
                   onClick={() => setCurrentMode('scheduler')}
@@ -349,17 +349,7 @@ export function App() {
             </div>
 
             {/* Mode Content Views */}
-            {currentMode === 'chat' ? (
-              <ChatWorkspace
-                currentSession={currentSession}
-                sending={sending}
-                input={input}
-                setInput={setInput}
-                handleSendMessage={handleSendMessage}
-                handleKeyDown={handleKeyDown}
-                setCurrentMode={setCurrentMode}
-              />
-            ) : currentMode === 'scheduler' ? (
+            {currentMode === 'scheduler' ? (
               <SchedulerDashboard
                 pipelines={pipelines}
                 approvals={approvals}
@@ -372,9 +362,22 @@ export function App() {
               <OperationsWorkspace
                 currentUser={currentUser}
                 onCountsChange={setOperationCounts}
+                assistantCommand={assistantCommand}
+                onAssistantContextChange={setOperationsContext}
               />
             )}
           </main>
+          <AssistantDock
+            isOpen={assistantOpen}
+            setIsOpen={setAssistantOpen}
+            currentSession={currentSession}
+            sending={sending}
+            input={input}
+            setInput={setInput}
+            onSend={handleSendMessage}
+            onNewSession={handleCreateNewSession}
+            context={assistantContext}
+          />
         </div>
       )}
     </>

@@ -306,7 +306,12 @@ function StatusBadge({ status }) {
   return <span className={`work-status work-status--${meta.tone}`}><i />{meta.label}</span>;
 }
 
-export default function OperationsWorkspace({ currentUser, onCountsChange }) {
+export default function OperationsWorkspace({
+  currentUser,
+  onCountsChange,
+  assistantCommand,
+  onAssistantContextChange,
+}) {
   const viewer = useMemo(() => ({
     id: currentUser?.id || currentUser?.username || currentUser?.email || CURRENT_USER.id,
     name: currentUser?.full_name || currentUser?.username || currentUser?.email || currentUser?.id || CURRENT_USER.name,
@@ -354,6 +359,28 @@ export default function OperationsWorkspace({ currentUser, onCountsChange }) {
       waiting: inboxStrips.filter((strip) => strip.status === 'waiting_external').length,
     });
   }, [inboxStrips, onCountsChange]);
+
+  useEffect(() => {
+    if (assistantCommand?.type !== 'set_attention_filter') return;
+    setScreen('list');
+    setFilter(assistantCommand.value || 'all');
+  }, [assistantCommand]);
+
+  useEffect(() => {
+    const currentStep = activeStrip?.steps?.[activeStrip.currentStepIndex];
+    onAssistantContextChange?.(activeStrip && screen === 'detail'
+      ? {
+          eyebrow: activeStrip.reference,
+          title: activeStrip.title,
+          detail: `${currentStep?.name || '현재 단계'} · ${activeStrip.attentionLabel || activeStrip.nextAction}`,
+          workId: activeStrip.id,
+        }
+      : {
+          eyebrow: 'PURCHASE OPERATIONS',
+          title: '통합 작업함',
+          detail: `${inboxStrips.length}개 작업 · 내 개입 필요 ${inboxStrips.filter((strip) => strip.attention === 'required').length}건`,
+        });
+  }, [activeStrip, inboxStrips, onAssistantContextChange, screen]);
 
   useEffect(() => () => {
     timersRef.current.forEach(clearTimeout);

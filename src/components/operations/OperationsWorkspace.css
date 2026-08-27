@@ -2984,6 +2984,14 @@
   white-space: nowrap;
 }
 
+/* 우측 하단 전역 코파일럿 런처와 토스트가 겹치지 않도록 기본 위치를 띄우고,
+   패널이 열리면 작업 알림을 패널 왼쪽으로 이동합니다. */
+.operations-mockup .work-toast-region { bottom: 88px; }
+.assistant-is-open .operations-mockup .work-toast-region {
+  right: 430px;
+  bottom: 24px;
+}
+
 .work-strip__attention > i {
   width: 6px;
   height: 6px;
@@ -3320,4 +3328,8 @@
   .work-form-card__notice { margin: 5px 20px 0; }
   .work-form-card > footer { padding: 19px 20px 23px; flex-wrap: wrap; }
   .work-form-card > footer > button { flex: 1; min-width: 150px; }
+  .assistant-is-open .operations-mockup .work-toast-region {
+    right: 14px;
+    bottom: 82px;
+  }
 }
