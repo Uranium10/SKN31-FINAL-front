@@ -28,18 +28,18 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div
         style={{
-          backgroundColor: 'rgba(16, 185, 129, 0.08)',
-          border: '1px solid rgba(16, 185, 129, 0.2)',
+          backgroundColor: 'var(--success-bg)',
+          border: '1px solid rgba(36, 138, 61, 0.14)',
           borderRadius: 'var(--radius-md)',
           padding: '12px 18px',
           fontSize: '13px',
-          color: '#6EE7B7',
+          color: 'var(--success)',
           display: 'flex',
           alignItems: 'center',
           gap: '10px'
         }}
       >
-        <FileCheck size={18} color="#10B981" />
+        <FileCheck size={18} color="var(--success)" />
         <span>
           6-1) <strong>PR 협력사 승인여부</strong>를 확인하고, 6-2) <strong>승인 완료 항목에 한해 PO 생성(결재권자 결재)</strong>을 진행할 수 있습니다.
         </span>
@@ -66,7 +66,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               <tr key={item.id}>
                 {/* PR 번호 */}
                 <td>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#60A5FA' }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>
                     {item.prNo}
                   </span>
                 </td>
@@ -80,7 +80,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 <td>{item.department}</td>
                 {/* 품목명 */}
                 <td>
-                  <div style={{ fontWeight: 600, color: '#fff' }}>{item.itemName}</div>
+                  <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{item.itemName}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
                     {item.itemCode}
                   </div>
@@ -96,9 +96,9 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   </button>
                 </td>
                 {/* 선정 협력사 */}
-                <td style={{ fontWeight: 600, color: '#fff' }}>{item.selectedSupplier}</td>
+                <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{item.selectedSupplier}</td>
                 {/* 총 금액 */}
-                <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: '#fff' }}>
+                <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-main)' }}>
                   ₩{item.totalAmount.toLocaleString()}
                 </td>
                 {/* 6-1) PR에 대한 협력사 승인 여부 */}
@@ -172,7 +172,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FileText size={20} color="#3B82F6" />
+                <FileText size={20} color="var(--primary)" />
                 <h3>MR 및 PR 상세 내역 ({selectedMRDetail.prNo})</h3>
               </div>
               <button className="icon-btn" onClick={() => setSelectedMRDetail(null)}>
@@ -181,7 +181,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ backgroundColor: 'var(--bg-input)', padding: '14px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff', marginBottom: '6px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
                   {selectedMRDetail.itemName} ({selectedMRDetail.itemCode})
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -190,7 +190,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               </div>
               <div style={{ backgroundColor: 'var(--bg-input)', padding: '14px', borderRadius: '8px' }}>
                 <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '4px' }}>선정 공급사 및 발주 금액</div>
-                <div style={{ fontSize: '15px', fontWeight: 700, color: '#10B981' }}>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--success)' }}>
                   {selectedMRDetail.selectedSupplier} · Total ₩{selectedMRDetail.totalAmount.toLocaleString()}
                 </div>
               </div>
@@ -210,7 +210,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '480px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <AlertTriangle size={20} color="#EF4444" />
+                <AlertTriangle size={20} color="var(--danger)" />
                 <h3>협력사 PR 거절 사유 확인 ({selectedRejectReason.prNo})</h3>
               </div>
               <button className="icon-btn" onClick={() => setSelectedRejectReason(null)}>
@@ -219,15 +219,15 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
             </div>
             <div className="modal-body">
               <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                공급사: <strong style={{ color: '#fff' }}>{selectedRejectReason.selectedSupplier}</strong>
+                공급사: <strong style={{ color: 'var(--text-main)' }}>{selectedRejectReason.selectedSupplier}</strong>
               </div>
               <div
                 style={{
-                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                  borderLeft: '4px solid #EF4444',
+                  backgroundColor: 'var(--danger-bg)',
+                  borderLeft: '2px solid var(--danger)',
                   padding: '14px',
                   borderRadius: '6px',
-                  color: '#FCA5A5',
+                  color: 'var(--danger)',
                   fontSize: '13px',
                   lineHeight: '1.5'
                 }}
@@ -250,7 +250,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '500px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <ShoppingCart size={20} color="#10B981" />
+                <ShoppingCart size={20} color="var(--success)" />
                 <h3>PO 생성 및 전자 결재 요청</h3>
               </div>
               <button className="icon-btn" onClick={() => setApprovalModalItem(null)}>
@@ -263,7 +263,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               </p>
               <div style={{ backgroundColor: 'var(--bg-input)', padding: '12px', borderRadius: '6px', fontSize: '13px' }}>
                 <div>발주 품목: <strong>{approvalModalItem.itemName}</strong></div>
-                <div>발주 금액: <strong style={{ color: '#10B981' }}>₩{approvalModalItem.totalAmount.toLocaleString()}</strong></div>
+                <div>발주 금액: <strong style={{ color: 'var(--success)' }}>₩{approvalModalItem.totalAmount.toLocaleString()}</strong></div>
               </div>
             </div>
             <div className="modal-footer">

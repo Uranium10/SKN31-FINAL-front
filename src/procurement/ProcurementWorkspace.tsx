@@ -388,7 +388,7 @@ export function ProcurementWorkspace({
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '450px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Paperclip size={20} color="#3B82F6" />
+                <Paperclip size={20} color="var(--primary)" />
                 <h3>MR 첨부파일 목록 ({activeAttachmentFiles.length}개)</h3>
               </div>
               <button className="icon-btn" onClick={() => setActiveAttachmentFiles(null)}>
@@ -407,7 +407,7 @@ export function ProcurementWorkspace({
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     fontSize: '13px',
-                    color: '#fff'
+                    color: 'var(--text-main)'
                   }}
                 >
                   <span>📄 {file}</span>

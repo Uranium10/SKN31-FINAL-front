@@ -105,7 +105,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
             <span>아이템코드 순서 정렬: {sortAsc ? '오름차순 (A-Z ▲)' : '내림차순 (Z-A ▼)'}</span>
           </button>
           <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            총 등록 아이템: <strong style={{ color: '#fff' }}>{items.length}</strong>건
+            총 등록 아이템: <strong style={{ color: 'var(--text-main)' }}>{items.length}</strong>건
           </span>
         </div>
 
@@ -143,14 +143,14 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
               <tr key={item.id}>
                 {/* 3-1) 아이템코드 */}
                 <td>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#60A5FA' }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>
                     {item.itemCode}
                   </span>
                 </td>
                 {/* 3-2) 요청부서 */}
                 <td>{item.department}</td>
                 {/* 품목명 */}
-                <td style={{ fontWeight: 600, color: '#fff' }}>{item.itemName}</td>
+                <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{item.itemName}</td>
                 {/* 규격: 클릭해서 전체 내용을 볼 수 있게 버튼화 */}
                 <td>
                   <button className="spec-clickable-btn" onClick={() => onOpenSpecModal(item)}>
@@ -213,7 +213,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
                       </span>
                       {item.rejectReason && (
                         <span
-                          style={{ fontSize: '11px', color: '#FCA5A5', maxWidth: '160px', wordBreak: 'break-all' }}
+                          style={{ fontSize: '11px', color: 'var(--danger)', maxWidth: '160px', wordBreak: 'break-all' }}
                           title={`반려 사유: ${item.rejectReason}`}
                         >
                           사유: {item.rejectReason}
@@ -257,7 +257,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <PackagePlus size={20} color="#3B82F6" />
+                <PackagePlus size={20} color="var(--primary)" />
                 <h3>신규 아이템 코드 생성</h3>
               </div>
               <button className="icon-btn" onClick={() => setShowAddModal(false)}>

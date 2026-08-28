@@ -1,41 +1,52 @@
 /* Procurement workspace tokens are scoped so the existing login page keeps its own theme. */
 .procurement-shell {
-  --bg-main: #0b1114;
-  --bg-sidebar: #10191c;
-  --bg-card: #162125;
-  --bg-card-hover: #1b2b30;
-  --bg-input: #19272c;
-  --border-color: #25363b;
-  --border-highlight: #365159;
-  --primary: #23a48f;
-  --primary-hover: #168875;
-  --primary-glow: rgba(35, 164, 143, 0.24);
-  --text-main: #f3f7f6;
-  --text-muted: #9cadab;
-  --text-dim: #728582;
-  --success: #34b88a;
-  --success-bg: rgba(52, 184, 138, 0.12);
-  --warning: #f1a93b;
-  --warning-bg: rgba(241, 169, 59, 0.12);
-  --danger: #ef6461;
-  --danger-bg: rgba(239, 100, 97, 0.12);
-  --info: #5a9ee6;
-  --info-bg: rgba(90, 158, 230, 0.12);
-  --font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 15px rgba(35, 164, 143, 0.3);
+  color-scheme: light;
+  --bg-main: #f5f5f7;
+  --bg-sidebar: rgba(251, 251, 253, 0.92);
+  --bg-card: #ffffff;
+  --bg-card-hover: #f9f9fb;
+  --bg-input: #f2f2f4;
+  --border-color: rgba(60, 60, 67, 0.13);
+  --border-highlight: rgba(60, 60, 67, 0.24);
+  --primary: #007aff;
+  --primary-hover: #0066d6;
+  --primary-soft: rgba(0, 122, 255, 0.09);
+  --primary-glow: transparent;
+  --control: #1d1d1f;
+  --control-hover: #3a3a3c;
+  --control-soft: rgba(60, 60, 67, 0.08);
+  --accent: #e23867;
+  --accent-soft: rgba(226, 56, 103, 0.09);
+  --text-main: #1d1d1f;
+  --text-muted: #6e6e73;
+  --text-dim: #98989d;
+  --text-on-color: #ffffff;
+  --success: #248a3d;
+  --success-bg: rgba(36, 138, 61, 0.09);
+  --warning: #b85d00;
+  --warning-bg: rgba(184, 93, 0, 0.09);
+  --danger: #d70015;
+  --danger-bg: rgba(215, 0, 21, 0.08);
+  --info: #007aff;
+  --info-bg: rgba(0, 122, 255, 0.09);
+  --font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'Apple SD Gothic Neo', Pretendard, 'Segoe UI', sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.035);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.16);
+  --shadow-glow: none;
 
   display: flex;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background-color: var(--bg-main);
+  background:
+    radial-gradient(circle at 82% -10%, rgba(0, 122, 255, 0.075), transparent 31rem),
+    var(--bg-main);
   color: var(--text-main);
   font-family: var(--font-family);
 }
@@ -1018,4 +1029,365 @@
 @keyframes slideInRight {
   from { opacity: 0; transform: translateX(50px); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+/* BiddingFlow light refinement — layout and displayed information stay intact. */
+.procurement-shell .sidebar {
+  width: 244px;
+  padding: 22px 14px 16px;
+  background: var(--bg-sidebar);
+  border-right-color: var(--border-color);
+  backdrop-filter: saturate(180%) blur(22px);
+}
+
+.procurement-shell .sidebar-header { padding: 2px 10px 25px; gap: 11px; }
+
+.procurement-shell .logo-badge {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 50%;
+  color: var(--control);
+  background: var(--bg-card);
+  border: 1px solid rgba(9, 9, 11, 0.14);
+  box-shadow: none;
+}
+
+.procurement-shell .sidebar-logo-icon {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+.procurement-shell .logo-text h1,
+.procurement-shell .user-info h4,
+.procurement-shell .header-title-container h2,
+.procurement-shell .ai-panel-header h3,
+.procurement-shell .ai-log-title,
+.procurement-shell .kpi-value,
+.procurement-shell .process-header h3,
+.procurement-shell .stage-val,
+.procurement-shell .todo-header h3,
+.procurement-shell .todo-title,
+.procurement-shell .modal-header h3,
+.procurement-shell .vendor-group-title h3 {
+  color: var(--text-main);
+}
+
+.procurement-shell .logo-text h1 {
+  font-size: 17px;
+  font-weight: 720;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.procurement-shell .logo-text span {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.075em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.procurement-shell .sidebar-section-label {
+  margin: 18px 10px 8px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+}
+
+.procurement-shell .nav-list { gap: 3px; }
+
+.procurement-shell .nav-item {
+  min-height: 42px;
+  padding: 10px 12px;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.procurement-shell .nav-item:hover {
+  color: var(--text-main);
+  background: rgba(60, 60, 67, 0.055);
+}
+
+.procurement-shell .nav-item.active {
+  color: var(--control);
+  background: var(--control-soft);
+  border-color: rgba(60, 60, 67, 0.08);
+  box-shadow: none;
+}
+
+.procurement-shell .nav-badge,
+.procurement-shell .notification-dot { background: var(--accent); }
+
+.procurement-shell .sidebar-user {
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.58);
+  border-color: var(--border-color);
+  border-radius: 13px;
+}
+
+.procurement-shell .user-avatar {
+  color: var(--text-main);
+  background: #e8e8ed;
+  box-shadow: inset 0 0 0 1px rgba(60, 60, 67, 0.08);
+}
+
+.procurement-shell .sidebar-logout:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.procurement-shell .top-header {
+  height: 66px;
+  padding: 0 26px;
+  background: rgba(251, 251, 253, 0.82);
+  border-bottom-color: var(--border-color);
+  backdrop-filter: saturate(180%) blur(22px);
+  z-index: 20;
+}
+
+.procurement-shell .header-title-container h2 {
+  font-size: 18px;
+  font-weight: 680;
+  letter-spacing: -0.025em;
+}
+
+.procurement-shell .search-box {
+  width: min(360px, 34vw);
+  padding: 8px 13px;
+  background: rgba(118, 118, 128, 0.1);
+  border-color: transparent;
+  border-radius: 10px;
+}
+
+.procurement-shell .search-box:focus-within {
+  background: var(--bg-card);
+  border-color: rgba(0, 122, 255, 0.34);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.09);
+}
+
+.procurement-shell .search-box input { color: var(--text-main); }
+
+.procurement-shell .icon-btn {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.72);
+  border-color: var(--border-color);
+  border-radius: 11px;
+}
+
+.procurement-shell .icon-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-card);
+  border-color: var(--border-highlight);
+}
+
+.procurement-shell .btn-primary {
+  color: var(--text-on-color);
+  background: var(--control);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  box-shadow: none;
+  transform: none;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.procurement-shell .btn-primary:hover {
+  color: var(--text-on-color);
+  background: var(--control-hover);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+.procurement-shell .btn-primary:active,
+.procurement-shell .btn-sm:active { transform: none; }
+
+.procurement-shell .view-content { padding: 26px clamp(20px, 2.4vw, 36px) 40px; }
+
+.procurement-shell .ai-agent-panel {
+  background: rgba(251, 251, 253, 0.88);
+  border-left-color: var(--border-color);
+}
+
+.procurement-shell .ai-live-dot { background: var(--success); box-shadow: none; }
+
+.procurement-shell .ai-log-item,
+.procurement-shell .kpi-card,
+.procurement-shell .process-tracker-card,
+.procurement-shell .todo-section,
+.procurement-shell .todo-card,
+.procurement-shell .table-container,
+.procurement-shell .vendor-group-card,
+.procurement-shell .vendor-rank-item {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+
+.procurement-shell .ai-log-item:hover,
+.procurement-shell .kpi-card:hover,
+.procurement-shell .todo-card:hover,
+.procurement-shell .vendor-rank-item:hover {
+  transform: none;
+  border-color: var(--border-highlight);
+  background: var(--bg-card-hover);
+}
+
+.procurement-shell .kpi-grid { gap: 14px; }
+.procurement-shell .kpi-card { min-height: 132px; padding: 19px 20px; }
+.procurement-shell .kpi-value { font-size: 28px; font-weight: 720; letter-spacing: -0.035em; }
+.procurement-shell .kpi-icon { border-radius: 9px; }
+
+.procurement-shell .stage-box { background: #f7f7f9; border-color: var(--border-color); }
+.procurement-shell .progress-bar-bg { background: #e8e8ed; }
+.procurement-shell .progress-bar-fill { background: var(--primary); }
+
+.procurement-shell .count-badge {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border: 1px solid rgba(184, 93, 0, 0.12);
+}
+
+.procurement-shell .badge-purple { background: rgba(175, 82, 222, 0.09); color: #8944ab; }
+.procurement-shell .badge-red { background: var(--danger-bg); color: var(--danger); }
+.procurement-shell .badge-blue { background: var(--primary-soft); color: var(--primary-hover); }
+.procurement-shell .badge-green { background: var(--success-bg); color: var(--success); }
+.procurement-shell .badge-gray { background: rgba(60, 60, 67, 0.07); color: var(--text-muted); }
+
+.procurement-shell .ai-summary-box {
+  color: #3a3a3c;
+  background: var(--primary-soft);
+  border-left: 2px solid var(--primary);
+}
+
+.procurement-shell .todo-footer { border-top-color: var(--border-color); }
+
+.procurement-shell .btn-sm {
+  box-shadow: none;
+  transform: none;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.procurement-shell .btn-approve {
+  color: var(--success);
+  background: var(--success-bg);
+  border: 1px solid transparent;
+}
+.procurement-shell .btn-approve:hover {
+  color: var(--text-on-color);
+  background: var(--success);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+.procurement-shell .btn-reject {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid transparent;
+}
+.procurement-shell .btn-reject:hover {
+  color: var(--text-on-color);
+  background: var(--danger);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.procurement-shell .btn-outline {
+  color: var(--text-muted);
+  background: transparent;
+  border-color: var(--border-color);
+  box-shadow: none;
+  transform: none;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.procurement-shell .btn-outline:hover {
+  color: var(--text-main);
+  background: var(--bg-card);
+  border-color: var(--border-highlight);
+  box-shadow: none;
+  transform: none;
+}
+
+.procurement-shell .table-container { border-radius: 15px; }
+.procurement-shell .custom-table th {
+  color: var(--text-muted);
+  background: #f7f7f9;
+  border-bottom-color: var(--border-color);
+  font-size: 12px;
+  font-weight: 650;
+}
+.procurement-shell .custom-table td { color: var(--text-main); border-bottom-color: rgba(60, 60, 67, 0.1); }
+.procurement-shell .custom-table tbody tr:hover { background: rgba(0, 122, 255, 0.025); }
+.procurement-shell .custom-table tbody tr:last-child td { border-bottom: 0; }
+
+.procurement-shell .spec-clickable-btn {
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+  border-color: transparent;
+}
+.procurement-shell .spec-clickable-btn:hover {
+  color: var(--primary-hover);
+  background: rgba(0, 122, 255, 0.14);
+  border-color: transparent;
+}
+
+.procurement-shell .modal-overlay {
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px) saturate(120%);
+}
+.procurement-shell .modal-content {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-lg);
+}
+.procurement-shell .modal-header,
+.procurement-shell .modal-footer { border-color: var(--border-color); }
+
+.procurement-shell .form-input,
+.procurement-shell .select-box {
+  color: var(--text-main);
+  background: var(--bg-input);
+  border-color: transparent;
+}
+.procurement-shell .form-input:focus,
+.procurement-shell .select-box:focus {
+  border-color: rgba(0, 122, 255, 0.35);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.08);
+}
+.procurement-shell .checkbox-label { color: var(--text-main); }
+
+.procurement-shell .vendor-group-header { border-bottom-color: var(--border-color); }
+.procurement-shell .ai-recommend-badge {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(226, 56, 103, 0.12);
+}
+.procurement-shell .vendor-rank-item.top-rank {
+  background: var(--success-bg);
+  border-color: rgba(36, 138, 61, 0.28);
+}
+.procurement-shell .rank-badge.rank-1 { background: #fff3c4; color: #7a4b00; }
+.procurement-shell .rank-badge.rank-2 { background: #ededf0; color: #5f5f64; }
+.procurement-shell .rank-badge.rank-3 { background: #f0dfd5; color: #7b4f37; }
+
+.procurement-shell .toast {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--primary);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(18px);
+}
+
+@media (max-width: 1100px) {
+  .procurement-shell .sidebar { width: 220px; }
+  .procurement-shell .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .procurement-shell .search-box { width: 280px; }
 }

@@ -8,6 +8,7 @@ import {
   Layers,
   LogOut,
 } from 'lucide-react';
+import SailboatIcon from '../../components/common/SailboatIcon';
 import type { NavigationTab } from '../types';
 
 interface SidebarProps {
@@ -40,11 +41,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* App Branding */}
       <div className="sidebar-header">
         <div className="logo-badge">
-          <ShoppingCart size={20} />
+          <SailboatIcon className="sidebar-logo-icon" />
         </div>
         <div className="logo-text">
-          <h1>구매 Agent</h1>
-          <span>ERPNext 연동 v2.4</span>
+          <h1>BiddingFlow</h1>
+          <span>AI Autonomous Procurement</span>
         </div>
       </div>
 
@@ -113,7 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="sidebar-section-label">MR 단계 트래킹 시스템</div>
       <div
         style={{
-          backgroundColor: 'rgba(255,255,255,0.03)',
+          backgroundColor: 'rgba(255,255,255,0.58)',
           border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-md)',
           padding: '12px',
@@ -124,7 +125,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           gap: '8px'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#60A5FA', fontWeight: 600 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 600 }}>
           <Layers size={13} />
           <span>전체 프로세스 4단계</span>
         </div>

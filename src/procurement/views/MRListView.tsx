@@ -62,7 +62,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
       <div className="filter-toolbar">
         {/* 4-1) 검색창 */}
         <div className="search-box" style={{ width: '420px' }}>
-          <Search size={16} color="#9CA3AF" />
+          <Search size={16} color="var(--text-muted)" />
           <input
             type="text"
             placeholder="4-1) MR번호, 품목명, 요청자, 요청부서, 카테고리 등 전체 검색..."
@@ -100,12 +100,12 @@ export const MRListView: React.FC<MRListViewProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          backgroundColor: 'rgba(245, 158, 11, 0.08)',
-          border: '1px solid rgba(245, 158, 11, 0.2)',
+          backgroundColor: 'var(--warning-bg)',
+          border: '1px solid rgba(184, 93, 0, 0.14)',
           borderRadius: 'var(--radius-md)',
           padding: '10px 16px',
           fontSize: '12px',
-          color: '#FCD34D'
+          color: 'var(--warning)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -143,7 +143,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
                 <td style={{ fontWeight: 500 }}>{req.requester}</td>
                 {/* MR번호 */}
                 <td>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#60A5FA' }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>
                     {req.mrNo}
                   </span>
                 </td>
@@ -158,7 +158,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
                   <span className="badge badge-gray">{req.category}</span>
                 </td>
                 {/* 아이템명 */}
-                <td style={{ fontWeight: 600, color: '#fff' }}>{req.itemName}</td>
+                <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{req.itemName}</td>
                 {/* 규격(클릭 시 전체 내용 확인할 수 있게) */}
                 <td>
                   <button className="spec-clickable-btn" onClick={() => onOpenSpecModalByItemCode(req.itemCode)}>
@@ -175,12 +175,12 @@ export const MRListView: React.FC<MRListViewProps> = ({
                       title={`첨부파일 ${req.attachmentCount}개 있음 (클릭 시 확인)`}
                       style={{ cursor: 'pointer' }}
                     >
-                      <Paperclip size={16} color="#60A5FA" />
+                      <Paperclip size={16} color="var(--primary)" />
                       <span>{req.attachmentCount}</span>
                     </div>
                   ) : (
                     <div className="attachment-icon no-file" title="첨부파일 없음">
-                      <Paperclip size={16} color="#6B7280" />
+                      <Paperclip size={16} color="var(--text-dim)" />
                       <span>0</span>
                     </div>
                   )}
@@ -190,16 +190,16 @@ export const MRListView: React.FC<MRListViewProps> = ({
                   ₩{req.unitPrice.toLocaleString()}
                 </td>
                 {/* 금액 */}
-                <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff', fontFamily: 'monospace' }}>
+                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--text-main)', fontFamily: 'monospace' }}>
                   ₩{req.totalPrice.toLocaleString()}
                 </td>
                 {/* 납기요청일 */}
                 <td>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: 600, color: req.dDay <= 3 ? '#EF4444' : '#fff' }}>
+                    <span style={{ fontWeight: 600, color: req.dDay <= 3 ? 'var(--danger)' : 'var(--text-main)' }}>
                       {req.dueDate}
                     </span>
-                    <span style={{ fontSize: '11px', color: req.dDay <= 3 ? '#FCA5A5' : 'var(--text-dim)' }}>
+                    <span style={{ fontSize: '11px', color: req.dDay <= 3 ? 'var(--danger)' : 'var(--text-dim)' }}>
                       D-{req.dDay} {req.isUrgent ? '🔥 긴급' : ''}
                     </span>
                   </div>
@@ -218,7 +218,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
                       </span>
                       {req.rejectReason && (
                         <span
-                          style={{ fontSize: '11px', color: '#FCA5A5', maxWidth: '140px', wordBreak: 'break-all' }}
+                          style={{ fontSize: '11px', color: 'var(--danger)', maxWidth: '140px', wordBreak: 'break-all' }}
                           title={`반려 사유: ${req.rejectReason}`}
                         >
                           사유: {req.rejectReason}

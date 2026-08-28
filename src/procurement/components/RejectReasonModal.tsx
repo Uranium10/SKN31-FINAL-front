@@ -30,7 +30,7 @@ export const RejectReasonModal: React.FC<RejectReasonModalProps> = ({
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '480px' }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <AlertCircle size={20} color="#EF4444" />
+            <AlertCircle size={20} color="var(--danger)" />
             <h3>{title} ({itemNo})</h3>
           </div>
           <button className="icon-btn" onClick={onClose}>

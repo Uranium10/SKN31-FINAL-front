@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Global Search Input */}
       <div className="search-box">
-        <Search size={16} color="#9CA3AF" />
+        <Search size={16} color="var(--text-muted)" />
         <input
           type="text"
           placeholder="MR / 품목 / 공급사 / 아이템코드 검색..."

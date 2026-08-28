@@ -57,18 +57,18 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div
         style={{
-          backgroundColor: 'rgba(59, 130, 246, 0.08)',
-          border: '1px solid rgba(59, 130, 246, 0.2)',
+          backgroundColor: 'var(--primary-soft)',
+          border: '1px solid rgba(0, 122, 255, 0.12)',
           borderRadius: 'var(--radius-md)',
           padding: '12px 18px',
           fontSize: '13px',
-          color: '#93C5FD',
+          color: 'var(--primary-hover)',
           display: 'flex',
           alignItems: 'center',
           gap: '10px'
         }}
       >
-        <Sparkles size={18} color="#F59E0B" />
+        <Sparkles size={18} color="var(--accent)" />
         <span>
           <strong>협력사 선정 및 마감관리</strong>: 마감시간 연장(1, 2번 위치)으로 미회신 업체 메일 발송 및 <strong>[상세사항 확인] 한눈에 보는 비교 표(Table)</strong>를 지원합니다.
         </span>
@@ -89,14 +89,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               className={`vendor-group-card ${isCurrentActive ? 'active' : ''}`}
               style={{
                 border: isCurrentActive ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                boxShadow: isCurrentActive ? '0 0 16px rgba(59, 130, 246, 0.25)' : 'none'
+                boxShadow: 'none'
               }}
             >
               {/* Header: MR 번호 & 아이템명 묶음 + 위치 1 (마감일수) + 위치 2 (마감시간 연장 버튼) */}
               <div className="vendor-group-header" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                 <div className="vendor-group-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <h3>
-                    <span style={{ color: '#60A5FA', fontFamily: 'monospace' }}>{group.mrNo}</span>
+                    <span style={{ color: 'var(--primary)', fontFamily: 'monospace' }}>{group.mrNo}</span>
                     <span style={{ color: 'var(--text-dim)', margin: '0 6px' }}>|</span>
                     <span>{group.itemName}</span>
                     <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '6px' }}>
@@ -108,9 +108,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   <span
                     className="badge"
                     style={{
-                      backgroundColor: 'rgba(245, 158, 11, 0.18)',
-                      color: '#FCD34D',
-                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      backgroundColor: 'var(--warning-bg)',
+                      color: 'var(--warning)',
+                      border: '1px solid rgba(184, 93, 0, 0.16)',
                       padding: '4px 10px',
                       borderRadius: '12px',
                       fontSize: '12px',
@@ -121,9 +121,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     }}
                     title="협력사 견적 제출 마감 일시"
                   >
-                    <Clock size={13} color="#F59E0B" />
+                    <Clock size={13} color="var(--warning)" />
                     <span>마감 D-{group.deadlineDDay}일 ({group.deadlineDate} {group.deadlineTime} 마감)</span>
-                    {group.isExtended && <span style={{ color: '#60A5FA', fontSize: '10px' }}>(연장됨)</span>}
+                    {group.isExtended && <span style={{ color: 'var(--primary)', fontSize: '10px' }}>(연장됨)</span>}
                   </span>
                 </div>
 
@@ -139,13 +139,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '6px',
-                      borderColor: '#F59E0B',
-                      color: '#FCD34D',
-                      backgroundColor: 'rgba(245, 158, 11, 0.08)'
+                      borderColor: 'rgba(184, 93, 0, 0.2)',
+                      color: 'var(--warning)',
+                      backgroundColor: 'var(--warning-bg)'
                     }}
                     title="마감시간을 늘리고 미회신 협력사에 안내 메일을 재발송합니다."
                   >
-                    <Calendar size={13} color="#F59E0B" />
+                    <Calendar size={13} color="var(--warning)" />
                     <span>📅 마감시간 연장</span>
                   </button>
 
@@ -164,10 +164,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                    요청 부서: <strong style={{ color: '#fff' }}>{group.department}</strong> · 납기요청일: {group.targetDueDate}
+                    요청 부서: <strong style={{ color: 'var(--text-main)' }}>{group.department}</strong> · 납기요청일: {group.targetDueDate}
                   </div>
                   {bestQuotation && (
-                    <div style={{ fontSize: '13px', color: '#10B981', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                    <div style={{ fontSize: '13px', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
                       <Award size={16} />
                       <span>AI 1위 추천 공급사: {bestQuotation.supplierName} (₩{bestQuotation.quoteUnitPrice.toLocaleString()} / EA, 납기 {bestQuotation.leadTimeDays}일)</span>
                     </div>
@@ -185,7 +185,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       setShowDetailModal(true);
                     }}
                   >
-                    <FileText size={16} color="#60A5FA" />
+                    <FileText size={16} color="var(--primary)" />
                     <span>상세사항 확인</span>
                   </button>
 
@@ -214,7 +214,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '500px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Calendar size={22} color="#F59E0B" />
+                <Calendar size={22} color="var(--warning)" />
                 <div>
                   <h3>견적 제출 마감시간 연장</h3>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -231,12 +231,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div
                   style={{
-                    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-                    borderLeft: '4px solid #F59E0B',
+                    backgroundColor: 'var(--warning-bg)',
+                    borderLeft: '2px solid var(--warning)',
                     padding: '12px 14px',
                     borderRadius: '6px',
                     fontSize: '12px',
-                    color: '#FCD34D',
+                    color: 'var(--warning)',
                     lineHeight: '1.5'
                   }}
                 >
@@ -247,7 +247,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
                     <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Calendar size={13} color="#60A5FA" />
+                      <Calendar size={13} color="var(--primary)" />
                       연장할 마감 날짜 선택
                     </label>
                     <input
@@ -261,7 +261,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
                   <div className="form-group">
                     <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock size={13} color="#60A5FA" />
+                      <Clock size={13} color="var(--primary)" />
                       연장할 마감 시간 선택
                     </label>
                     <input
@@ -275,7 +275,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 </div>
 
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  현재 설정 변경: <strong style={{ color: '#fff' }}>{extDate} {extTime}</strong> (미회신 업체 자동 리마인드 처리됨)
+                  현재 설정 변경: <strong style={{ color: 'var(--text-main)' }}>{extDate} {extTime}</strong> (미회신 업체 자동 리마인드 처리됨)
                 </div>
               </div>
 
@@ -283,7 +283,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 <button type="button" className="btn-outline" onClick={() => setExtendingGroup(null)}>
                   취소
                 </button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: '#F59E0B', color: '#000', fontWeight: 700 }}>
+                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--warning)', color: 'var(--text-on-color)', fontWeight: 700 }}>
                   <Mail size={14} />
                   마감 연장 및 미회신 업체 메일 발송
                 </button>
@@ -299,7 +299,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '880px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FileText size={20} color="#3B82F6" />
+                <FileText size={20} color="var(--primary)" />
                 <h3>MR 내용 및 협력사 회신 비교 표 ({selectedGroup.mrNo})</h3>
               </div>
               <button className="icon-btn" onClick={() => setShowDetailModal(false)}>
@@ -311,7 +311,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               {/* MR 기본 정보 요약 바 */}
               <div style={{ backgroundColor: 'var(--bg-input)', padding: '14px 18px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontWeight: 700, color: '#fff', fontSize: '15px' }}>
+                  <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '15px' }}>
                     {selectedGroup.itemName} ({selectedGroup.itemCode})
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -327,7 +327,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
               {/* 요구사항 반영: 협력사별 전체 회신 내용을 한눈에 한 줄씩 비교하는 표(Table) */}
               <div>
-                <h4 style={{ fontSize: '14px', fontWeight: 600, color: '#fff', marginBottom: '10px' }}>
+                <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '10px' }}>
                   공급사별 회신 현황 종합 비교표 ({selectedGroup.quotations.length}개사)
                 </h4>
 
@@ -346,12 +346,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     </thead>
                     <tbody>
                       {selectedGroup.quotations.map((q) => (
-                        <tr key={q.supplierId} style={{ backgroundColor: q.isSelected ? 'rgba(16, 185, 129, 0.08)' : 'transparent' }}>
+                        <tr key={q.supplierId} style={{ backgroundColor: q.isSelected ? 'var(--success-bg)' : 'transparent' }}>
                           {/* 협력사명 */}
-                          <td style={{ fontWeight: 700, color: '#fff' }}>
+                          <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                             {q.supplierName}
                             {q.aiRank === 1 && (
-                              <span style={{ fontSize: '10px', color: '#10B981', marginLeft: '6px', fontWeight: 800 }}>[AI 1위]</span>
+                              <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px', fontWeight: 800 }}>[AI 1위]</span>
                             )}
                           </td>
 
@@ -374,14 +374,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           </td>
 
                           {/* 총 견적금액 */}
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: q.isResponded ? '#60A5FA' : 'var(--text-dim)' }}>
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: q.isResponded ? 'var(--primary)' : 'var(--text-dim)' }}>
                             {q.isResponded ? `₩${q.quoteTotalPrice.toLocaleString()}` : '-'}
                           </td>
 
                           {/* 제시 납기 */}
                           <td style={{ textAlign: 'center' }}>
                             {q.isResponded ? (
-                              <span style={{ fontWeight: 600, color: '#fff' }}>{q.leadTimeDays}일 소요</span>
+                              <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{q.leadTimeDays}일 소요</span>
                             ) : '-'}
                           </td>
 
@@ -394,8 +394,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                     key={idx}
                                     style={{
                                       fontSize: '11px',
-                                      color: '#60A5FA',
-                                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                      color: 'var(--primary-hover)',
+                                      backgroundColor: 'var(--primary-soft)',
                                       padding: '2px 6px',
                                       borderRadius: '4px',
                                       display: 'inline-flex',
@@ -413,7 +413,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           </td>
 
                           {/* 회신 요약 설명 */}
-                          <td style={{ maxWidth: '220px', color: '#D1D5DB' }}>
+                          <td style={{ maxWidth: '220px', color: 'var(--text-muted)' }}>
                             {q.resContent}
                           </td>
                         </tr>
@@ -439,7 +439,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '740px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Bot size={22} color="#3B82F6" />
+                <Bot size={22} color="var(--accent)" />
                 <div>
                   <h3>AI 견적 분석 순위 & 최적 업체 선정 ({selectedGroup.mrNo})</h3>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -466,7 +466,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           {q.aiRank}
                         </div>
                         <div>
-                          <div style={{ fontSize: '15px', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span>{q.supplierName}</span>
                             {q.aiRank === 1 && (
                               <span className="ai-recommend-badge">
@@ -477,7 +477,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                             단가: ₩{q.quoteUnitPrice.toLocaleString()} · 총액: ₩{q.quoteTotalPrice.toLocaleString()} · 납기: {q.leadTimeDays}일
                           </div>
-                          <div style={{ fontSize: '12px', color: '#93C5FD', marginTop: '6px', lineHeight: 1.4 }}>
+                          <div style={{ fontSize: '12px', color: 'var(--primary-hover)', marginTop: '6px', lineHeight: 1.4 }}>
                             {q.aiReason}
                           </div>
                         </div>

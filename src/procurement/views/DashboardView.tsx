@@ -55,7 +55,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="kpi-value">
             {pendingCount} <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-muted)' }}>건</span>
           </div>
-          <div className="kpi-sub" style={{ color: urgentPendingCount > 0 ? '#EF4444' : 'var(--text-dim)', fontWeight: urgentPendingCount > 0 ? 600 : 400 }}>
+          <div className="kpi-sub" style={{ color: urgentPendingCount > 0 ? 'var(--danger)' : 'var(--text-dim)', fontWeight: urgentPendingCount > 0 ? 600 : 400 }}>
             {urgentPendingCount > 0 ? `🔥 긴급 ${urgentPendingCount}건 포함` : '긴급 건 없음'}
           </div>
         </div>
@@ -85,7 +85,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="kpi-value">
             {quotationWaitCount} <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-muted)' }}>건</span>
           </div>
-          <div className="kpi-sub" style={{ color: '#F59E0B' }}>오늘 마감 1건 포함</div>
+          <div className="kpi-sub" style={{ color: 'var(--warning)' }}>오늘 마감 1건 포함</div>
         </div>
 
         {/* Card 4: 이번 달 발주 PO */}
@@ -96,7 +96,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <ShoppingCart size={18} />
             </div>
           </div>
-          <div className="kpi-value" style={{ color: '#10B981' }}>
+          <div className="kpi-value" style={{ color: 'var(--success)' }}>
             ₩184M
           </div>
           <div className="kpi-sub">12건 발행 완료</div>
@@ -107,7 +107,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="process-tracker-card">
         <div className="process-header">
           <h3>
-            <Layers size={18} color="#3B82F6" />
+            <Layers size={18} color="var(--primary)" />
             <span>MR 번호별 4단계 진행 현황 (체크표시 트래커)</span>
           </h3>
           <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
@@ -150,14 +150,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <tr key={req.id}>
                     {/* MR 번호 */}
                     <td>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#60A5FA' }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>
                         {req.mrNo}
                       </span>
                     </td>
 
                     {/* 요청부서 / 품목명 */}
                     <td>
-                      <div style={{ fontWeight: 600, color: '#fff' }}>{req.itemName}</div>
+                      <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{req.itemName}</div>
                       <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
                         {req.department} · {req.requester}
                       </div>
@@ -167,15 +167,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <td style={{ textAlign: 'center' }}>
                       {step1Done ? (
                         <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={13} color="#10B981" /> 승인 완료 ✓
+                          <CheckCircle2 size={13} color="var(--success)" /> 승인 완료 ✓
                         </span>
                       ) : step1Rejected ? (
                         <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <XCircle size={13} color="#EF4444" /> 반려됨 ✕
+                          <XCircle size={13} color="var(--danger)" /> 반려됨 ✕
                         </span>
                       ) : (
                         <span className="badge badge-purple" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <Clock size={13} color="#F59E0B" /> 승인 대기
+                          <Clock size={13} color="var(--warning)" /> 승인 대기
                         </span>
                       )}
                     </td>
@@ -184,7 +184,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <td style={{ textAlign: 'center' }}>
                       {step2Done ? (
                         <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={13} color="#10B981" /> 100% 완료 ✓
+                          <CheckCircle2 size={13} color="var(--success)" /> 100% 완료 ✓
                         </span>
                       ) : step2Percent > 0 ? (
                         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
@@ -194,7 +194,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </div>
                       ) : (
                         <span className="badge badge-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <MinusCircle size={13} color="#6B7280" /> 0% 회신 대기
+                          <MinusCircle size={13} color="var(--text-dim)" /> 0% 회신 대기
                         </span>
                       )}
                     </td>
@@ -203,15 +203,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <td style={{ textAlign: 'center' }}>
                       {step3Done ? (
                         <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={13} color="#10B981" /> 협력사 승인 ✓
+                          <CheckCircle2 size={13} color="var(--success)" /> 협력사 승인 ✓
                         </span>
                       ) : step3Rejected ? (
                         <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <XCircle size={13} color="#EF4444" /> 협력사 거절 ✕
+                          <XCircle size={13} color="var(--danger)" /> 협력사 거절 ✕
                         </span>
                       ) : (
                         <span className="badge badge-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <Clock size={13} color="#9CA3AF" /> 대기
+                          <Clock size={13} color="var(--text-muted)" /> 대기
                         </span>
                       )}
                     </td>
@@ -220,11 +220,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <td style={{ textAlign: 'center' }}>
                       {step4Done ? (
                         <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={13} color="#10B981" /> PO 발행 완료 ✓
+                          <CheckCircle2 size={13} color="var(--success)" /> PO 발행 완료 ✓
                         </span>
                       ) : (
                         <span className="badge badge-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <MinusCircle size={13} color="#6B7280" /> 발행 대기
+                          <MinusCircle size={13} color="var(--text-dim)" /> 발행 대기
                         </span>
                       )}
                     </td>
@@ -251,7 +251,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="todo-section">
         <div className="todo-header">
           <h3>
-            <AlertTriangle size={18} color="#F59E0B" />
+            <AlertTriangle size={18} color="var(--warning)" />
             <span>내가 처리해야 할 항목</span>
             <span className="count-badge">{pendingCount}건</span>
           </h3>
@@ -263,7 +263,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="todo-card-list">
           {pendingRequests.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-              <CheckCircle size={36} color="#10B981" style={{ marginBottom: '10px' }} />
+              <CheckCircle size={36} color="var(--success)" style={{ marginBottom: '10px' }} />
               <p>모든 결재 및 처리 항목이 완료되었습니다.</p>
             </div>
           ) : (
@@ -285,7 +285,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
 
                 <div className="ai-summary-box">
-                  <span style={{ fontWeight: 700, color: '#60A5FA' }}>🤖 AI 에이전트 요약: </span>
+                  <span style={{ fontWeight: 700, color: 'var(--accent)' }}>AI 에이전트 요약 · </span>
                   {req.fullSpecText.split('\n')[1] || req.specSummary}. 협력사 RFQ 3건 발송 준비 완료.
                 </div>
 
