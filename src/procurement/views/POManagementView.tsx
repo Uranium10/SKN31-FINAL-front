@@ -14,11 +14,13 @@ import {
 interface POManagementViewProps {
   poItems: POItem[];
   onCreatePO: (poId: string) => void;
+  onReturnToMR: (poId: string) => void;
 }
 
 export const POManagementView: React.FC<POManagementViewProps> = ({
   poItems,
   onCreatePO,
+  onReturnToMR,
 }) => {
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
   const [selectedRejectReason, setSelectedRejectReason] = useState<POItem | null>(null);
@@ -133,8 +135,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                       </div>
                     ) : (
                       <button
-                        className="btn-primary"
-                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                        className="btn-sm btn-primary"
                         onClick={() => setApprovalModalItem(item)}
                       >
                         <ShoppingCart size={14} />
@@ -143,8 +144,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                     )
                   ) : item.supplierApprovalStatus === 'rejected' ? (
                     <button
-                      className="btn-reject"
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
+                      className="btn-sm btn-reject"
                       onClick={() => setSelectedRejectReason(item)}
                     >
                       <AlertTriangle size={14} />
@@ -152,9 +152,8 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                     </button>
                   ) : (
                     <button
-                      className="btn-outline"
+                      className="btn-sm btn-outline"
                       disabled
-                      style={{ padding: '6px 12px', fontSize: '12px', opacity: 0.5, cursor: 'not-allowed' }}
                     >
                       승인 대기중
                     </button>
@@ -162,6 +161,13 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 </td>
               </tr>
             ))}
+            {poItems.length === 0 && (
+              <tr>
+                <td colSpan={9} className="table-empty-state">
+                  PR 발송 또는 협력사 승인 대기 중인 건이 없습니다.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -236,8 +242,17 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn-primary" onClick={() => setSelectedRejectReason(null)}>
-                확인 완료
+              <button className="btn-outline" onClick={() => setSelectedRejectReason(null)}>
+                닫기
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  onReturnToMR(selectedRejectReason.id);
+                  setSelectedRejectReason(null);
+                }}
+              >
+                MR 재검토로 보내기
               </button>
             </div>
           </div>

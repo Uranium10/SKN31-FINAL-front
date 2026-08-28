@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Item } from '../types';
 import {
   PackagePlus,
@@ -14,14 +14,18 @@ import { RejectReasonModal } from '../components/RejectReasonModal';
 
 interface ItemRegistrationViewProps {
   items: Item[];
+  searchQuery: string;
   onOpenSpecModal: (item: Item) => void;
   onAddItem: (item: Item) => void;
   onApproveItem: (id: string) => void;
   onRejectItem: (id: string, reason: string) => void;
 }
 
+const PAGE_SIZE = 25;
+
 export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
   items,
+  searchQuery,
   onOpenSpecModal,
   onAddItem,
   onApproveItem,
@@ -29,6 +33,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
 }) => {
   // 3-1) 아이템코드 별 오름차순/내림차순 정렬 상태
   const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [rejectingItem, setRejectingItem] = useState<{ id: string; itemCode: string } | null>(null);
 
@@ -45,16 +50,40 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
   const [attrWater, setAttrWater] = useState(false);
 
   // 3-1) 아이템코드 정렬 적용
-  const sortedItems = [...items].sort((a, b) => {
-    return sortAsc
-      ? a.itemCode.localeCompare(b.itemCode)
-      : b.itemCode.localeCompare(a.itemCode);
-  });
+  const sortedItems = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase('ko-KR');
+    return items
+      .filter((item) => !normalizedQuery || [
+        item.itemCode,
+        item.department,
+        item.itemName,
+        item.specSummary,
+        item.fullSpec.manufacturer,
+        item.status,
+      ].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalizedQuery)))
+      .sort((a, b) => sortAsc
+        ? a.itemCode.localeCompare(b.itemCode)
+        : b.itemCode.localeCompare(a.itemCode));
+  }, [items, searchQuery, sortAsc]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
+  const pageItems = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return sortedItems.slice(start, start + PAGE_SIZE);
+  }, [currentPage, sortedItems]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, sortAsc]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName.trim() || !newSpecSummary.trim()) {
-      alert('품목명과 기본 규격을 입력해주세요.');
+      alert('품목명과 규격을 모두 입력해 주세요.');
       return;
     }
 
@@ -99,17 +128,19 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
           <button
             className="btn-outline"
             onClick={() => setSortAsc(!sortAsc)}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px' }}
           >
             <ArrowUpDown size={16} />
             <span>아이템코드 순서 정렬: {sortAsc ? '오름차순 (A-Z ▲)' : '내림차순 (Z-A ▼)'}</span>
           </button>
           <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            총 등록 아이템: <strong style={{ color: 'var(--text-main)' }}>{items.length}</strong>건
+            표시 아이템: <strong style={{ color: 'var(--text-main)' }}>{sortedItems.length}</strong> / {items.length}건
           </span>
         </div>
 
-        <button className="btn-primary" onClick={() => setShowAddModal(true)}>
+        <button
+          className="btn-primary"
+          onClick={() => setShowAddModal(true)}
+        >
           <Plus size={16} />
           <span>신규 아이템 코드 등록</span>
         </button>
@@ -139,7 +170,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
             </tr>
           </thead>
           <tbody>
-            {sortedItems.map((item) => (
+            {pageItems.map((item) => (
               <tr key={item.id}>
                 {/* 3-1) 아이템코드 */}
                 <td>
@@ -234,9 +265,30 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
                 </td>
               </tr>
             ))}
+            {sortedItems.length === 0 && (
+              <tr>
+                <td colSpan={8} className="table-empty-state">
+                  {searchQuery ? `“${searchQuery}”에 일치하는 아이템이 없습니다.` : '등록 검토할 아이템이 없습니다.'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      {sortedItems.length > 0 && (
+        <div className="pagination-bar" aria-label="아이템 목록 페이지 이동">
+          <span>페이지 {currentPage} / {totalPages} · 페이지당 {PAGE_SIZE}건</span>
+          <div>
+            <button type="button" className="btn-outline" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => page - 1)}>
+              이전
+            </button>
+            <button type="button" className="btn-outline" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => page + 1)}>
+              다음
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Item Reject Reason Modal */}
       {rejectingItem && (
@@ -260,7 +312,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
                 <PackagePlus size={20} color="var(--primary)" />
                 <h3>신규 아이템 코드 생성</h3>
               </div>
-              <button className="icon-btn" onClick={() => setShowAddModal(false)}>
+              <button type="button" className="icon-btn" onClick={() => setShowAddModal(false)}>
                 <X size={18} />
               </button>
             </div>
@@ -363,6 +415,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
                     </div>
                   </div>
                 </div>
+
               </div>
 
               <div className="modal-footer">

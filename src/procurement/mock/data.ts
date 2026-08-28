@@ -1,4 +1,11 @@
-import type { Item, MaterialRequest, VendorSelectionGroup, POItem, AiLog } from '../types';
+import type {
+  Item,
+  MaterialRequest,
+  VendorSelectionGroup,
+  POItem,
+  AiLog,
+  ProcurementNotification,
+} from '../types';
 
 export const initialItems: Item[] = [
   {
@@ -127,9 +134,9 @@ export const initialMaterialRequests: MaterialRequest[] = [
     dueDate: '2025-01-25',
     dDay: 2,
     isUrgent: true,
-    status: '승인대기',
+    status: '승인',
     processStage: {
-      approval: '진행중',
+      approval: '완료',
       quotationProgressPercent: 66,
       prSupplierApproved: '대기',
       poCreated: false,
@@ -158,7 +165,7 @@ export const initialMaterialRequests: MaterialRequest[] = [
       approval: '완료',
       quotationProgressPercent: 100,
       prSupplierApproved: '승인',
-      poCreated: false,
+      poCreated: true,
     },
   },
   {
@@ -179,11 +186,11 @@ export const initialMaterialRequests: MaterialRequest[] = [
     dueDate: '2025-02-02',
     dDay: 10,
     isUrgent: false,
-    status: '승인대기',
+    status: '승인',
     processStage: {
-      approval: '진행중',
-      quotationProgressPercent: 33,
-      prSupplierApproved: '대기',
+      approval: '완료',
+      quotationProgressPercent: 100,
+      prSupplierApproved: '승인',
       poCreated: false,
     },
   },
@@ -207,8 +214,59 @@ export const initialMaterialRequests: MaterialRequest[] = [
     isUrgent: false,
     status: '반려',
     rejectReason: '해당 센서는 이전 보관 창고 B구역 호환 재고가 5개 존재함. 재고 우선 사용 요망.',
+    revisionRound: 1,
+    reviewHistory: [
+      {
+        id: 'MR-2025-0885-history-1',
+        round: 1,
+        type: 'buyer_rejection',
+        reason: '해당 센서는 이전 보관 창고 B구역 호환 재고가 5개 존재함. 재고 우선 사용 요망.',
+        source: '구매 담당자',
+        occurredAt: '2025-01-14 10:20',
+      },
+    ],
     processStage: {
       approval: '대기',
+      quotationProgressPercent: 0,
+      prSupplierApproved: '거절',
+      poCreated: false,
+    },
+  },
+  {
+    id: 'MR-2025-0870',
+    mrNo: 'MR-2025-0870',
+    department: '생산2팀',
+    requester: '강현수 과장',
+    itemCode: 'ITEM-008',
+    category: '유압/공구',
+    itemName: '유압 펌프 유닛 HP-100',
+    specSummary: '합금강 고압 펌프 / 100L 규격 / 납기 재협의 필요',
+    fullSpecText: '협력사가 최초 납기 대응 불가를 사유로 PR 승인을 거절했습니다. 대체 협력사 또는 변경 납기로 MR을 다시 검토해야 합니다.',
+    hasAttachment: false,
+    attachmentCount: 0,
+    attachmentFiles: [],
+    unitPrice: 1450000,
+    totalPrice: 14500000,
+    quantity: 10,
+    dueDate: '2025-01-20',
+    dDay: 0,
+    isUrgent: true,
+    status: '승인대기',
+    revisionRound: 1,
+    returnedFromSupplier: true,
+    returnReason: '원자재 수급 지연으로 최초 납기 대응 불가. 납기 변경 또는 대체 협력사 선정이 필요합니다.',
+    reviewHistory: [
+      {
+        id: 'MR-2025-0870-history-1',
+        round: 1,
+        type: 'supplier_return',
+        reason: '원자재 수급 지연으로 최초 납기 대응 불가. 납기 변경 또는 대체 협력사 선정이 필요합니다.',
+        source: '대원산업(주)',
+        occurredAt: '2025-01-16 09:40',
+      },
+    ],
+    processStage: {
+      approval: '진행중',
       quotationProgressPercent: 0,
       prSupplierApproved: '거절',
       poCreated: false,
@@ -232,6 +290,19 @@ export const initialVendorGroups: VendorSelectionGroup[] = [
     prSent: true,
     prNo: 'PR-2025-0891',
     selectedSupplierId: 'SUP-01',
+    supplierApprovalStatus: 'approved',
+    selectionRound: 1,
+    selectionHistory: [
+      {
+        id: 'VG-001-selection-1',
+        round: 1,
+        supplierId: 'SUP-01',
+        supplierName: '한국밸브(주)',
+        prNo: 'PR-2025-0891',
+        status: 'approved',
+        selectedAt: '2025-01-15 15:10',
+      },
+    ],
     quotations: [
       {
         supplierId: 'SUP-01',
@@ -421,5 +492,60 @@ export const initialAiLogs: AiLog[] = [
     title: 'RFQ 5개 공급사 자동 발송 완료',
     detail: 'MR-0888 · 이메일 발송 기록 ERPNext에 자동 반영됨',
     mrNo: 'MR-2025-0888',
+  },
+];
+
+// 현재는 화면 검증용 예시 데이터입니다. 이후 ERPNext webhook/SSE 이벤트를
+// 같은 형태로 변환하면 Header 컴포넌트를 변경하지 않고 실시간 알림으로 교체할 수 있습니다.
+export const initialNotifications: ProcurementNotification[] = [
+  {
+    id: 'notice-new-mr-0892',
+    title: '신규 MR이 접수되었습니다',
+    detail: '생산1팀 · 유압 실린더 HSC-200 긴급 구매 요청',
+    time: '방금 전',
+    unread: true,
+    targetTab: 'mr-list',
+    reference: 'MR-2025-0892',
+    tone: 'warning',
+  },
+  {
+    id: 'notice-quotation-0891',
+    title: '요청한 견적이 모두 도착했습니다',
+    detail: 'MR-2025-0891 · 3개 협력사 회신 완료',
+    time: '14분 전',
+    unread: true,
+    targetTab: 'vendor-select',
+    reference: 'MR-2025-0891',
+    tone: 'success',
+  },
+  {
+    id: 'notice-item-003',
+    title: '신규 아이템 코드 확인이 필요합니다',
+    detail: 'ITEM-003 · 삼상 유도 모터 MS-400',
+    time: '38분 전',
+    unread: true,
+    targetTab: 'item-register',
+    reference: 'ITEM-003',
+    tone: 'info',
+  },
+  {
+    id: 'notice-pr-rejected-0870',
+    title: '협력사가 PR 승인을 거절했습니다',
+    detail: 'MR-2025-0870 · 납기 대응 불가, MR 재검토 필요',
+    time: '1시간 전',
+    unread: true,
+    targetTab: 'mr-list',
+    reference: 'MR-2025-0870',
+    tone: 'danger',
+  },
+  {
+    id: 'notice-po-0042',
+    title: 'PO 생성과 발송이 완료되었습니다',
+    detail: 'PO-2025-0042 · 한국밸브(주)',
+    time: '어제 14:20',
+    unread: false,
+    targetTab: 'po-manage',
+    reference: 'PO-2025-0042',
+    tone: 'success',
   },
 ];

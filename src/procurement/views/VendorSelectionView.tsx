@@ -4,7 +4,6 @@ import {
   Bot,
   Sparkles,
   FileText,
-  Send,
   X,
   Paperclip,
   Award,
@@ -12,12 +11,15 @@ import {
   Clock,
   Mail,
   CheckCircle2,
-  XCircle
+  XCircle,
+  LoaderCircle,
+  AlertTriangle
 } from 'lucide-react';
 
 interface VendorSelectionViewProps {
   vendorGroups: VendorSelectionGroup[];
   onSelectSupplier: (groupId: string, supplierId: string) => void;
+  onWithdrawSupplierSelection: (groupId: string, reason: string) => void;
   onOpenSpecModalByItemCode: (itemCode: string) => void;
   onExtendDeadline: (groupId: string, newDate: string, newTime: string) => void;
 }
@@ -25,6 +27,7 @@ interface VendorSelectionViewProps {
 export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   vendorGroups,
   onSelectSupplier,
+  onWithdrawSupplierSelection,
   onExtendDeadline,
 }) => {
   // Active selected MR Group
@@ -34,6 +37,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
   const [showRankModal, setShowRankModal] = useState<boolean>(false);
   const [extendingGroup, setExtendingGroup] = useState<VendorSelectionGroup | null>(null);
+  const [confirmingSupplierId, setConfirmingSupplierId] = useState<string | null>(null);
+  const [selectingSupplierId, setSelectingSupplierId] = useState<string | null>(null);
+  const [changingGroup, setChangingGroup] = useState<VendorSelectionGroup | null>(null);
+  const [changeReason, setChangeReason] = useState('');
 
   // Extension Modal Form state
   const [extDate, setExtDate] = useState<string>('2025-01-25');
@@ -53,12 +60,70 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setExtendingGroup(null);
   };
 
+  const handleCloseRankModal = () => {
+    if (selectingSupplierId) return;
+    setConfirmingSupplierId(null);
+    setShowRankModal(false);
+  };
+
+  const handleConfirmSupplier = (supplierId: string) => {
+    if (!selectedGroup || selectingSupplierId) return;
+
+    const groupId = selectedGroup.id;
+    const prNo = `PR-2025-${selectedGroup.mrNo.split('-')[2] || '0890'}`;
+    setConfirmingSupplierId(null);
+    setSelectingSupplierId(supplierId);
+
+    window.setTimeout(() => {
+      onSelectSupplier(groupId, supplierId);
+      setSelectedGroup((current) => {
+        if (!current || current.id !== groupId) return current;
+        return {
+          ...current,
+          selectedSupplierId: supplierId,
+          supplierApprovalStatus: 'pending',
+          prSent: true,
+          prNo,
+          quotations: current.quotations.map((quotation) => ({
+            ...quotation,
+            isSelected: quotation.supplierId === supplierId,
+          })),
+        };
+      });
+      setSelectingSupplierId(null);
+    }, 520);
+  };
+
+  const handleConfirmSelectionChange = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!changingGroup || !changeReason.trim()) return;
+
+    const clearedGroup: VendorSelectionGroup = {
+      ...changingGroup,
+      selectedSupplierId: undefined,
+      supplierApprovalStatus: undefined,
+      prSent: false,
+      prNo: undefined,
+      quotations: changingGroup.quotations.map((quotation) => ({
+        ...quotation,
+        isSelected: false,
+      })),
+    };
+
+    onWithdrawSupplierSelection(changingGroup.id, changeReason.trim());
+    setSelectedGroup(clearedGroup);
+    setChangingGroup(null);
+    setChangeReason('');
+    setConfirmingSupplierId(null);
+    setShowRankModal(true);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div
         style={{
           backgroundColor: 'var(--primary-soft)',
-          border: '1px solid rgba(0, 122, 255, 0.12)',
+          border: '1px solid rgba(60, 60, 67, 0.12)',
           borderRadius: 'var(--radius-md)',
           padding: '12px 18px',
           fontSize: '13px',
@@ -77,20 +142,19 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       {/* MR 번호와 아이템명 묶음 카드 리스트 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {vendorGroups.map((group) => {
-          const isCurrentActive = selectedGroup?.id === group.id;
           const respondedCount = group.quotations.filter((q) => q.isResponded).length;
           const totalSuppliers = group.quotations.length;
           const percent = Math.round((respondedCount / totalSuppliers) * 100);
           const bestQuotation = group.quotations.find((q) => q.aiRank === 1);
+          const selectedQuotation = group.quotations.find((q) => q.supplierId === group.selectedSupplierId);
+          const hasSelection = Boolean(group.selectedSupplierId);
+          const isApproved = group.supplierApprovalStatus === 'approved';
+          const isPendingApproval = group.supplierApprovalStatus === 'pending';
 
           return (
             <div
               key={group.id}
-              className={`vendor-group-card ${isCurrentActive ? 'active' : ''}`}
-              style={{
-                border: isCurrentActive ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                boxShadow: 'none'
-              }}
+              className={`vendor-group-card ${isApproved ? 'is-approved' : isPendingApproval ? 'is-pending-approval' : ''}`}
             >
               {/* Header: MR 번호 & 아이템명 묶음 + 위치 1 (마감일수) + 위치 2 (마감시간 연장 버튼) */}
               <div className="vendor-group-header" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -105,56 +169,57 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </h3>
 
                   {/* 📍 위치 1: 협력사 선정 마감일수 기재 (이미지 1번 위치) */}
-                  <span
-                    className="badge"
-                    style={{
-                      backgroundColor: 'var(--warning-bg)',
-                      color: 'var(--warning)',
-                      border: '1px solid rgba(184, 93, 0, 0.16)',
-                      padding: '4px 10px',
-                      borderRadius: '12px',
-                      fontSize: '12px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      fontWeight: 700
-                    }}
-                    title="협력사 견적 제출 마감 일시"
-                  >
-                    <Clock size={13} color="var(--warning)" />
-                    <span>마감 D-{group.deadlineDDay}일 ({group.deadlineDate} {group.deadlineTime} 마감)</span>
-                    {group.isExtended && <span style={{ color: 'var(--primary)', fontSize: '10px' }}>(연장됨)</span>}
-                  </span>
+                  {hasSelection ? (
+                    <span className="badge badge-gray vendor-closed-badge">
+                      <CheckCircle2 size={12} /> 견적 마감 완료
+                    </span>
+                  ) : (
+                    <span
+                      className="badge vendor-deadline-badge"
+                      title="협력사 견적 제출 마감 일시"
+                    >
+                      <Clock size={13} />
+                      <span>마감 D-{group.deadlineDDay}일 ({group.deadlineDate} {group.deadlineTime} 마감)</span>
+                      {group.isExtended && <span className="vendor-extended-label">(연장됨)</span>}
+                    </span>
+                  )}
                 </div>
 
                 {/* 📍 위치 2: 마감시간 연장 버튼 (이미지 2번 위치) & 회신율 Badge */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
                   {/* 위치 2: 마감시간 연장 버튼 */}
-                  <button
-                    className="btn-outline"
-                    onClick={() => handleOpenExtendModal(group)}
-                    style={{
-                      padding: '5px 12px',
-                      fontSize: '12px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      borderColor: 'rgba(184, 93, 0, 0.2)',
-                      color: 'var(--warning)',
-                      backgroundColor: 'var(--warning-bg)'
-                    }}
-                    title="마감시간을 늘리고 미회신 협력사에 안내 메일을 재발송합니다."
-                  >
-                    <Calendar size={13} color="var(--warning)" />
-                    <span>📅 마감시간 연장</span>
-                  </button>
+                  {!hasSelection && (
+                    <button
+                      className="btn-sm btn-warning"
+                      onClick={() => handleOpenExtendModal(group)}
+                      title="마감시간을 늘리고 미회신 협력사에 안내 메일을 재발송합니다."
+                    >
+                      <Calendar size={13} />
+                      <span>📅 마감시간 연장</span>
+                    </button>
+                  )}
 
                   <span className="badge badge-purple">
                     협력사 회신율: {respondedCount}/{totalSuppliers}개사 ({percent}%)
                   </span>
                   {group.prSent && (
-                    <span className="badge badge-green" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Send size={12} /> {group.prNo} 전송완료
+                    <span
+                      className={`badge ${
+                        group.supplierApprovalStatus === 'approved'
+                          ? 'badge-green'
+                          : group.supplierApprovalStatus === 'rejected'
+                            ? 'badge-red'
+                            : 'badge-yellow'
+                      }`}
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      {group.supplierApprovalStatus === 'approved' ? (
+                        <><CheckCircle2 size={12} /> 협력사 승인 완료 · {group.prNo}</>
+                      ) : group.supplierApprovalStatus === 'rejected' ? (
+                        <><XCircle size={12} /> 협력사 승인 거절 · {group.prNo}</>
+                      ) : (
+                        <><Clock size={12} /> 협력사 승인 대기 중 · {group.prNo}</>
+                      )}
                     </span>
                   )}
                 </div>
@@ -166,47 +231,119 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                     요청 부서: <strong style={{ color: 'var(--text-main)' }}>{group.department}</strong> · 납기요청일: {group.targetDueDate}
                   </div>
-                  {bestQuotation && (
+                  {selectedQuotation ? (
+                    <div className="vendor-selected-summary">
+                      <CheckCircle2 size={16} />
+                      <span>
+                        선정 협력사: <strong>{selectedQuotation.supplierName}</strong>
+                        {' '}(₩{selectedQuotation.quoteUnitPrice.toLocaleString()} / EA, 납기 {selectedQuotation.leadTimeDays}일)
+                      </span>
+                    </div>
+                  ) : bestQuotation ? (
                     <div style={{ fontSize: '13px', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
                       <Award size={16} />
                       <span>AI 1위 추천 공급사: {bestQuotation.supplierName} (₩{bestQuotation.quoteUnitPrice.toLocaleString()} / EA, 납기 {bestQuotation.leadTimeDays}일)</span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* 버튼들: 상세사항 확인 & 견적 순위 */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {group.selectedSupplierId && group.supplierApprovalStatus === 'pending' && (
+                    <button
+                      className="btn-outline"
+                      onClick={() => {
+                        setChangingGroup(group);
+                        setChangeReason('');
+                      }}
+                    >
+                      선정 변경
+                    </button>
+                  )}
                   {/* (1) 상세사항 확인 버튼 */}
                   <button
                     className="btn-outline"
-                    style={{ padding: '8px 14px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
                     onClick={() => {
                       setSelectedGroup(group);
                       setShowDetailModal(true);
                     }}
                   >
-                    <FileText size={16} color="var(--primary)" />
+                    <FileText size={16} />
                     <span>상세사항 확인</span>
                   </button>
 
                   {/* (2) 견적 순위 (AI 분석) 버튼 */}
                   <button
-                    className="btn-primary"
-                    style={{ padding: '8px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    className={hasSelection ? 'btn-outline' : 'btn-primary'}
                     onClick={() => {
                       setSelectedGroup(group);
                       setShowRankModal(true);
                     }}
                   >
-                    <Bot size={16} />
-                    <span>AI 견적 순위 & 업체 선정</span>
+                    {hasSelection ? <CheckCircle2 size={16} /> : <Bot size={16} />}
+                    <span>{hasSelection ? '선정 결과 보기' : 'AI 견적 순위 & 업체 선정'}</span>
                   </button>
                 </div>
               </div>
             </div>
           );
         })}
+        {vendorGroups.length === 0 && (
+          <div className="workflow-empty-state">
+            <CheckCircle2 size={22} />
+            <strong>현재 협력사 선정 대기 건이 없습니다.</strong>
+            <span>PR 발송을 마친 건은 PO 관리 화면으로 이동했습니다.</span>
+          </div>
+        )}
       </div>
+
+      {changingGroup && (
+        <div className="modal-overlay" onClick={() => setChangingGroup(null)}>
+          <div className="modal-content vendor-change-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title-with-icon">
+                <AlertTriangle size={20} />
+                <div>
+                  <h3>협력사 선정 변경</h3>
+                  <p>{changingGroup.mrNo} · 기존 PR을 철회한 뒤 새 업체를 선정합니다.</p>
+                </div>
+              </div>
+              <button type="button" className="icon-btn" onClick={() => setChangingGroup(null)} aria-label="선정 변경 창 닫기">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmSelectionChange}>
+              <div className="modal-body vendor-change-body">
+                <div className="vendor-change-warning">
+                  현재 선정 업체 <strong>
+                    {changingGroup.quotations.find((quotation) => quotation.supplierId === changingGroup.selectedSupplierId)?.supplierName}
+                  </strong>의 {changingGroup.prNo} 요청을 철회하고 철회 이력을 보존합니다.
+                </div>
+                <div className="form-group">
+                  <label htmlFor="vendor-change-reason">선정 변경 사유</label>
+                  <textarea
+                    id="vendor-change-reason"
+                    className="form-input"
+                    rows={4}
+                    value={changeReason}
+                    onChange={(event) => setChangeReason(event.target.value)}
+                    placeholder="납기 대응 불가, 조건 변경 등 기존 요청을 철회하는 사유를 입력하세요."
+                    autoFocus
+                    required
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn-outline" onClick={() => setChangingGroup(null)}>취소</button>
+                <button type="submit" className="btn-warning" disabled={!changeReason.trim()}>
+                  기존 요청 철회 후 재선정
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 📍 위치 2 클릭 시: 마감시간 연장 & 미회신 업체 메일 발송 Modal */}
       {extendingGroup && (
@@ -283,7 +420,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 <button type="button" className="btn-outline" onClick={() => setExtendingGroup(null)}>
                   취소
                 </button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--warning)', color: 'var(--text-on-color)', fontWeight: 700 }}>
+                <button type="submit" className="btn-warning">
                   <Mail size={14} />
                   마감 연장 및 미회신 업체 메일 발송
                 </button>
@@ -435,8 +572,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
       {/* 5-1-2) 견적 순위 (AI 추천 및 업체 선정 + PR 자동 전송) Modal */}
       {showRankModal && selectedGroup && (
-        <div className="modal-overlay" onClick={() => setShowRankModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '740px' }}>
+        <div className="modal-overlay" onClick={handleCloseRankModal}>
+          <div className="modal-content vendor-rank-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Bot size={22} color="var(--accent)" />
@@ -447,25 +584,25 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </span>
                 </div>
               </div>
-              <button className="icon-btn" onClick={() => setShowRankModal(false)}>
+              <button className="icon-btn" onClick={handleCloseRankModal} disabled={Boolean(selectingSupplierId)}>
                 <X size={18} />
               </button>
             </div>
 
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div className="vendor-rank-list">
-                {selectedGroup.quotations
+                {[...selectedGroup.quotations]
                   .sort((a, b) => a.aiRank - b.aiRank)
                   .map((q) => (
                     <div
                       key={q.supplierId}
                       className={`vendor-rank-item ${q.aiRank === 1 ? 'top-rank' : ''}`}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div className="vendor-rank-main">
                         <div className={`rank-badge rank-${q.aiRank}`}>
                           {q.aiRank}
                         </div>
-                        <div>
+                        <div className="vendor-rank-copy">
                           <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span>{q.supplierName}</span>
                             {q.aiRank === 1 && (
@@ -483,20 +620,44 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         </div>
                       </div>
 
-                      <div>
+                      <div className="vendor-rank-action">
                         {selectedGroup.selectedSupplierId === q.supplierId ? (
-                          <span className="badge badge-green" style={{ padding: '8px 12px', fontSize: '12px' }}>
-                            ✓ 업체 선정완료 (PR 전송됨)
+                          <span className="badge badge-green vendor-selection-complete" aria-live="polite">
+                            <CheckCircle2 size={13} /> 업체 선정 완료 (PR 전송됨)
                           </span>
+                        ) : selectedGroup.selectedSupplierId ? (
+                          <span className="badge badge-gray vendor-selection-locked">
+                            선정 변경 후 선택 가능
+                          </span>
+                        ) : selectingSupplierId === q.supplierId ? (
+                          <span className="vendor-selection-transition" role="status" aria-live="polite">
+                            <LoaderCircle size={14} /> 업체 선정 및 PR 전송 중
+                          </span>
+                        ) : confirmingSupplierId === q.supplierId ? (
+                          <div className="vendor-selection-confirm" role="group" aria-label={`${q.supplierName} 업체 선정 확인`}>
+                            <span>이 업체로 선정하시겠습니까?</span>
+                            <div>
+                              <button
+                                type="button"
+                                className="btn-sm btn-primary"
+                                onClick={() => handleConfirmSupplier(q.supplierId)}
+                              >
+                                예
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-sm btn-outline"
+                                onClick={() => setConfirmingSupplierId(null)}
+                              >
+                                아니오
+                              </button>
+                            </div>
+                          </div>
                         ) : (
                           <button
-                            className="btn-primary"
-                            style={{ padding: '8px 14px', fontSize: '12px' }}
-                            onClick={() => {
-                              onSelectSupplier(selectedGroup.id, q.supplierId);
-                              alert(`[${q.supplierName}]이(가) 최종 업체로 선정되었습니다!\nPR-2025-${selectedGroup.mrNo.split('-')[2]}가 ERPNext 시스템으로 자동 전송되었습니다.`);
-                              setShowRankModal(false);
-                            }}
+                            className="btn-sm btn-primary"
+                            onClick={() => setConfirmingSupplierId(q.supplierId)}
+                            disabled={Boolean(selectingSupplierId)}
                           >
                             업체 선정 및 PR 자동 전송
                           </button>
@@ -508,7 +669,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
             </div>
 
             <div className="modal-footer">
-              <button className="btn-outline" onClick={() => setShowRankModal(false)}>
+              <button className="btn-outline" onClick={handleCloseRankModal} disabled={Boolean(selectingSupplierId)}>
                 닫기
               </button>
             </div>

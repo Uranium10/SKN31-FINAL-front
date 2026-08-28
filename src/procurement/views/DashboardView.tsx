@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   Clock,
   Users,
@@ -10,7 +10,8 @@ import {
   AlertTriangle,
   Layers,
   CheckCircle2,
-  MinusCircle
+  MinusCircle,
+  ChevronRight
 } from 'lucide-react';
 import type { MaterialRequest, NavigationTab } from '../types';
 
@@ -29,6 +30,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenSpecModal,
   setCurrentTab,
 }) => {
+  const processTrackerRef = useRef<HTMLDivElement>(null);
+  const pendingActionsRef = useRef<HTMLDivElement>(null);
+
+  const scrollToSection = (target: React.RefObject<HTMLDivElement | null>) => {
+    target.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   // 2-1) 내 승인 대기 건수
   const pendingRequests = requests.filter((r) => r.status === '승인대기');
   const pendingCount = pendingRequests.length;
@@ -45,66 +53,98 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* 2-1 & 2-2) Top KPI Summary Cards */}
       <div className="kpi-grid">
         {/* Card 1: 내 승인 대기 */}
-        <div className="kpi-card">
-          <div className="kpi-top">
+        <button
+          type="button"
+          className="kpi-card kpi-card-action"
+          onClick={() => scrollToSection(pendingActionsRef)}
+          aria-controls="dashboard-pending-actions"
+          aria-label={`내 승인 대기 ${pendingCount}건 보기`}
+        >
+          <span className="kpi-top">
             <span className="kpi-title">내 승인 대기</span>
-            <div className="kpi-icon warning">
+            <span className="kpi-icon warning">
               <Clock size={18} />
-            </div>
-          </div>
-          <div className="kpi-value">
+            </span>
+          </span>
+          <span className="kpi-value">
             {pendingCount} <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-muted)' }}>건</span>
-          </div>
-          <div className="kpi-sub" style={{ color: urgentPendingCount > 0 ? 'var(--danger)' : 'var(--text-dim)', fontWeight: urgentPendingCount > 0 ? 600 : 400 }}>
-            {urgentPendingCount > 0 ? `🔥 긴급 ${urgentPendingCount}건 포함` : '긴급 건 없음'}
-          </div>
-        </div>
+          </span>
+          <span className="kpi-sub" style={{ color: urgentPendingCount > 0 ? 'var(--danger)' : 'var(--text-dim)', fontWeight: urgentPendingCount > 0 ? 600 : 400 }}>
+            <span>{urgentPendingCount > 0 ? `🔥 긴급 ${urgentPendingCount}건 포함` : '긴급 건 없음'}</span>
+            <ChevronRight className="kpi-action-arrow" size={14} aria-hidden="true" />
+          </span>
+        </button>
 
         {/* Card 2: 우리팀 총 건수 */}
-        <div className="kpi-card">
-          <div className="kpi-top">
+        <button
+          type="button"
+          className="kpi-card kpi-card-action"
+          onClick={() => scrollToSection(processTrackerRef)}
+          aria-controls="dashboard-process-tracker"
+          aria-label={`우리팀 전체 MR ${teamTotalCount}건 진행 현황 보기`}
+        >
+          <span className="kpi-top">
             <span className="kpi-title">우리팀 총 건수</span>
-            <div className="kpi-icon info">
+            <span className="kpi-icon info">
               <Users size={18} />
-            </div>
-          </div>
-          <div className="kpi-value">
+            </span>
+          </span>
+          <span className="kpi-value">
             {teamTotalCount} <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-muted)' }}>건</span>
-          </div>
-          <div className="kpi-sub">AI 자동 처리 진행 중 2건</div>
-        </div>
+          </span>
+          <span className="kpi-sub">
+            <span>AI 자동 처리 진행 중 2건</span>
+            <ChevronRight className="kpi-action-arrow" size={14} aria-hidden="true" />
+          </span>
+        </button>
 
         {/* Card 3: 협력사 미선정 건 */}
-        <div className="kpi-card">
-          <div className="kpi-top">
+        <button
+          type="button"
+          className="kpi-card kpi-card-action"
+          onClick={() => setCurrentTab('vendor-select')}
+          aria-label={`협력사 미선정 ${quotationWaitCount}건 목록으로 이동`}
+        >
+          <span className="kpi-top">
             <span className="kpi-title">협력사 미선정 건</span>
-            <div className="kpi-icon warning">
+            <span className="kpi-icon warning">
               <Scale size={18} />
-            </div>
-          </div>
-          <div className="kpi-value">
+            </span>
+          </span>
+          <span className="kpi-value">
             {quotationWaitCount} <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-muted)' }}>건</span>
-          </div>
-          <div className="kpi-sub" style={{ color: 'var(--warning)' }}>오늘 마감 1건 포함</div>
-        </div>
+          </span>
+          <span className="kpi-sub" style={{ color: 'var(--warning)' }}>
+            <span>오늘 마감 1건 포함</span>
+            <ChevronRight className="kpi-action-arrow" size={14} aria-hidden="true" />
+          </span>
+        </button>
 
         {/* Card 4: 이번 달 발주 PO */}
-        <div className="kpi-card">
-          <div className="kpi-top">
+        <button
+          type="button"
+          className="kpi-card kpi-card-action"
+          onClick={() => setCurrentTab('po-manage')}
+          aria-label="이번 달 발주 PO 목록으로 이동"
+        >
+          <span className="kpi-top">
             <span className="kpi-title">이번 달 발주 PO</span>
-            <div className="kpi-icon success">
+            <span className="kpi-icon success">
               <ShoppingCart size={18} />
-            </div>
-          </div>
-          <div className="kpi-value" style={{ color: 'var(--success)' }}>
+            </span>
+          </span>
+          <span className="kpi-value" style={{ color: 'var(--success)' }}>
             ₩184M
-          </div>
-          <div className="kpi-sub">12건 발행 완료</div>
-        </div>
+          </span>
+          <span className="kpi-sub">
+            <span>12건 발행 완료</span>
+            <ChevronRight className="kpi-action-arrow" size={14} aria-hidden="true" />
+          </span>
+        </button>
       </div>
 
       {/* 세번째 이미지 반영: MR 번호별 체크표시 단계 진행 현황 표 (Table Trackers) */}
-      <div className="process-tracker-card">
+      <div id="dashboard-process-tracker" ref={processTrackerRef} className="process-tracker-card">
         <div className="process-header">
           <h3>
             <Layers size={18} color="var(--primary)" />
@@ -174,7 +214,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <XCircle size={13} color="var(--danger)" /> 반려됨 ✕
                         </span>
                       ) : (
-                        <span className="badge badge-purple" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                           <Clock size={13} color="var(--warning)" /> 승인 대기
                         </span>
                       )}
@@ -188,7 +228,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </span>
                       ) : step2Percent > 0 ? (
                         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                          <span className="badge badge-blue">
+                          <span className="badge badge-progress">
                             {step2Percent}% 회신 중
                           </span>
                         </div>
@@ -236,7 +276,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       ) : completedSteps === 4 ? (
                         <span className="badge badge-green">4/4단계 최종 완료</span>
                       ) : (
-                        <span className="badge badge-blue">{completedSteps}/4단계 진행 중</span>
+                        <span className="badge badge-progress">{completedSteps}/4단계 진행 중</span>
                       )}
                     </td>
                   </tr>
@@ -248,14 +288,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 2-3) 내가 처리해야 할 항목 (간단하게 표시) */}
-      <div className="todo-section">
+      <div id="dashboard-pending-actions" ref={pendingActionsRef} className="todo-section">
         <div className="todo-header">
           <h3>
             <AlertTriangle size={18} color="var(--warning)" />
             <span>내가 처리해야 할 항목</span>
             <span className="count-badge">{pendingCount}건</span>
           </h3>
-          <button className="btn-outline" style={{ fontSize: '12px', padding: '4px 10px' }} onClick={() => setCurrentTab('mr-list')}>
+          <button className="btn-sm btn-outline" onClick={() => setCurrentTab('mr-list')}>
             전체 목록 보기 →
           </button>
         </div>
@@ -270,7 +310,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             pendingRequests.map((req) => (
               <div key={req.id} className="todo-card">
                 <div className="todo-top">
-                  <span className={`badge ${req.isUrgent ? 'badge-red' : 'badge-purple'}`}>
+                  <span className={`badge ${req.isUrgent ? 'badge-red' : 'badge-yellow'}`}>
                     {req.isUrgent ? '🔥 긴급 승인대기' : '일반 승인대기'}
                   </span>
                   <span className="mr-code">{req.mrNo}</span>

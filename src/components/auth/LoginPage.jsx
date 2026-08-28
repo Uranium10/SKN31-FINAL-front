@@ -1,6 +1,7 @@
 import React from 'react';
 import SailboatIcon from '../common/SailboatIcon';
 import UndulatingGrid from '../common/UndulatingGrid';
+import ReactiveDotCanvas from './ReactiveDotCanvas';
 
 export const LoginPage = ({
   email,
@@ -12,6 +13,7 @@ export const LoginPage = ({
   handleLogin
 }) => (
   <div className="login-page">
+    <ReactiveDotCanvas />
     <div className="login-card">
       <div className="circular-logo-badge">
         <div className="perspective-plane">

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import './index.css';
 import {
   clearTokens,
@@ -145,14 +145,14 @@ export function App() {
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     await logoutSession().catch(() => {});
     setAuthState('guest');
     setCurrentUser(null);
     setEmail('');
     setPassword('');
     setAssistantOpen(false);
-  };
+  }, []);
 
   const currentSession = sessions.find((session) => session.id === activeSessionId) || sessions[0];
 

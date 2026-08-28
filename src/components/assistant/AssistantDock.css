@@ -10,14 +10,16 @@
 }
 
 .assistant-launcher {
+  width: 52px;
   min-width: 52px;
   height: 52px;
-  padding: 0 18px;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 26px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 9px;
   color: #FFFFFF;
   background: #000000;
@@ -25,31 +27,79 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease, background 180ms ease;
+  white-space: nowrap;
+  contain: layout paint;
+  transform: translateZ(0);
+  will-change: width, transform;
+  transition:
+    width 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 180ms ease;
 }
 
 .assistant-launcher:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px) translateZ(0);
   background: #27272A;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42), 0 3px 8px rgba(0, 0, 0, 0.18);
+}
+
+.assistant-dock button:focus-visible {
+  outline: 3px solid rgba(29, 29, 31, 0.18);
+  outline-offset: 2px;
 }
 
 .assistant-launcher > svg,
 .assistant-launcher > .sailboat-icon {
+  margin-left: 15px;
   width: 20px;
   height: 20px;
   flex: 0 0 auto;
   fill: #FFFFFF;
 }
 
+.assistant-launcher > span {
+  width: 126px;
+  flex: 0 0 126px;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-4px);
+  white-space: nowrap;
+  transition:
+    opacity 180ms ease 70ms,
+    transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.assistant-dock:not(.is-open) .assistant-launcher:hover,
+.assistant-dock:not(.is-open) .assistant-launcher:focus-visible {
+  width: 196px;
+}
+
+.assistant-dock:not(.is-open) .assistant-launcher:hover > span,
+.assistant-dock:not(.is-open) .assistant-launcher:focus-visible > span {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 .assistant-dock.is-open .assistant-launcher {
   min-width: 52px;
   width: 52px;
   padding: 0;
+  justify-content: center;
+  gap: 0;
   color: #1D1D1F;
   background: rgba(255, 255, 255, 0.95);
   border-color: rgba(0, 0, 0, 0.12);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.assistant-dock.is-open .assistant-launcher > svg {
+  margin-left: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-launcher,
+  .assistant-launcher > span {
+    transition-duration: 1ms;
+  }
 }
 
 .assistant-dock.is-open .assistant-launcher svg {

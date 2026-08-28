@@ -43,11 +43,16 @@ export interface MaterialRequest {
   attachmentFiles: string[];
   unitPrice: number;
   totalPrice: number;
+  quantity?: number;
   dueDate: string; // YYYY-MM-DD
   dDay: number;
   isUrgent: boolean;
   status: '승인' | '승인대기' | '반려';
   rejectReason?: string;
+  revisionRound?: number;
+  returnedFromSupplier?: boolean;
+  returnReason?: string;
+  reviewHistory?: MRReviewHistoryEntry[];
   // Progress stages
   processStage: {
     approval: '완료' | '진행중' | '대기';
@@ -55,6 +60,17 @@ export interface MaterialRequest {
     prSupplierApproved: '승인' | '거절' | '대기';
     poCreated: boolean;
   };
+}
+
+export type MRReviewHistoryType = 'buyer_rejection' | 'supplier_return';
+
+export interface MRReviewHistoryEntry {
+  id: string;
+  round: number;
+  type: MRReviewHistoryType;
+  reason: string;
+  source: string;
+  occurredAt: string;
 }
 
 export interface SupplierQuotation {
@@ -72,6 +88,18 @@ export interface SupplierQuotation {
   isSelected: boolean;
 }
 
+export interface VendorSelectionHistoryEntry {
+  id: string;
+  round: number;
+  supplierId: string;
+  supplierName: string;
+  prNo: string;
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+  selectedAt: string;
+  withdrawnAt?: string;
+  withdrawalReason?: string;
+}
+
 export interface VendorSelectionGroup {
   id: string;
   mrNo: string;
@@ -87,6 +115,9 @@ export interface VendorSelectionGroup {
   isExtended?: boolean;
   quotations: SupplierQuotation[];
   selectedSupplierId?: string;
+  supplierApprovalStatus?: 'approved' | 'rejected' | 'pending';
+  selectionRound?: number;
+  selectionHistory?: VendorSelectionHistoryEntry[];
   prSent: boolean;
   prNo?: string;
 }
@@ -115,4 +146,24 @@ export interface AiLog {
   title: string;
   detail: string;
   mrNo?: string;
+}
+
+export interface ProcurementNotification {
+  id: string;
+  title: string;
+  detail: string;
+  time: string;
+  unread: boolean;
+  targetTab: NavigationTab;
+  reference?: string;
+  tone: 'info' | 'success' | 'warning' | 'danger';
+}
+
+export interface GlobalSearchResult {
+  id: string;
+  type: 'item' | 'mr';
+  title: string;
+  subtitle: string;
+  searchValue: string;
+  targetTab: NavigationTab;
 }
