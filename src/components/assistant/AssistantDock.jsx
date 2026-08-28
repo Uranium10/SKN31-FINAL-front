@@ -3,10 +3,10 @@ import SailboatIcon from '../common/SailboatIcon';
 import './AssistantDock.css';
 
 const QUICK_ACTIONS = [
-  { label: '내 승인 필요', prompt: '내 승인 필요한 작업만 보여줘' },
-  { label: '검토 권고', prompt: '검토 권고 작업만 보여줘' },
+  { label: 'MR 승인 대기', prompt: 'MR 승인 대기 목록으로 이동해줘' },
+  { label: '협력사 선정', prompt: '협력사 선정 화면으로 이동해줘' },
+  { label: 'PO 관리', prompt: 'PO 관리 화면으로 이동해줘' },
   { label: '현재 화면 설명', prompt: '현재 화면과 작업 상태를 설명해줘' },
-  { label: 'Scheduler 열기', prompt: 'Flow Scheduler 열어줘' },
 ];
 
 export default function AssistantDock({
