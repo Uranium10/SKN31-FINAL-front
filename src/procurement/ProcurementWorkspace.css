@@ -134,7 +134,7 @@
   background-color: #000000;
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
 }
 
 .nav-item.active svg {
@@ -1128,7 +1128,7 @@
   color: #FFFFFF !important;
   background: #000000 !important;
   border-color: #000000 !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22) !important;
+  box-shadow: none !important;
   font-weight: 600;
 }
 
