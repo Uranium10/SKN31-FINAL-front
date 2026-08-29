@@ -356,9 +356,9 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  .login-dot-canvas,
+  .login-dot-canvas::before,
+  .login-dot-canvas::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
