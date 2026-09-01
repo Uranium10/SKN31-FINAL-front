@@ -11,6 +11,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { RejectReasonModal } from '../components/RejectReasonModal';
+import { getSpecificationSearchText } from '../utils/itemSpecifications';
 
 interface ItemRegistrationViewProps {
   items: Item[];
@@ -58,7 +59,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
         item.department,
         item.itemName,
         item.specSummary,
-        item.fullSpec.manufacturer,
+        getSpecificationSearchText(item),
         item.status,
       ].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalizedQuery)))
       .sort((a, b) => sortAsc
@@ -93,6 +94,17 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
       department: newDepartment,
       itemName: newItemName,
       specSummary: newSpecSummary,
+      specifications: [
+        { key: 'specification_summary', label: '요청 규격', value: newSpecSummary, group: '기본 규격', order: 10, required: true, source: 'mock' },
+        { key: 'material', label: '재질 / 소재', value: '표준 합금/스틸', group: '기본 규격', order: 20, source: 'mock' },
+        { key: 'operating_temp', label: '작동 온도 범위', value: '-10 ~ 100', unit: '°C', group: '성능 조건', order: 30, source: 'mock' },
+        { key: 'pressure_rating', label: '정격 압력 / 등급', value: '표준 10K', group: '성능 조건', order: 40, source: 'mock' },
+        { key: 'manufacturer', label: '권장 제조사', value: 'SKN 인증 공급업체', group: '조달 정보', order: 50, source: 'mock' },
+        { key: 'heat_resistant', label: '내열성', value: attrHeat, valueType: 'boolean', group: 'Item Attributes', order: 110, source: 'mock' },
+        { key: 'high_pressure', label: '고압용', value: attrPressure, valueType: 'boolean', group: 'Item Attributes', order: 120, source: 'mock' },
+        { key: 'iso_certified', label: 'ISO 인증', value: attrIso, valueType: 'boolean', group: 'Item Attributes', order: 130, source: 'mock' },
+        { key: 'waterproof', label: '방수', value: attrWater, valueType: 'boolean', group: 'Item Attributes', order: 140, source: 'mock' },
+      ],
       fullSpec: {
         dimensions: newSpecSummary,
         material: '표준 합금/스틸',

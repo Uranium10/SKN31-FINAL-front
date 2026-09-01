@@ -450,6 +450,101 @@ function ProcurementWorkspaceComponent({
     showToast(`마감시간이 ${newDate} ${newTime}까지 연장되었습니다. 미회신 업체에 메일이 재발송되었습니다. 📧`);
   };
 
+  const handleRetrySupplierSearch = (groupId: string) => {
+    const targetGroup = vendorGroups.find((group) => group.id === groupId);
+    if (!targetGroup) return;
+
+    const supplierPrefix = targetGroup.mrNo.replaceAll('-', '');
+    setVendorGroups((previous) => previous.map((group) => group.id === groupId
+      ? {
+          ...group,
+          resolutionIssue: undefined,
+          quotations: [
+            ...group.quotations,
+            {
+              supplierId: `${supplierPrefix}-RECOVERY-A`,
+              supplierName: '세이프가드코리아(주)',
+              quoteUnitPrice: 0,
+              quoteTotalPrice: 0,
+              leadTimeDays: 0,
+              isResponded: false,
+              resContent: '재탐색으로 확보한 후보 · RFQ 발송 준비 중',
+              resAttachments: [],
+              aiRank: 0,
+              aiScore: 0,
+              aiReason: '견적 회신 후 적합도 평가가 진행됩니다.',
+              isSelected: false,
+            },
+            {
+              supplierId: `${supplierPrefix}-RECOVERY-B`,
+              supplierName: '대한산업안전(주)',
+              quoteUnitPrice: 0,
+              quoteTotalPrice: 0,
+              leadTimeDays: 0,
+              isResponded: false,
+              resContent: '재탐색으로 확보한 후보 · RFQ 발송 준비 중',
+              resAttachments: [],
+              aiRank: 0,
+              aiScore: 0,
+              aiReason: '견적 회신 후 적합도 평가가 진행됩니다.',
+              isSelected: false,
+            },
+          ],
+        }
+      : group
+    ));
+    showToast(`${targetGroup.mrNo} 공급사 재탐색이 완료되어 후보 2개사를 확보했습니다.`);
+    pushNotification({
+      title: '공급사 재탐색이 완료되었습니다',
+      detail: `${targetGroup.mrNo} · 신규 후보 2개사 RFQ 준비`,
+      targetTab: 'vendor-select',
+      reference: targetGroup.mrNo,
+      tone: 'success',
+    });
+  };
+
+  const handleAddSupplierCandidate = (
+    groupId: string,
+    supplier: { name: string; email: string }
+  ) => {
+    const targetGroup = vendorGroups.find((group) => group.id === groupId);
+    if (!targetGroup) return;
+
+    const supplierId = `${targetGroup.mrNo.replaceAll('-', '')}-MANUAL-${Date.now()}`;
+    setVendorGroups((previous) => previous.map((group) => group.id === groupId
+      ? {
+          ...group,
+          resolutionIssue: undefined,
+          quotations: [
+            ...group.quotations,
+            {
+              supplierId,
+              supplierName: supplier.name,
+              quoteUnitPrice: 0,
+              quoteTotalPrice: 0,
+              leadTimeDays: 0,
+              isResponded: false,
+              resContent: `직접 추가한 후보 · ${supplier.email} · RFQ 발송 준비 중`,
+              resAttachments: [],
+              aiRank: 0,
+              aiScore: 0,
+              aiReason: '견적 회신 후 적합도 평가가 진행됩니다.',
+              isSelected: false,
+            },
+          ],
+        }
+      : group
+    ));
+    showToast(`${supplier.name}을(를) 협력사 후보로 추가했습니다.`);
+    pushNotification({
+      title: '협력사 후보가 직접 추가되었습니다',
+      detail: `${targetGroup.mrNo} · ${supplier.name}`,
+      targetTab: 'vendor-select',
+      reference: targetGroup.mrNo,
+      tone: 'info',
+    });
+  };
+
   const handleOpenSpecByItemCode = (itemCode: string) => {
     const found = items.find((i) => i.itemCode === itemCode);
     if (found) {
@@ -633,6 +728,8 @@ function ProcurementWorkspaceComponent({
       ? {
           ...item,
           poCreated: true,
+          processingStatus: 'created' as const,
+          processingIssue: undefined,
           poNo: `PO-2025-00${Math.floor(Math.random() * 90 + 10)}`,
           createdDate: new Date().toLocaleString('ko-KR', { hour12: false }),
         }
@@ -646,6 +743,38 @@ function ProcurementWorkspaceComponent({
     pushNotification({
       title: 'PO 생성과 발송이 완료되었습니다',
       detail: `${targetPO.mrNo} · ${targetPO.selectedSupplier}`,
+      targetTab: 'po-manage',
+      reference: targetPO.mrNo,
+      tone: 'success',
+    });
+  };
+
+  const handleResolvePOIssue = (
+    poId: string,
+    supplierInfo: { erpSupplierId?: string; email: string }
+  ) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    setPoItems((previous) => previous.map((item) => item.id === poId
+      ? {
+          ...item,
+          poCreated: true,
+          processingStatus: 'created' as const,
+          processingIssue: undefined,
+          poNo: `PO-2025-00${Math.floor(Math.random() * 90 + 10)}`,
+          createdDate: new Date().toLocaleString('ko-KR', { hour12: false }),
+        }
+      : item
+    ));
+    setRequests((previous) => previous.map((request) => request.mrNo === targetPO.mrNo
+      ? { ...request, processStage: { ...request.processStage, poCreated: true } }
+      : request
+    ));
+    showToast(`${supplierInfo.erpSupplierId ?? targetPO.selectedSupplier} 연결을 확인하고 PO 생성·발송을 완료했습니다.`);
+    pushNotification({
+      title: '공급사 정보 보완 후 PO 처리가 완료되었습니다',
+      detail: `${targetPO.mrNo} · ${supplierInfo.email}`,
       targetTab: 'po-manage',
       reference: targetPO.mrNo,
       tone: 'success',
@@ -782,6 +911,8 @@ function ProcurementWorkspaceComponent({
                 onWithdrawSupplierSelection={handleWithdrawSupplierSelection}
                 onOpenSpecModalByItemCode={handleOpenSpecByItemCode}
                 onExtendDeadline={handleExtendDeadline}
+                onRetrySupplierSearch={handleRetrySupplierSearch}
+                onAddSupplierCandidate={handleAddSupplierCandidate}
               />
             )}
 
@@ -791,6 +922,7 @@ function ProcurementWorkspaceComponent({
                 poItems={activePOItems}
                 onCreatePO={handleCreatePO}
                 onReturnToMR={handleReturnToMR}
+                onResolvePOIssue={handleResolvePOIssue}
               />
             )}
           </main>

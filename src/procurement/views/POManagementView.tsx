@@ -8,23 +8,49 @@ import {
   FileText,
   X,
   AlertTriangle,
-  FileCheck
+  FileCheck,
+  Link2,
+  RotateCcw
 } from 'lucide-react';
 
 interface POManagementViewProps {
   poItems: POItem[];
   onCreatePO: (poId: string) => void;
   onReturnToMR: (poId: string) => void;
+  onResolvePOIssue: (poId: string, supplierInfo: { erpSupplierId?: string; email: string }) => void;
 }
 
 export const POManagementView: React.FC<POManagementViewProps> = ({
   poItems,
   onCreatePO,
   onReturnToMR,
+  onResolvePOIssue,
 }) => {
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
   const [selectedRejectReason, setSelectedRejectReason] = useState<POItem | null>(null);
   const [approvalModalItem, setApprovalModalItem] = useState<POItem | null>(null);
+  const [issueModalItem, setIssueModalItem] = useState<POItem | null>(null);
+  const [erpSupplierId, setErpSupplierId] = useState('');
+  const [supplierEmail, setSupplierEmail] = useState('');
+
+  const handleOpenIssueModal = (item: POItem) => {
+    setIssueModalItem(item);
+    setErpSupplierId('');
+    setSupplierEmail('');
+  };
+
+  const handleResolveIssue = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!issueModalItem || !supplierEmail.trim()) return;
+    if (issueModalItem.processingIssue?.code !== 'email_send_failed' && !erpSupplierId.trim()) return;
+    onResolvePOIssue(issueModalItem.id, {
+      erpSupplierId: erpSupplierId.trim(),
+      email: supplierEmail.trim(),
+    });
+    setIssueModalItem(null);
+    setErpSupplierId('');
+    setSupplierEmail('');
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -65,7 +91,14 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           </thead>
           <tbody>
             {poItems.map((item) => (
-              <tr key={item.id}>
+              <tr
+                key={item.id}
+                className={item.processingIssue
+                  ? item.processingIssue.code === 'email_send_failed'
+                    ? 'po-row-has-warning'
+                    : 'po-row-has-error'
+                  : undefined}
+              >
                 {/* PR 번호 */}
                 <td>
                   <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>
@@ -123,7 +156,21 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 </td>
                 {/* 6-2) 협력사 PR 승인된 것만 PO 생성 버튼 (결재권자 결재) / 거절 시 사유 기재란 확인 */}
                 <td>
-                  {item.supplierApprovalStatus === 'approved' ? (
+                  {item.processingIssue ? (
+                    <div className="po-processing-issue">
+                      <span className={`badge ${item.processingIssue.code === 'email_send_failed' ? 'badge-yellow' : 'badge-red'}`}>
+                        <AlertTriangle size={12} />
+                        {item.processingIssue.code === 'email_send_failed' ? 'PO 발송 실패' : 'PO 생성 실패'}
+                      </span>
+                      <button
+                        type="button"
+                        className="po-issue-action"
+                        onClick={() => handleOpenIssueModal(item)}
+                      >
+                        조치 및 재시도
+                      </button>
+                    </div>
+                  ) : item.supplierApprovalStatus === 'approved' ? (
                     item.poCreated ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <span className="badge badge-blue">
@@ -255,6 +302,83 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 MR 재검토로 보내기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {issueModalItem?.processingIssue && (
+        <div className="modal-overlay" onClick={() => setIssueModalItem(null)}>
+          <div className="modal-content po-issue-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title-with-icon po-issue-modal-title">
+                <AlertTriangle size={20} />
+                <div>
+                  <h3>{issueModalItem.processingIssue.title}</h3>
+                  <p>{issueModalItem.mrNo} · {issueModalItem.selectedSupplier}</p>
+                </div>
+              </div>
+              <button type="button" className="icon-btn" onClick={() => setIssueModalItem(null)} aria-label="PO 오류 조치 창 닫기">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleResolveIssue}>
+              <div className="modal-body po-issue-modal-body">
+                <div className="po-issue-summary" role="alert">
+                  <strong>{issueModalItem.processingIssue.detail}</strong>
+                  <span>실패 시각 {issueModalItem.processingIssue.failedAt}</span>
+                </div>
+
+                <div className="po-recovery-steps">
+                  <span><b>1</b> ERPNext Supplier 문서와 선정 협력사의 연결 정보를 확인합니다.</span>
+                  <span><b>2</b> 아래 식별자와 수신 이메일을 보완합니다.</span>
+                  <span><b>3</b> 기존 PR을 유지한 채 PO 생성만 다시 시도합니다.</span>
+                </div>
+
+                {issueModalItem.processingIssue.code !== 'email_send_failed' && (
+                  <div className="form-group">
+                    <label htmlFor="erp-supplier-id">ERPNext Supplier ID</label>
+                    <div className="input-with-icon">
+                      <Link2 size={15} />
+                      <input
+                        id="erp-supplier-id"
+                        className="form-input"
+                        value={erpSupplierId}
+                        onChange={(event) => setErpSupplierId(event.target.value)}
+                        placeholder="예: SUP-HD-001"
+                        autoFocus
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="form-group">
+                  <label htmlFor="po-supplier-email">PO 수신 이메일</label>
+                  <input
+                    id="po-supplier-email"
+                    className="form-input"
+                    type="email"
+                    value={supplierEmail}
+                    onChange={(event) => setSupplierEmail(event.target.value)}
+                    placeholder="orders@example.com"
+                    autoFocus={issueModalItem.processingIssue.code === 'email_send_failed'}
+                    required
+                  />
+                  <small>실제 연동에서는 저장 전에 ERPNext Supplier 조회 API로 ID와 이메일을 다시 검증합니다.</small>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn-outline" onClick={() => setIssueModalItem(null)}>닫기</button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={!supplierEmail.trim() || (
+                    issueModalItem.processingIssue.code !== 'email_send_failed' && !erpSupplierId.trim()
+                  )}
+                >
+                  <RotateCcw size={15} /> 정보 저장 후 재시도
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

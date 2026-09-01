@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { CalendarDays, FilePlus2, X } from 'lucide-react';
 import type { Item, MaterialRequest } from '../types';
+import { serializeItemSpecifications } from '../utils/itemSpecifications';
 
 interface NewMRModalProps {
   items: Item[];
@@ -52,13 +53,7 @@ export const NewMRModal: React.FC<NewMRModalProps> = ({ items, onCreate, onClose
       category: category.trim() || '일반 구매',
       itemName: selectedItem.itemName,
       specSummary: selectedItem.specSummary,
-      fullSpecText: [
-        selectedItem.fullSpec.dimensions,
-        selectedItem.fullSpec.material,
-        selectedItem.fullSpec.operatingTemp,
-        selectedItem.fullSpec.pressureRating,
-        selectedItem.fullSpec.notes,
-      ].filter(Boolean).join('\n'),
+      fullSpecText: serializeItemSpecifications(selectedItem),
       hasAttachment: false,
       attachmentCount: 0,
       attachmentFiles: [],

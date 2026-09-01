@@ -13,7 +13,10 @@ import {
   CheckCircle2,
   XCircle,
   LoaderCircle,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  SearchX,
+  UserPlus
 } from 'lucide-react';
 
 interface VendorSelectionViewProps {
@@ -22,6 +25,8 @@ interface VendorSelectionViewProps {
   onWithdrawSupplierSelection: (groupId: string, reason: string) => void;
   onOpenSpecModalByItemCode: (itemCode: string) => void;
   onExtendDeadline: (groupId: string, newDate: string, newTime: string) => void;
+  onRetrySupplierSearch: (groupId: string) => void;
+  onAddSupplierCandidate: (groupId: string, supplier: { name: string; email: string }) => void;
 }
 
 export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
@@ -29,6 +34,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onSelectSupplier,
   onWithdrawSupplierSelection,
   onExtendDeadline,
+  onRetrySupplierSearch,
+  onAddSupplierCandidate,
 }) => {
   // Active selected MR Group
   const [selectedGroup, setSelectedGroup] = useState<VendorSelectionGroup | null>(vendorGroups[0] || null);
@@ -41,6 +48,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const [selectingSupplierId, setSelectingSupplierId] = useState<string | null>(null);
   const [changingGroup, setChangingGroup] = useState<VendorSelectionGroup | null>(null);
   const [changeReason, setChangeReason] = useState('');
+  const [retryingGroupId, setRetryingGroupId] = useState<string | null>(null);
+  const [addingSupplierGroup, setAddingSupplierGroup] = useState<VendorSelectionGroup | null>(null);
+  const [manualSupplierName, setManualSupplierName] = useState('');
+  const [manualSupplierEmail, setManualSupplierEmail] = useState('');
 
   // Extension Modal Form state
   const [extDate, setExtDate] = useState<string>('2025-01-25');
@@ -118,6 +129,33 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setShowRankModal(true);
   };
 
+  const handleRetrySupplierSearch = (groupId: string) => {
+    if (retryingGroupId) return;
+    setRetryingGroupId(groupId);
+    window.setTimeout(() => {
+      onRetrySupplierSearch(groupId);
+      setRetryingGroupId(null);
+    }, 650);
+  };
+
+  const handleOpenManualSupplier = (group: VendorSelectionGroup) => {
+    setAddingSupplierGroup(group);
+    setManualSupplierName('');
+    setManualSupplierEmail('');
+  };
+
+  const handleAddManualSupplier = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!addingSupplierGroup || !manualSupplierName.trim() || !manualSupplierEmail.trim()) return;
+    onAddSupplierCandidate(addingSupplierGroup.id, {
+      name: manualSupplierName.trim(),
+      email: manualSupplierEmail.trim(),
+    });
+    setAddingSupplierGroup(null);
+    setManualSupplierName('');
+    setManualSupplierEmail('');
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div
@@ -144,17 +182,18 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
         {vendorGroups.map((group) => {
           const respondedCount = group.quotations.filter((q) => q.isResponded).length;
           const totalSuppliers = group.quotations.length;
-          const percent = Math.round((respondedCount / totalSuppliers) * 100);
+          const percent = totalSuppliers > 0 ? Math.round((respondedCount / totalSuppliers) * 100) : 0;
           const bestQuotation = group.quotations.find((q) => q.aiRank === 1);
           const selectedQuotation = group.quotations.find((q) => q.supplierId === group.selectedSupplierId);
           const hasSelection = Boolean(group.selectedSupplierId);
           const isApproved = group.supplierApprovalStatus === 'approved';
           const isPendingApproval = group.supplierApprovalStatus === 'pending';
+          const hasResolutionIssue = Boolean(group.resolutionIssue);
 
           return (
             <div
               key={group.id}
-              className={`vendor-group-card ${isApproved ? 'is-approved' : isPendingApproval ? 'is-pending-approval' : ''}`}
+              className={`vendor-group-card ${isApproved ? 'is-approved' : isPendingApproval ? 'is-pending-approval' : ''} ${hasResolutionIssue ? 'is-resolution-failed' : ''}`}
             >
               {/* Header: MR 번호 & 아이템명 묶음 + 위치 1 (마감일수) + 위치 2 (마감시간 연장 버튼) */}
               <div className="vendor-group-header" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -200,8 +239,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   )}
 
                   <span className="badge badge-purple">
-                    협력사 회신율: {respondedCount}/{totalSuppliers}개사 ({percent}%)
+                    {totalSuppliers > 0
+                      ? `협력사 회신율: ${respondedCount}/${totalSuppliers}개사 (${percent}%)`
+                      : '협력사 후보 미확보'}
                   </span>
+                  {group.resolutionIssue && (
+                    <span className="badge badge-red vendor-issue-badge">
+                      <AlertTriangle size={12} /> 조치 필요
+                    </span>
+                  )}
                   {group.prSent && (
                     <span
                       className={`badge ${
@@ -224,6 +270,37 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   )}
                 </div>
               </div>
+
+              {group.resolutionIssue && (
+                <div className="vendor-resolution-issue" role="alert">
+                  <div className="vendor-resolution-issue-icon" aria-hidden="true">
+                    <SearchX size={19} />
+                  </div>
+                  <div className="vendor-resolution-issue-copy">
+                    <strong>{group.resolutionIssue.title}</strong>
+                    <p>{group.resolutionIssue.detail}</p>
+                    <span>실패 시각 {group.resolutionIssue.failedAt} · 기존 MR과 탐색 이력은 그대로 보존됩니다.</span>
+                  </div>
+                  <div className="vendor-resolution-actions">
+                    <button
+                      type="button"
+                      className="btn-sm btn-reject"
+                      onClick={() => handleRetrySupplierSearch(group.id)}
+                      disabled={retryingGroupId === group.id}
+                    >
+                      <RefreshCw size={14} className={retryingGroupId === group.id ? 'is-spinning' : ''} />
+                      {retryingGroupId === group.id ? '재탐색 중' : '자동 재탐색'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-sm btn-outline"
+                      onClick={() => handleOpenManualSupplier(group)}
+                    >
+                      <UserPlus size={14} /> 직접 후보 추가
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Body: Card Content */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -279,6 +356,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       setSelectedGroup(group);
                       setShowRankModal(true);
                     }}
+                    disabled={hasResolutionIssue || !bestQuotation}
+                    title={hasResolutionIssue ? '공급사 후보를 먼저 확보해 주세요.' : undefined}
                   >
                     {hasSelection ? <CheckCircle2 size={16} /> : <Bot size={16} />}
                     <span>{hasSelection ? '선정 결과 보기' : 'AI 견적 순위 & 업체 선정'}</span>
@@ -296,6 +375,62 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
           </div>
         )}
       </div>
+
+      {addingSupplierGroup && (
+        <div className="modal-overlay" onClick={() => setAddingSupplierGroup(null)}>
+          <div className="modal-content vendor-candidate-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title-with-icon">
+                <UserPlus size={20} />
+                <div>
+                  <h3>협력사 후보 직접 추가</h3>
+                  <p>{addingSupplierGroup.mrNo} · RFQ 발송 전에 ERPNext Supplier 등록 정보를 보완합니다.</p>
+                </div>
+              </div>
+              <button type="button" className="icon-btn" onClick={() => setAddingSupplierGroup(null)} aria-label="후보 추가 창 닫기">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleAddManualSupplier}>
+              <div className="modal-body vendor-candidate-form">
+                <div className="vendor-candidate-guide">
+                  자동 검색에서 누락된 업체를 직접 등록할 수 있습니다. 실제 연동 시에는 저장 전에 ERPNext의 기존 Supplier와 중복 여부를 확인합니다.
+                </div>
+                <div className="form-group">
+                  <label htmlFor="manual-supplier-name">협력사명</label>
+                  <input
+                    id="manual-supplier-name"
+                    className="form-input"
+                    value={manualSupplierName}
+                    onChange={(event) => setManualSupplierName(event.target.value)}
+                    placeholder="예: 코리아세이프티(주)"
+                    autoFocus
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="manual-supplier-email">견적 요청 이메일</label>
+                  <input
+                    id="manual-supplier-email"
+                    className="form-input"
+                    type="email"
+                    value={manualSupplierEmail}
+                    onChange={(event) => setManualSupplierEmail(event.target.value)}
+                    placeholder="purchase@example.com"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn-outline" onClick={() => setAddingSupplierGroup(null)}>취소</button>
+                <button type="submit" className="btn-primary" disabled={!manualSupplierName.trim() || !manualSupplierEmail.trim()}>
+                  후보 저장 및 RFQ 준비
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {changingGroup && (
         <div className="modal-overlay" onClick={() => setChangingGroup(null)}>
