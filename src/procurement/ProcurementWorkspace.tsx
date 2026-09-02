@@ -17,6 +17,7 @@ import type {
   MaterialRequest,
   VendorSelectionGroup,
   POItem,
+  SupplierScores,
   ProcurementNotification,
   GlobalSearchResult,
 } from './types';
@@ -112,6 +113,7 @@ const createMockVendorGroup = (request: MaterialRequest): VendorSelectionGroup =
     deadlineDate: subtractDays(request.dueDate, 3),
     deadlineTime: '18:00',
     deadlineDDay: Math.max(1, request.dDay - 3),
+    rfqSent: false,
     prSent: false,
     quotations: [
       {
@@ -377,6 +379,51 @@ function ProcurementWorkspaceComponent({
     });
   };
 
+  // 대체품 확인 프로세스 시작: 대체품 후보 존재 여부에 따라 안내대기/미사용확정 단계로 분기
+  const handleStartSubstituteCheck = (id: string) => {
+    const target = requests.find((request) => request.id === id);
+    if (!target) return;
+
+    setRequests((previous) =>
+      previous.map((request) =>
+        request.id === id
+          ? {
+              ...request,
+              substituteStage: request.hasSubstituteCandidates ? 'notified_waiting' : 'not_used_confirmed',
+            }
+          : request
+      )
+    );
+
+    showToast(
+      target.hasSubstituteCandidates
+        ? `${target.mrNo} 건의 대체품 후보를 요청부서에 안내했습니다. 응답 대기 중입니다.`
+        : `${target.mrNo} 건은 대체품 후보가 없어 신규구매로 진행합니다.`
+    );
+  };
+
+  // 요청자가 ERP에서 대체품을 직접 선택한 경우: MR은 더 이상 필요 없으므로 자동 삭제
+  const handleSubstituteSelectedInErp = (id: string) => {
+    const target = requests.find((request) => request.id === id);
+    if (!target) return;
+
+    setRequests((previous) => previous.filter((request) => request.id !== id));
+    showToast(`${target.mrNo} 건은 요청자가 ERP에서 대체품을 선택하여 MR이 자동 삭제되었습니다.`);
+  };
+
+  // 대체품 후보가 있어도 신규구매를 진행하기로 확정한 경우
+  const handleConfirmSubstituteUnused = (id: string) => {
+    const target = requests.find((request) => request.id === id);
+    if (!target) return;
+
+    setRequests((previous) =>
+      previous.map((request) =>
+        request.id === id ? { ...request, substituteStage: 'not_used_confirmed' } : request
+      )
+    );
+    showToast(`${target.mrNo} 건은 대체품 미사용으로 확정되었습니다. MR을 Submit해주세요.`);
+  };
+
   const handleConfirmReject = (reason: string) => {
     if (!rejectingItem) return;
     setRequests((prev) =>
@@ -443,6 +490,7 @@ function ProcurementWorkspaceComponent({
               deadlineTime: newTime,
               deadlineDDay: Math.max(1, Math.ceil((new Date(newDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))),
               isExtended: true,
+              rfqSent: true,
             }
           : g
       )
@@ -495,16 +543,38 @@ function ProcurementWorkspaceComponent({
     const selectedSupplier = selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId);
     if (!selectedGroup || !selectedSupplier) return;
 
+    // 선정 단계에서는 협력사만 확정하고, PR/PO 전송은 'PO발송' 액션에서 별도로 처리합니다.
+    setVendorGroups((previous) => previous.map((group) => (
+      group.id === groupId
+        ? {
+            ...group,
+            selectedSupplierId: supplierId,
+            quotations: group.quotations.map((quotation) => ({
+              ...quotation,
+              isSelected: quotation.supplierId === supplierId,
+            })),
+          }
+        : group
+    )));
+
+    showToast(`${selectedSupplier.supplierName}이(가) 최종 업체로 선정되었습니다. 'PO발송' 버튼을 눌러 PR을 전송해 주세요.`);
+  };
+
+  const handleSendPO = (groupId: string) => {
+    const selectedGroup = vendorGroups.find((group) => group.id === groupId);
+    const supplierId = selectedGroup?.selectedSupplierId;
+    const selectedSupplier = selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId);
+    if (!selectedGroup || !supplierId || !selectedSupplier) return;
+
     const prNo = `PR-2025-${selectedGroup.mrNo.split('-')[2] || '0890'}`;
     const poItemId = `PO-ITEM-${selectedGroup.id}-${supplierId}`;
-    const selectionRound = (selectedGroup.selectionRound ?? (selectedGroup.selectedSupplierId ? 1 : 0)) + 1;
+    const selectionRound = (selectedGroup.selectionRound ?? 0) + 1;
 
     // React state updater는 순수하게 유지합니다. 각 도메인 상태는 이벤트에서 한 번씩만 갱신합니다.
     setVendorGroups((previous) => previous.map((group) => (
       group.id === groupId
         ? {
             ...group,
-            selectedSupplierId: supplierId,
             supplierApprovalStatus: 'pending' as const,
             selectionRound,
             selectionHistory: [
@@ -521,10 +591,6 @@ function ProcurementWorkspaceComponent({
             ],
             prSent: true,
             prNo,
-            quotations: group.quotations.map((quotation) => ({
-              ...quotation,
-              isSelected: quotation.supplierId === supplierId,
-            })),
           }
         : group
     )));
@@ -559,7 +625,7 @@ function ProcurementWorkspaceComponent({
         : request
     )));
 
-    showToast('업체 선정이 완료되어 PR이 ERPNext로 자동 전송되었습니다.');
+    showToast('PO발송이 완료되어 PR이 ERPNext로 자동 전송되었습니다.');
     pushNotification({
       title: '협력사 선정과 PR 전송이 완료되었습니다',
       detail: `${selectedGroup.mrNo} · 협력사 승인 대기`,
@@ -705,6 +771,30 @@ function ProcurementWorkspaceComponent({
     });
   };
 
+  // 발주 물품 도착 확인 처리
+  const handleMarkPOArrived = (poId: string) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    setPoItems((previous) => previous.map((item) => item.id === poId
+      ? { ...item, arrived: true, arrivedDate: new Date().toLocaleString('ko-KR', { hour12: false }) }
+      : item
+    ));
+    showToast(`${targetPO.poNo} 도착이 확인되었습니다. Supplier Scorecard를 작성해 주세요.`);
+  };
+
+  // Supplier Scorecard 평가 제출 -> 해당 PO 건 발주 프로세스 종료
+  const handleSubmitScorecard = (poId: string, scores: SupplierScores) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    setPoItems((previous) => previous.map((item) => item.id === poId
+      ? { ...item, scorecardScores: scores, scorecardCompleted: true }
+      : item
+    ));
+    showToast(`${targetPO.poNo} 건의 Supplier Scorecard 평가가 완료되어 발주 프로세스가 종료되었습니다.`);
+  };
+
   const pendingCount = uniqueRequests.filter((request) => request.status === '승인대기').length;
 
   return (
@@ -771,6 +861,9 @@ function ProcurementWorkspaceComponent({
                 onApprove={handleApproveRequest}
                 onOpenRejectModal={(id, mrNo) => setRejectingItem({ id, mrNo })}
                 onOpenAttachmentsModal={(files) => setActiveAttachmentFiles(files)}
+                onStartSubstituteCheck={handleStartSubstituteCheck}
+                onSubstituteSelectedInErp={handleSubstituteSelectedInErp}
+                onConfirmSubstituteUnused={handleConfirmSubstituteUnused}
               />
             )}
 
@@ -778,7 +871,9 @@ function ProcurementWorkspaceComponent({
             {currentTab === 'vendor-select' && (
               <VendorSelectionView
                 vendorGroups={activeVendorGroups}
+                requests={uniqueRequests}
                 onSelectSupplier={handleSelectSupplier}
+                onSendPO={handleSendPO}
                 onWithdrawSupplierSelection={handleWithdrawSupplierSelection}
                 onOpenSpecModalByItemCode={handleOpenSpecByItemCode}
                 onExtendDeadline={handleExtendDeadline}
@@ -791,6 +886,8 @@ function ProcurementWorkspaceComponent({
                 poItems={activePOItems}
                 onCreatePO={handleCreatePO}
                 onReturnToMR={handleReturnToMR}
+                onMarkArrived={handleMarkPOArrived}
+                onSubmitScorecard={handleSubmitScorecard}
               />
             )}
           </main>

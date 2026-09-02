@@ -19,6 +19,9 @@ interface MRListViewProps {
   onApprove: (id: string) => void;
   onOpenRejectModal: (id: string, mrNo: string) => void;
   onOpenAttachmentsModal: (files: string[]) => void;
+  onStartSubstituteCheck: (id: string) => void;
+  onSubstituteSelectedInErp: (id: string) => void;
+  onConfirmSubstituteUnused: (id: string) => void;
 }
 
 const PAGE_SIZE = 25;
@@ -69,6 +72,9 @@ export const MRListView: React.FC<MRListViewProps> = ({
   onApprove,
   onOpenRejectModal,
   onOpenAttachmentsModal,
+  onStartSubstituteCheck,
+  onSubstituteSelectedInErp,
+  onConfirmSubstituteUnused,
 }) => {
   // 4-0) 필터링 (상태별)
   const [statusFilter, setStatusFilter] = useState<string>('전체');
@@ -198,7 +204,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
               <th>금액</th>
               <th>납기요청일 (급한순)</th>
               <th style={{ textAlign: 'center' }}>차수</th>
-              <th>단계 (승인/반려)</th>
+              <th>진행여부</th>
             </tr>
           </thead>
           <tbody>
@@ -298,31 +304,66 @@ export const MRListView: React.FC<MRListViewProps> = ({
                     )}
                   </div>
                 </td>
-                {/* 단계(승인/반려 - 반려 시 사유기재할 수 있는 칸 생성) */}
+                {/* 진행여부: 승인대기 건은 시작 → 대체품 확인 → MR Submit 순으로 단계가 진행됨 */}
                 <td>
                   <div className="mr-stage-cell">
-                    <div className="mr-stage-row">
-                      {req.status === '승인' && (
+                    {req.status === '승인' && (
+                      <div className="mr-stage-row">
                         <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                           <CheckCircle size={13} /> 승인 완료
                         </span>
-                      )}
-                      {req.status === '반려' && (
+                      </div>
+                    )}
+                    {req.status === '반려' && (
+                      <div className="mr-stage-row">
                         <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                           <XCircle size={13} /> 반려됨
                         </span>
-                      )}
-                      {req.status === '승인대기' && (
+                      </div>
+                    )}
+                    {req.status === '승인대기' && (!req.substituteStage || req.substituteStage === 'not_started') && (
+                      <div className="mr-stage-row">
                         <div className="action-btn-group">
-                          <button className="btn-sm btn-approve" onClick={() => onApprove(req.id)}>
-                            승인
+                          <button className="btn-sm btn-approve" onClick={() => onStartSubstituteCheck(req.id)}>
+                            시작
                           </button>
                           <button className="btn-sm btn-reject" onClick={() => onOpenRejectModal(req.id, req.mrNo)}>
                             반려
                           </button>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
+                    {req.status === '승인대기' && req.substituteStage === 'notified_waiting' && (
+                      <>
+                        <div className="mr-stage-row">
+                          <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Clock size={13} /> 요청부서에 대체품 안내완료 · 대기중
+                          </span>
+                        </div>
+                        <div className="mr-stage-row">
+                          <div className="action-btn-group">
+                            <button className="btn-sm btn-outline" onClick={() => onSubstituteSelectedInErp(req.id)}>
+                              ERP 대체품 선택됨
+                            </button>
+                            <button className="btn-sm btn-approve" onClick={() => onConfirmSubstituteUnused(req.id)}>
+                              신규구매 진행
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {req.status === '승인대기' && req.substituteStage === 'not_used_confirmed' && (
+                      <>
+                        <div className="mr-stage-row">
+                          <span className="badge badge-gray">대체품 미사용 확정</span>
+                        </div>
+                        <div className="mr-stage-row">
+                          <button className="btn-sm btn-approve" onClick={() => onApprove(req.id)}>
+                            MR Submit
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

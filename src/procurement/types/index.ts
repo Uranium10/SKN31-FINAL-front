@@ -28,6 +28,8 @@ export interface Item {
   rejectReason?: string;
 }
 
+export type MRSubstituteStage = 'not_started' | 'notified_waiting' | 'not_used_confirmed';
+
 export interface MaterialRequest {
   id: string;
   mrNo: string;
@@ -53,6 +55,9 @@ export interface MaterialRequest {
   returnedFromSupplier?: boolean;
   returnReason?: string;
   reviewHistory?: MRReviewHistoryEntry[];
+  // 승인 후 대체품 확인 진행 상태: 대체품 후보 존재 여부와 진행 단계
+  hasSubstituteCandidates?: boolean;
+  substituteStage?: MRSubstituteStage;
   // Progress stages
   processStage: {
     approval: '완료' | '진행중' | '대기';
@@ -73,6 +78,14 @@ export interface MRReviewHistoryEntry {
   occurredAt: string;
 }
 
+export interface SupplierScores {
+  leadTime: number; // 납기 (1~5)
+  quality: number; // 품질 (1~5)
+  price: number; // 가격 (1~5)
+  service: number; // 응대 (1~5)
+  communication: number; // 의사소통 (1~5)
+}
+
 export interface SupplierQuotation {
   supplierId: string;
   supplierName: string;
@@ -86,6 +99,7 @@ export interface SupplierQuotation {
   aiScore: number;
   aiReason: string;
   isSelected: boolean;
+  scores?: SupplierScores;
 }
 
 export interface VendorSelectionHistoryEntry {
@@ -113,6 +127,7 @@ export interface VendorSelectionGroup {
   deadlineTime: string; // HH:mm
   deadlineDDay: number;
   isExtended?: boolean;
+  rfqSent?: boolean;
   quotations: SupplierQuotation[];
   selectedSupplierId?: string;
   supplierApprovalStatus?: 'approved' | 'rejected' | 'pending';
@@ -137,6 +152,11 @@ export interface POItem {
   poCreated: boolean;
   poNo?: string;
   createdDate?: string;
+  // PO 발주 후 도착 확인 및 Supplier Scorecard 평가
+  arrived?: boolean;
+  arrivedDate?: string;
+  scorecardScores?: SupplierScores;
+  scorecardCompleted?: boolean;
 }
 
 export interface AiLog {
