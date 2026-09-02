@@ -2,26 +2,87 @@ import { fetchWithAuth } from '../../utils/auth';
 import type { ERPItemSpecificationResponse, Item } from '../types';
 import { mapERPItemSpecificationResponse } from '../utils/itemSpecifications';
 
-type ItemSpecificationAPIResponse = ERPItemSpecificationResponse & {
-  schema_source: 'item_group_spec' | 'erp_custom_fields_fallback';
-  missing_required_fields: string[];
-  warning?: string;
+interface ERPItemSummary {
+  item_code: string;
+  item_name?: string;
+  item_group?: string;
+  description?: string | null;
+  stock_uom?: string;
+  is_stock_item?: number | boolean;
+  is_fixed_asset?: number | boolean;
+  disabled?: number | boolean;
+  brand?: string;
+  creation?: string;
+}
+
+interface ERPItemListResponse {
+  items: ERPItemSummary[];
+}
+
+const parseJson = async <T>(response: Response): Promise<T> => {
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(typeof body?.detail === 'string' ? body.detail : 'ERPNext 아이템 조회에 실패했습니다.');
+  }
+  return body as T;
 };
 
-/**
- * 로그인 세션의 Access Token을 사용해 ERPNext 품목과 전체 규격 컬럼을 읽습니다.
- * 목업을 실제 데이터로 전환할 때 상세 버튼의 이벤트에서 이 함수만 호출하면 됩니다.
- */
-export const fetchItemWithSpecifications = async (item: Item): Promise<Item> => {
+const stripHtml = (value?: string | null): string => (value ?? '')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+export const itemSummaryToItem = (row: ERPItemSummary): Item => {
+  const description = stripHtml(row.description) || '등록된 규격 정보 없음';
+  return {
+    id: row.item_code,
+    itemCode: row.item_code,
+    department: row.item_group || 'ERPNext',
+    itemName: row.item_name || row.item_code,
+    specSummary: description.length > 70 ? `${description.slice(0, 70)}…` : description,
+    specifications: [],
+    fullSpec: {
+      dimensions: description,
+      material: '-',
+      operatingTemp: '-',
+      pressureRating: '-',
+      manufacturer: row.brand || '-',
+      notes: `${row.item_group || '미분류'} · ${row.stock_uom || '단위 미지정'}`,
+    },
+    maintainStock: Boolean(row.is_stock_item),
+    isFixedAsset: Boolean(row.is_fixed_asset),
+    attributes: {
+      heatResistant: false,
+      highPressure: false,
+      isoCertified: false,
+      waterproof: false,
+      customizable: false,
+    },
+    registeredDate: row.creation?.slice(0, 10) || '-',
+    status: row.disabled ? '승인대기' : '승인',
+  };
+};
+
+export const listERPItems = async (): Promise<Item[]> => {
+  const response = await fetchWithAuth('/purchase/items?limit=500&offset=0');
+  const body = await parseJson<ERPItemListResponse>(response);
+  return (Array.isArray(body.items) ? body.items : []).map(itemSummaryToItem);
+};
+
+export const getERPItemSpecifications = async (
+  item: Item,
+): Promise<Item> => {
   const response = await fetchWithAuth(
     `/purchase/items/${encodeURIComponent(item.itemCode)}/specifications`,
-    { headers: { Accept: 'application/json' } },
   );
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload.detail || `품목 규격 조회에 실패했습니다. (${response.status})`);
-  }
-
-  return mapERPItemSpecificationResponse(payload as ItemSpecificationAPIResponse, item);
+  const body = await parseJson<ERPItemSpecificationResponse>(response);
+  return mapERPItemSpecificationResponse(body, {
+    ...item,
+    department: body.department || body.item_group || item.department,
+    specSummary: stripHtml(body.description) || item.specSummary,
+    registeredDate: body.registered_date?.slice(0, 10) || item.registeredDate,
+  });
 };
+
+/** 기존 호출부 호환 이름. */
+export const fetchItemWithSpecifications = getERPItemSpecifications;

@@ -20,7 +20,7 @@ interface HeaderProps {
 
 const tabTitles: Record<NavigationTab, string> = {
   dashboard: '대시보드',
-  'item-register': '아이템 등록',
+  'item-register': '아이템 목록',
   'mr-list': 'MR 목록',
   'vendor-select': '협력사 선정 (견적 비교 & AI 추천)',
   'po-manage': 'PO 관리',
@@ -143,14 +143,16 @@ export const Header: React.FC<HeaderProps> = ({
                   <strong>알림</strong>
                   <span>{unreadCount}개 안 읽음</span>
                 </div>
-                {unreadCount > 0 && (
+                {notifications.length > 0 && (
                   <button type="button" onClick={onMarkAllNotificationsRead}>
                     <CheckCheck size={14} /> 모두 읽음
                   </button>
                 )}
               </div>
               <div className="notification-list">
-                {notifications.map((notification) => (
+                {notifications.length === 0 ? (
+                  <div className="floating-menu-empty">새 알림이 없습니다.</div>
+                ) : notifications.map((notification) => (
                   <button
                     type="button"
                     key={notification.id}

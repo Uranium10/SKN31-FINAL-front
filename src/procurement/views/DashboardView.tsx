@@ -13,18 +13,20 @@ import {
   MinusCircle,
   ChevronRight
 } from 'lucide-react';
-import type { MaterialRequest, NavigationTab } from '../types';
+import type { MaterialRequest, NavigationTab, POItem } from '../types';
 
 interface DashboardViewProps {
   requests: MaterialRequest[];
+  poItems?: POItem[];
   onApprove: (id: string) => void;
   onOpenRejectModal: (id: string, mrNo: string) => void;
-  onOpenSpecModal: (itemCode: string) => void;
+  onOpenSpecModal: (itemCode: string, requestSpecification?: string) => void;
   setCurrentTab: (tab: NavigationTab) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   requests,
+  poItems = [],
   onApprove,
   onOpenRejectModal,
   onOpenSpecModal,
@@ -44,9 +46,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // 2-2) 우리팀 건수 총 몇개인지
   const teamTotalCount = requests.length;
+  const activeAIWorkCount = requests.filter((request) => (
+    request.workflowStatus === 'QUEUED' || request.workflowStatus === 'RUNNING'
+  )).length;
 
   // 견적 비교 대기 & PO 건수 (KPI stats)
-  const quotationWaitCount = requests.filter((r) => r.processStage.quotationProgressPercent > 0 && r.processStage.quotationProgressPercent < 100).length;
+  const quotationWaitCount = requests.filter((request) => (
+    ['QUOTATION_COLLECTION', 'SUPPLIER_SELECTION'].includes(request.workflowStage ?? '')
+    && request.processStage.prSupplierApproved !== '승인'
+  )).length;
+  const issuedPOItems = poItems.filter((item) => item.poCreated);
+  const issuedPOAmount = issuedPOItems.reduce((sum, item) => sum + item.totalAmount, 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -93,7 +103,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {teamTotalCount} <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-muted)' }}>건</span>
           </span>
           <span className="kpi-sub">
-            <span>AI 자동 처리 진행 중 2건</span>
+            <span>AI 자동 처리 진행 중 {activeAIWorkCount}건</span>
             <ChevronRight className="kpi-action-arrow" size={14} aria-hidden="true" />
           </span>
         </button>
@@ -120,24 +130,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </span>
         </button>
 
-        {/* Card 4: 이번 달 발주 PO */}
+        {/* Card 4: 실제 API/목업 상태에서 생성된 PO */}
         <button
           type="button"
           className="kpi-card kpi-card-action"
           onClick={() => setCurrentTab('po-manage')}
-          aria-label="이번 달 발주 PO 목록으로 이동"
+          aria-label="발행 PO 목록으로 이동"
         >
           <span className="kpi-top">
-            <span className="kpi-title">이번 달 발주 PO</span>
+            <span className="kpi-title">발행 PO</span>
             <span className="kpi-icon success">
               <ShoppingCart size={18} />
             </span>
           </span>
           <span className="kpi-value" style={{ color: 'var(--success)' }}>
-            ₩184M
+            ₩{issuedPOAmount.toLocaleString()}
           </span>
           <span className="kpi-sub">
-            <span>12건 발행 완료</span>
+            <span>{issuedPOItems.length}건 발행 완료</span>
             <ChevronRight className="kpi-action-arrow" size={14} aria-hidden="true" />
           </span>
         </button>
@@ -164,7 +174,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <th>요청부서 / 품목명</th>
                 <th style={{ textAlign: 'center' }}>1단계: 내 승인 여부</th>
                 <th style={{ textAlign: 'center' }}>2단계: 견적 회신 진행율</th>
-                <th style={{ textAlign: 'center' }}>3단계: PR 협력사 승인</th>
+                <th style={{ textAlign: 'center' }}>3단계: 협력사 최종 선정</th>
                 <th style={{ textAlign: 'center' }}>4단계: PO 결재·발행</th>
                 <th style={{ textAlign: 'center' }}>전체 진행 상태</th>
               </tr>
@@ -239,15 +249,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       )}
                     </td>
 
-                    {/* 3단계: PR 협력사 승인 */}
+                    {/* 3단계: 협력사 최종 선정 */}
                     <td style={{ textAlign: 'center' }}>
                       {step3Done ? (
                         <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={13} color="var(--success)" /> 협력사 승인 ✓
+                          <CheckCircle2 size={13} color="var(--success)" /> 선정 완료 ✓
                         </span>
                       ) : step3Rejected ? (
                         <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <XCircle size={13} color="var(--danger)" /> 협력사 거절 ✕
+                          <XCircle size={13} color="var(--danger)" /> 선정 취소 ✕
                         </span>
                       ) : (
                         <span className="badge badge-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -321,12 +331,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                 <div className="todo-title">{req.itemName}</div>
                 <div className="todo-subtitle">
-                  {req.department} · {req.requester} 담당 · 수량: 20 EA · 예상금액: ₩{req.totalPrice.toLocaleString()}
+                  {req.department} · {req.requester} 담당 · 수량: {req.quantity ?? 0} · 예상금액: ₩{req.totalPrice.toLocaleString()}
                 </div>
 
                 <div className="ai-summary-box">
                   <span style={{ fontWeight: 700, color: 'var(--accent)' }}>AI 에이전트 요약 · </span>
-                  {req.fullSpecText.split('\n')[1] || req.specSummary}. 협력사 RFQ 3건 발송 준비 완료.
+                  {req.fullSpecText.split('\n')[1] || req.specSummary}. 현재 단계: {req.workflowStage ?? 'MR 검토'}.
                 </div>
 
                 <div className="todo-footer">
@@ -341,7 +351,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <button className="btn-sm btn-reject" onClick={() => onOpenRejectModal(req.id, req.mrNo)}>
                       <XCircle size={14} /> 반려
                     </button>
-                    <button className="btn-sm btn-outline" onClick={() => onOpenSpecModal(req.itemCode)}>
+                    <button
+                      className="btn-sm btn-outline"
+                      onClick={() => onOpenSpecModal(req.itemCode, req.fullSpecText)}
+                    >
                       <Eye size={14} /> 상세 규격
                     </button>
                   </div>

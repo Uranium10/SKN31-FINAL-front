@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { MaterialRequest, MRReviewHistoryEntry } from '../types';
 import { MRReasonHistoryModal } from '../components/MRReasonHistoryModal';
+import { WorkflowInterruptForm } from '../components/WorkflowInterruptForm';
 import {
   Paperclip,
   Eye,
@@ -8,23 +9,93 @@ import {
   Filter,
   Clock,
   CheckCircle,
-  XCircle
+  XCircle,
+  RefreshCw,
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  ChevronsUpDown,
 } from 'lucide-react';
 
 interface MRListViewProps {
   requests: MaterialRequest[];
   searchQuery: string;
   setSearchQuery: (query: string) => void;
-  onOpenSpecModalByItemCode: (itemCode: string) => void;
+  onOpenSpecModalByItemCode: (itemCode: string, requestSpecification?: string) => void;
   onApprove: (id: string) => void;
   onOpenRejectModal: (id: string, mrNo: string) => void;
   onOpenAttachmentsModal: (files: string[]) => void;
   onStartSubstituteCheck: (id: string) => void;
   onSubstituteSelectedInErp: (id: string) => void;
   onConfirmSubstituteUnused: (id: string) => void;
+  isApiMode?: boolean;
+  isLoading?: boolean;
+  loadError?: string | null;
+  onRefresh?: () => void;
+  onAnswerTask?: (taskId: string, answer: Record<string, unknown>, version?: number) => Promise<void>;
 }
 
 const PAGE_SIZE = 25;
+
+type MRSortKey =
+  | 'department' | 'requester' | 'mrNo' | 'itemCode' | 'category'
+  | 'itemName' | 'specSummary' | 'attachmentCount' | 'unitPrice'
+  | 'totalPrice' | 'dueDate' | 'revisionRound' | 'workflowStatus';
+
+const workflowStageLabel = (stage?: string): string => ({
+  MR_REVIEW: 'MR 시작 준비',
+  ITEM_CHECK: '품목·대체품 확인',
+  BIDDING_DECISION: '구매 방식 판단',
+  SUPPLIER_RECOMMENDATION: '협력사 탐색',
+  RFQ_TARGET_SELECTION: 'RFQ 대상 구성',
+  RFQ_SENDING: 'RFQ 생성·발송',
+  QUOTATION_COLLECTION: '견적 회신 확인',
+  SUPPLIER_SELECTION: '견적 비교·순위 산정',
+  ORDER_START: '발주 전환 준비',
+  PRE_PO_APPROVAL: 'PO 최종 승인 준비',
+  PO_CREATION: 'PO 생성·발송',
+}[stage ?? ''] ?? '구매 흐름 확인');
+
+const sortableValue = (request: MaterialRequest, key: MRSortKey): string | number => {
+  switch (key) {
+    case 'attachmentCount': return request.attachmentCount;
+    case 'unitPrice': return request.unitPrice;
+    case 'totalPrice': return request.totalPrice;
+    case 'revisionRound': return request.revisionRound ?? 0;
+    case 'workflowStatus': return `${request.workflowStatus ?? ''} ${request.workflowStage ?? ''}`;
+    default: return request[key];
+  }
+};
+
+interface SortableHeaderProps {
+  sortKey: MRSortKey;
+  label: string;
+  activeKey: MRSortKey;
+  direction: 'asc' | 'desc';
+  onSort: (key: MRSortKey) => void;
+  align?: 'left' | 'center' | 'right';
+}
+
+const SortableHeader: React.FC<SortableHeaderProps> = ({
+  sortKey,
+  label,
+  activeKey,
+  direction,
+  onSort,
+  align = 'left',
+}) => {
+  const active = activeKey === sortKey;
+  return (
+    <th style={{ textAlign: align }} aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" className={`mr-sort-button align-${align}`} onClick={() => onSort(sortKey)}>
+        <span>{label}</span>
+        {active
+          ? direction === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />
+          : <ChevronsUpDown size={13} />}
+      </button>
+    </th>
+  );
+};
 
 const getReviewHistory = (request: MaterialRequest): MRReviewHistoryEntry[] => {
   if (request.reviewHistory?.length) return request.reviewHistory;
@@ -75,6 +146,11 @@ export const MRListView: React.FC<MRListViewProps> = ({
   onStartSubstituteCheck,
   onSubstituteSelectedInErp,
   onConfirmSubstituteUnused,
+  isApiMode = false,
+  isLoading = false,
+  loadError = null,
+  onRefresh,
+  onAnswerTask,
 }) => {
   // 4-0) 필터링 (상태별)
   const [statusFilter, setStatusFilter] = useState<string>('전체');
@@ -82,6 +158,17 @@ export const MRListView: React.FC<MRListViewProps> = ({
   const [draftQuery, setDraftQuery] = useState(searchQuery);
   const [currentPage, setCurrentPage] = useState(1);
   const [historySelection, setHistorySelection] = useState<HistorySelection | null>(null);
+  const [sortKey, setSortKey] = useState<MRSortKey>('dueDate');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (key: MRSortKey) => {
+    if (key === sortKey) {
+      setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
 
   useEffect(() => {
     setDraftQuery(searchQuery);
@@ -111,8 +198,15 @@ export const MRListView: React.FC<MRListViewProps> = ({
         const matchesDept = deptFilter === '전체' || request.department === deptFilter;
         return matchesSearch && matchesStatus && matchesDept;
       })
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-  }, [deptFilter, requests, searchQuery, statusFilter]);
+      .sort((a, b) => {
+        const left = sortableValue(a, sortKey);
+        const right = sortableValue(b, sortKey);
+        const compared = typeof left === 'number' && typeof right === 'number'
+          ? left - right
+          : String(left).localeCompare(String(right), 'ko-KR', { numeric: true });
+        return sortDirection === 'asc' ? compared : -compared;
+      });
+  }, [deptFilter, requests, searchQuery, sortDirection, sortKey, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRequests.length / PAGE_SIZE));
   const pageRequests = useMemo(() => {
@@ -122,7 +216,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [deptFilter, searchQuery, statusFilter]);
+  }, [deptFilter, searchQuery, sortDirection, sortKey, statusFilter]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -166,6 +260,20 @@ export const MRListView: React.FC<MRListViewProps> = ({
         </div>
       </div>
 
+      {isApiMode && (isLoading || loadError) && (
+        <div className={`mr-api-state ${loadError ? 'is-error' : ''}`} role={loadError ? 'alert' : 'status'}>
+          <div>
+            {loadError ? <AlertCircle size={16} /> : <RefreshCw size={16} className="spin-icon" />}
+            <span>{loadError ?? 'ERPNext와 구매 작업 저장소에서 MR을 불러오는 중입니다.'}</span>
+          </div>
+          {loadError && onRefresh && (
+            <button type="button" className="btn-sm btn-outline" onClick={onRefresh}>
+              다시 불러오기
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 4-0) 정렬 안내 바 */}
       <div
         style={{
@@ -182,7 +290,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Clock size={16} />
-          <span>4-0) 목록 자동 정렬 기준: <strong>납기요청일 (급한 순 / D-Day 순)</strong>으로 자동 정렬되어 표시됩니다.</span>
+          <span>컬럼명을 눌러 정렬할 수 있습니다. 현재 기준: <strong>{sortKey} ({sortDirection === 'asc' ? '오름차순' : '내림차순'})</strong></span>
         </div>
         <span>조회 건수: {sortedRequests.length}건</span>
       </div>
@@ -192,24 +300,24 @@ export const MRListView: React.FC<MRListViewProps> = ({
         <table className="custom-table">
           <thead>
             <tr>
-              <th>요청부서</th>
-              <th>요청자</th>
-              <th>MR번호</th>
-              <th>아이템코드</th>
-              <th>아이템그룹(카테고리)</th>
-              <th>아이템명</th>
-              <th>규격(클릭 시 전체보기)</th>
-              <th>첨부파일</th>
-              <th>단가</th>
-              <th>금액</th>
-              <th>납기요청일 (급한순)</th>
-              <th style={{ textAlign: 'center' }}>차수</th>
-              <th>진행여부</th>
+              <SortableHeader sortKey="department" label="요청부서" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="requester" label="요청자" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="mrNo" label="MR번호" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="itemCode" label="아이템코드" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="category" label="아이템그룹(카테고리)" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="itemName" label="아이템명" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="specSummary" label="규격(클릭 시 전체보기)" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="attachmentCount" label="첨부파일" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="unitPrice" label="단가" activeKey={sortKey} direction={sortDirection} onSort={handleSort} align="right" />
+              <SortableHeader sortKey="totalPrice" label="금액" activeKey={sortKey} direction={sortDirection} onSort={handleSort} align="right" />
+              <SortableHeader sortKey="dueDate" label="납기요청일" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader sortKey="revisionRound" label="차수" activeKey={sortKey} direction={sortDirection} onSort={handleSort} align="center" />
+              <SortableHeader sortKey="workflowStatus" label="진행여부" activeKey={sortKey} direction={sortDirection} onSort={handleSort} />
             </tr>
           </thead>
           <tbody>
             {pageRequests.map((req) => (
-              <tr key={req.id}>
+              <tr key={req.id} className={`workflow-transition-${req.transitionPhase ?? 'stable'}`}>
                 {/* 요청부서 */}
                 <td>{req.department}</td>
                 {/* 요청자 */}
@@ -241,7 +349,10 @@ export const MRListView: React.FC<MRListViewProps> = ({
                 <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{req.itemName}</td>
                 {/* 규격(클릭 시 전체 내용 확인할 수 있게) */}
                 <td>
-                  <button className="spec-clickable-btn" onClick={() => onOpenSpecModalByItemCode(req.itemCode)}>
+                  <button
+                    className="spec-clickable-btn"
+                    onClick={() => onOpenSpecModalByItemCode(req.itemCode, req.fullSpecText)}
+                  >
                     <Eye size={13} />
                     <span>{req.specSummary}</span>
                   </button>
@@ -307,21 +418,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
                 {/* 진행여부: 승인대기 건은 시작 → 대체품 확인 → MR Submit 순으로 단계가 진행됨 */}
                 <td>
                   <div className="mr-stage-cell">
-                    {req.status === '승인' && (
-                      <div className="mr-stage-row">
-                        <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle size={13} /> 승인 완료
-                        </span>
-                      </div>
-                    )}
-                    {req.status === '반려' && (
-                      <div className="mr-stage-row">
-                        <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <XCircle size={13} /> 반려됨
-                        </span>
-                      </div>
-                    )}
-                    {req.status === '승인대기' && (!req.substituteStage || req.substituteStage === 'not_started') && (
+                    {req.workflowStatus === 'AWAITING_MR_REVIEW' && (
                       <div className="mr-stage-row">
                         <div className="action-btn-group">
                           <button className="btn-sm btn-approve" onClick={() => onStartSubstituteCheck(req.id)}>
@@ -333,7 +430,98 @@ export const MRListView: React.FC<MRListViewProps> = ({
                         </div>
                       </div>
                     )}
-                    {req.status === '승인대기' && req.substituteStage === 'notified_waiting' && (
+                    {req.workflowStatus === 'QUEUED' && (
+                      <div className="mr-stage-row">
+                        <span className="badge badge-gray"><Clock size={13} /> 처리 시작 대기</span>
+                      </div>
+                    )}
+                    {req.workflowStatus === 'RUNNING' && (
+                      <div className="mr-stage-row">
+                        <span className="badge badge-blue">
+                          <RefreshCw size={13} className="spin-icon" />
+                          자동 처리 · {workflowStageLabel(req.workflowStage)} 중
+                        </span>
+                      </div>
+                    )}
+                    {req.workflowStatus === 'WAITING_INPUT' && req.workflowStage === 'SUBSTITUTE_DECISION' && (
+                      <div className="mr-stage-row">
+                        <span className="badge badge-yellow"><Clock size={13} /> 요청자 대체품 응답 대기</span>
+                      </div>
+                    )}
+                    {req.workflowStatus === 'WAITING_INPUT' && req.workflowStage !== 'SUBSTITUTE_DECISION' && (
+                      <div className="mr-stage-row">
+                        <span className="badge badge-yellow">
+                          <Clock size={13} />
+                          {req.workflowStage === 'HUMAN_REVIEW'
+                            ? '예외 발생 · 구매 담당자 수동 검토 필요'
+                            : req.workflowStage === 'MR_REVIEW'
+                              ? 'MR 내용 확인 필요'
+                              : '구매 담당자 확인 필요'}
+                        </span>
+                      </div>
+                    )}
+                    {req.workflowStatus === 'FAILED' && (
+                      <>
+                        <div className="mr-stage-row">
+                          <span className="badge badge-red"><AlertCircle size={13} /> 처리 확인 필요</span>
+                        </div>
+                        {req.workflowError && <span className="mr-workflow-error" title={req.workflowError}>{req.workflowError}</span>}
+                        <div className="mr-stage-row">
+                          <div className="action-btn-group">
+                            {req.canRetry ? (
+                              <button className="btn-sm btn-outline" onClick={() => onStartSubstituteCheck(req.id)}>다시 시도</button>
+                            ) : (
+                              <span className="mr-workflow-error">자동 재시도 지점 없음</span>
+                            )}
+                            <button className="btn-sm btn-reject" onClick={() => onOpenRejectModal(req.id, req.mrNo)}>반려</button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {req.workflowStatus === 'REJECTED' && (
+                      <div className="mr-stage-row">
+                        <span className="badge badge-red"><XCircle size={13} /> 반려됨</span>
+                      </div>
+                    )}
+                    {req.workflowStatus
+                      && !['AWAITING_MR_REVIEW', 'QUEUED', 'RUNNING', 'WAITING_INPUT', 'FAILED', 'REJECTED'].includes(req.workflowStatus)
+                      && (
+                        <div className="mr-stage-row">
+                          <span className="badge badge-gray">
+                            <Clock size={13} /> 상태 확인 필요 · {req.workflowStatus}
+                          </span>
+                        </div>
+                      )}
+                    {req.pendingTask && onAnswerTask && (
+                      <WorkflowInterruptForm task={req.pendingTask} onSubmit={onAnswerTask} />
+                    )}
+                    {!req.workflowStatus && req.status === '승인' && (
+                      <div className="mr-stage-row">
+                        <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={13} /> 승인 완료
+                        </span>
+                      </div>
+                    )}
+                    {!req.workflowStatus && req.status === '반려' && (
+                      <div className="mr-stage-row">
+                        <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <XCircle size={13} /> 반려됨
+                        </span>
+                      </div>
+                    )}
+                    {!req.workflowStatus && req.status === '승인대기' && (!req.substituteStage || req.substituteStage === 'not_started') && (
+                      <div className="mr-stage-row">
+                        <div className="action-btn-group">
+                          <button className="btn-sm btn-approve" onClick={() => onStartSubstituteCheck(req.id)}>
+                            시작
+                          </button>
+                          <button className="btn-sm btn-reject" onClick={() => onOpenRejectModal(req.id, req.mrNo)}>
+                            반려
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {!req.workflowStatus && req.status === '승인대기' && req.substituteStage === 'notified_waiting' && (
                       <>
                         <div className="mr-stage-row">
                           <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -352,7 +540,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
                         </div>
                       </>
                     )}
-                    {req.status === '승인대기' && req.substituteStage === 'not_used_confirmed' && (
+                    {!req.workflowStatus && req.status === '승인대기' && req.substituteStage === 'not_used_confirmed' && (
                       <>
                         <div className="mr-stage-row">
                           <span className="badge badge-gray">대체품 미사용 확정</span>

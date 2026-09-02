@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import type { Item } from '../types';
 import {
   PackagePlus,
@@ -8,7 +8,10 @@ import {
   XCircle,
   Plus,
   X,
-  CheckCircle
+  CheckCircle,
+  AlertCircle,
+  RefreshCw,
+  Search,
 } from 'lucide-react';
 import { RejectReasonModal } from '../components/RejectReasonModal';
 import { getSpecificationSearchText } from '../utils/itemSpecifications';
@@ -20,6 +23,10 @@ interface ItemRegistrationViewProps {
   onAddItem: (item: Item) => void;
   onApproveItem: (id: string) => void;
   onRejectItem: (id: string, reason: string) => void;
+  readOnly?: boolean;
+  isLoading?: boolean;
+  loadError?: string | null;
+  onRefresh?: () => void;
 }
 
 const PAGE_SIZE = 25;
@@ -31,10 +38,15 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
   onAddItem,
   onApproveItem,
   onRejectItem,
+  readOnly = false,
+  isLoading = false,
+  loadError = null,
+  onRefresh,
 }) => {
   // 3-1) 아이템코드 별 오름차순/내림차순 정렬 상태
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [rejectingItem, setRejectingItem] = useState<{ id: string; itemCode: string } | null>(null);
 
@@ -49,23 +61,38 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
   const [attrPressure, setAttrPressure] = useState(false);
   const [attrIso, setAttrIso] = useState(true);
   const [attrWater, setAttrWater] = useState(false);
+  const [createValidationMessage, setCreateValidationMessage] = useState('');
 
-  // 3-1) 아이템코드 정렬 적용
+  // 큰 목록에서도 검색 입력이 부드럽도록 필터 계산의 렌더링 우선순위를 낮춥니다.
+  const deferredItemSearchQuery = useDeferredValue(itemSearchQuery);
+
+  // 상단 통합 검색과 목록 전용 검색을 함께 적용합니다. 통합 검색 결과에서 이
+  // 화면으로 이동했을 때도 선택한 아이템이 그대로 좁혀져 보입니다.
   const sortedItems = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLocaleLowerCase('ko-KR');
+    const normalizedQueries = [searchQuery, deferredItemSearchQuery]
+      .map((query) => query.trim().toLocaleLowerCase('ko-KR'))
+      .filter(Boolean);
+
     return items
-      .filter((item) => !normalizedQuery || [
-        item.itemCode,
-        item.department,
-        item.itemName,
-        item.specSummary,
-        getSpecificationSearchText(item),
-        item.status,
-      ].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalizedQuery)))
+      .filter((item) => {
+        if (normalizedQueries.length === 0) return true;
+        const searchableText = [
+          item.itemCode,
+          item.department,
+          item.itemName,
+          item.specSummary,
+          getSpecificationSearchText(item),
+          item.status,
+        ]
+          .map((value) => String(value ?? '').toLocaleLowerCase('ko-KR'))
+          .join(' ');
+
+        return normalizedQueries.every((query) => searchableText.includes(query));
+      })
       .sort((a, b) => sortAsc
         ? a.itemCode.localeCompare(b.itemCode)
         : b.itemCode.localeCompare(a.itemCode));
-  }, [items, searchQuery, sortAsc]);
+  }, [deferredItemSearchQuery, items, searchQuery, sortAsc]);
 
   const totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
   const pageItems = useMemo(() => {
@@ -75,7 +102,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, sortAsc]);
+  }, [deferredItemSearchQuery, searchQuery, sortAsc]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -84,7 +111,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName.trim() || !newSpecSummary.trim()) {
-      alert('품목명과 규격을 모두 입력해 주세요.');
+      setCreateValidationMessage('품목명과 규격을 모두 입력해 주세요.');
       return;
     }
 
@@ -130,13 +157,35 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
     setShowAddModal(false);
     setNewItemName('');
     setNewSpecSummary('');
+    setCreateValidationMessage('');
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Top Controls */}
       <div className="filter-toolbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="item-list-controls">
+          <label className="item-list-search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              value={itemSearchQuery}
+              onChange={(event) => setItemSearchQuery(event.target.value)}
+              placeholder="아이템코드, 품목명, 요청부서, 규격 검색"
+              aria-label="아이템 목록 검색"
+            />
+            {itemSearchQuery && (
+              <button
+                type="button"
+                className="item-list-search-clear"
+                onClick={() => setItemSearchQuery('')}
+                aria-label="아이템 검색어 지우기"
+                title="검색어 지우기"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </label>
           <button
             className="btn-outline"
             onClick={() => setSortAsc(!sortAsc)}
@@ -149,14 +198,32 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
           </span>
         </div>
 
-        <button
-          className="btn-primary"
-          onClick={() => setShowAddModal(true)}
-        >
-          <Plus size={16} />
-          <span>신규 아이템 코드 등록</span>
-        </button>
+        {readOnly ? (
+          <span className="badge badge-gray">ERPNext 등록 품목 · AI 규격 검증 자동화</span>
+        ) : (
+          <button
+            className="btn-primary"
+            onClick={() => setShowAddModal(true)}
+          >
+            <Plus size={16} />
+            <span>신규 아이템 코드 등록</span>
+          </button>
+        )}
       </div>
+
+      {readOnly && (isLoading || loadError) && (
+        <div className={`mr-api-state ${loadError ? 'is-error' : ''}`} role={loadError ? 'alert' : 'status'}>
+          <div>
+            {loadError ? <AlertCircle size={16} /> : <RefreshCw size={16} className="spin-icon" />}
+            <span>{loadError ?? 'ERPNext에서 실제 아이템 목록을 불러오는 중입니다.'}</span>
+          </div>
+          {loadError && onRefresh && (
+            <button type="button" className="btn-sm btn-outline" onClick={onRefresh}>
+              다시 불러오기
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 3-1 & 3-2) Item Table */}
       <div className="table-container">
@@ -264,7 +331,10 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
                       )}
                     </div>
                   )}
-                  {item.status === '승인대기' && (
+                  {item.status === '승인대기' && readOnly && (
+                    <span className="badge badge-yellow">AI 규격 검증 대기</span>
+                  )}
+                  {item.status === '승인대기' && !readOnly && (
                     <div className="action-btn-group">
                       <button className="btn-sm btn-approve" onClick={() => onApproveItem(item.id)}>
                         승인
@@ -280,7 +350,13 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
             {sortedItems.length === 0 && (
               <tr>
                 <td colSpan={8} className="table-empty-state">
-                  {searchQuery ? `“${searchQuery}”에 일치하는 아이템이 없습니다.` : '등록 검토할 아이템이 없습니다.'}
+                  {isLoading
+                    ? 'ERPNext 아이템을 불러오는 중입니다.'
+                    : loadError
+                      ? '아이템 조회에 실패했습니다. 위의 다시 불러오기를 눌러 주세요.'
+                      : searchQuery || itemSearchQuery
+                        ? `“${itemSearchQuery || searchQuery}”에 일치하는 아이템이 없습니다.`
+                        : 'ERPNext에 등록된 아이템이 없습니다.'}
                 </td>
               </tr>
             )}
@@ -303,7 +379,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
       )}
 
       {/* Item Reject Reason Modal */}
-      {rejectingItem && (
+      {!readOnly && rejectingItem && (
         <RejectReasonModal
           title="아이템 등록 반려"
           itemNo={rejectingItem.itemCode}
@@ -316,7 +392,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
       )}
 
       {/* Add New Item Modal */}
-      {showAddModal && (
+      {!readOnly && showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -428,10 +504,24 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
                   </div>
                 </div>
 
+                {createValidationMessage && (
+                  <div className="form-validation-message" role="alert">
+                    <AlertCircle size={15} aria-hidden="true" />
+                    <span>{createValidationMessage}</span>
+                  </div>
+                )}
+
               </div>
 
               <div className="modal-footer">
-                <button type="button" className="btn-outline" onClick={() => setShowAddModal(false)}>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => {
+                    setCreateValidationMessage('');
+                    setShowAddModal(false);
+                  }}
+                >
                   취소
                 </button>
                 <button type="submit" className="btn-primary">

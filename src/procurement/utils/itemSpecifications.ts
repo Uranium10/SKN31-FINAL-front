@@ -5,9 +5,143 @@ import type {
   ItemSpecificationValue,
 } from '../types';
 
-const hasValue = (value: ItemSpecificationValue) => (
-  value !== null && value !== ''
+export interface ParsedSpecificationItem {
+  label?: string;
+  value: string;
+}
+
+export interface ParsedSpecificationSection {
+  title?: string;
+  items: ParsedSpecificationItem[];
+}
+
+const decodeHtmlEntities = (value: string): string => {
+  const namedEntities: Record<string, string> = {
+    amp: '&',
+    apos: "'",
+    gt: '>',
+    lt: '<',
+    nbsp: ' ',
+    quot: '"',
+  };
+
+  return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (entity, code: string) => {
+    if (code.startsWith('#')) {
+      const isHex = code[1]?.toLowerCase() === 'x';
+      const parsed = Number.parseInt(code.slice(isHex ? 2 : 1), isHex ? 16 : 10);
+      return Number.isFinite(parsed) ? String.fromCodePoint(parsed) : entity;
+    }
+    return namedEntities[code.toLowerCase()] ?? entity;
+  });
+};
+
+/** ERPNext Text Editor 값과 일반 문자열을 같은 파서에 넣기 위한 정규화 단계입니다. */
+export const normalizeSpecificationText = (value: string): string => decodeHtmlEntities(value)
+  .replace(/<br\s*\/?\s*>/gi, '\n')
+  .replace(/<\/(?:div|p|li|ul|ol|section)>/gi, '\n')
+  .replace(/<li(?:\s[^>]*)?>/gi, '- ')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/\r/g, '')
+  .replace(/[\t\f\v]+/g, ' ')
+  .replace(/ *\n */g, '\n')
+  .replace(/ {2,}/g, ' ')
+  .replace(/\n{2,}/g, '\n')
+  .trim();
+
+const cleanSpecificationToken = (value: string): string => value
+  .replace(/^\s*[-–—•·]+\s*/, '')
+  .replace(/^규격\s*[:：]\s*/i, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const parseSpecificationToken = (value: string): ParsedSpecificationItem | null => {
+  const cleaned = cleanSpecificationToken(value);
+  if (!cleaned) return null;
+
+  // 짧은 "항목: 값" 표현만 레이블로 분리합니다. URL·시각·긴 문장은 그대로 둡니다.
+  const labelled = cleaned.match(/^([^:：]{1,24})\s*[:：]\s*(.+)$/);
+  if (labelled && !/^https?$/i.test(labelled[1])) {
+    return { label: labelled[1].trim(), value: labelled[2].trim() };
+  }
+  return { value: cleaned };
+};
+
+const splitSpecificationChunk = (value: string): ParsedSpecificationItem[] => {
+  // 괄호 안의 "피치 8mm / 길이 720mm / 폭 20mm" 형식만 목록 구분자로 승격합니다.
+  const expandedParentheses = value.replace(/\(([^()]*)\)/g, (whole, inner: string) => (
+    inner.includes('/') ? `, ${inner.replace(/\s*\/\s*/g, ', ')}` : whole
+  ));
+
+  return expandedParentheses
+    .split(/\n|;|,(?!\d{3}\b)/)
+    .map(parseSpecificationToken)
+    .filter((item): item is ParsedSpecificationItem => item !== null);
+};
+
+/**
+ * MR/Item 설명에 혼재하는 세 형식을 화면 표시용으로만 구조화합니다.
+ * - 규격: A, B, C
+ * - 제품 설명 (피치 8mm / 길이 720mm)
+ * - [규격] ... [재질/구성] ... 형태의 ERPNext HTML 설명
+ */
+export const parseSpecificationText = (rawValue: string): ParsedSpecificationSection[] => {
+  const value = normalizeSpecificationText(rawValue);
+  if (!value) return [];
+
+  const headingPattern = /\[([^\]\n]{1,40})\]/g;
+  const headings = [...value.matchAll(headingPattern)];
+  const sections: ParsedSpecificationSection[] = [];
+
+  if (headings.length === 0) {
+    const items = splitSpecificationChunk(value);
+    return items.length ? [{ items }] : [];
+  }
+
+  const prefix = value.slice(0, headings[0].index).trim();
+  if (prefix) {
+    const items = splitSpecificationChunk(prefix);
+    if (items.length) sections.push({ items });
+  }
+
+  headings.forEach((heading, index) => {
+    const start = (heading.index ?? 0) + heading[0].length;
+    const end = headings[index + 1]?.index ?? value.length;
+    const items = splitSpecificationChunk(value.slice(start, end));
+    if (items.length) sections.push({ title: heading[1].trim(), items });
+  });
+
+  const seen = new Set<string>();
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        const key = `${section.title ?? ''}\u0000${item.label ?? ''}\u0000${item.value}`.toLocaleLowerCase('ko-KR');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }),
+    }))
+    .filter((section) => section.items.length > 0);
+};
+
+export const countParsedSpecificationItems = (sections: ParsedSpecificationSection[]): number => (
+  sections.reduce((count, section) => count + section.items.length, 0)
 );
+
+export const summarizeSpecificationText = (value: string, limit = 4): string => {
+  const parts = parseSpecificationText(value)
+    .flatMap((section) => section.items)
+    .map((item) => item.label ? `${item.label} ${item.value}` : item.value);
+  if (!parts.length) return '등록된 규격 정보 없음';
+  const summary = parts.slice(0, limit).join(' · ');
+  return parts.length > limit ? `${summary} 외 ${parts.length - limit}개` : summary;
+};
+
+const hasValue = (value: ItemSpecificationValue) => {
+  if (value === null) return false;
+  if (typeof value !== 'string') return true;
+  return !['', '-', '미입력', '규격 정보 없음', '등록된 규격 정보 없음'].includes(value.trim());
+};
 
 const legacySpecificationFields = (item: Item): ItemSpecificationField[] => [
   { key: 'dimensions', label: '치수 및 규격', value: item.fullSpec.dimensions, group: '기본 규격', order: 10, source: 'legacy' },
@@ -32,9 +166,17 @@ export const getItemSpecificationFields = (item: Item): ItemSpecificationField[]
     ? item.specifications
     : [...legacySpecificationFields(item), ...legacyAttributeFields(item).filter((field) => field.value === true)];
 
+  const seenLegacyValues = new Set<string>();
   return [...fields]
     .filter((field) => hasValue(field.value) || field.required)
-    .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER));
+    .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER))
+    .filter((field) => {
+      if (field.source !== 'legacy' || field.required || typeof field.value !== 'string') return true;
+      const normalized = normalizeSpecificationText(field.value).toLocaleLowerCase('ko-KR');
+      if (!normalized || seenLegacyValues.has(normalized)) return false;
+      seenLegacyValues.add(normalized);
+      return true;
+    });
 };
 
 export const formatSpecificationValue = (field: ItemSpecificationField): string => {

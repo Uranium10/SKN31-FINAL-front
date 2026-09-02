@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { SpecModal } from './components/SpecModal';
@@ -29,9 +29,35 @@ import {
   initialPOItems,
   initialNotifications,
 } from './mock/data';
+import {
+  answerProcurementTask,
+  caseToMaterialRequest,
+  caseToPOItem,
+  caseToVendorSelectionGroup,
+  extendQuotationDeadline,
+  listProcurementCases,
+  rejectProcurementCase,
+  startProcurementCase,
+  syncDraftProcurementCases,
+  type ProcurementDataMode,
+} from './api/cases';
+import {
+  deleteAllProcurementNotifications,
+  deleteProcurementNotification,
+  listProcurementNotifications,
+  subscribeProcurementEvents,
+} from './api/notifications';
+import { getERPItemSpecifications, listERPItems } from './api/items';
+import { useStageTransitionItems } from './hooks/useStageTransitionItems';
+import { normalizeSpecificationText } from './utils/itemSpecifications';
 
 import './ProcurementWorkspace.css';
 import { Paperclip, X } from 'lucide-react';
+
+const procurementDataMode = (
+  import.meta.env.VITE_PROCUREMENT_DATA_MODE ?? 'mock'
+) as ProcurementDataMode;
+const apiDataEnabled = procurementDataMode === 'api' || procurementDataMode === 'hybrid';
 
 interface ProcurementUser {
   id?: string;
@@ -64,8 +90,8 @@ const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
     detail: '승인 대기, 견적 회신, 협력사 승인과 PO 생성 현황을 확인합니다.',
   },
   'item-register': {
-    title: '아이템 등록',
-    detail: 'ERPNext 아이템 속성과 규격을 검토하고 승인 또는 반려합니다.',
+    title: '아이템 목록',
+    detail: 'ERPNext 등록 품목과 AI가 자동 검증한 동적 규격을 조회합니다.',
   },
   'mr-list': {
     title: 'MR 목록',
@@ -77,7 +103,7 @@ const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
   },
   'po-manage': {
     title: 'PO 관리',
-    detail: 'PR 승인 결과를 확인하고 승인된 건의 PO 생성을 진행합니다.',
+    detail: 'PO 발송 전 최종 승인과 Purchase Receipt 입고 현황을 관리합니다.',
   },
 };
 
@@ -171,12 +197,34 @@ function ProcurementWorkspaceComponent({
   // Navigation & Search
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
+    window.localStorage.getItem('biddingflow.sidebar.collapsed') === 'true'
+  ));
 
   // Domain State
-  const [items, setItems] = useState<Item[]>(initialItems);
-  const [requests, setRequests] = useState<MaterialRequest[]>(initialMaterialRequests);
-  const [vendorGroups, setVendorGroups] = useState<VendorSelectionGroup[]>(initialVendorGroups);
-  const [poItems, setPoItems] = useState<POItem[]>(initialPOItems);
+  // In strict API mode, mock rows must never look like live ERPNext data.
+  // Hybrid mode intentionally retains them only as an explicit fallback.
+  const [items, setItems] = useState<Item[]>(
+    procurementDataMode === 'api' ? [] : initialItems
+  );
+  const [requests, setRequests] = useState<MaterialRequest[]>(
+    procurementDataMode === 'api' ? [] : initialMaterialRequests
+  );
+  const [vendorGroups, setVendorGroups] = useState<VendorSelectionGroup[]>(
+    procurementDataMode === 'api' ? [] : initialVendorGroups
+  );
+  const [poItems, setPoItems] = useState<POItem[]>(
+    procurementDataMode === 'api' ? [] : initialPOItems
+      .filter((item) => item.supplierApprovalStatus !== 'rejected')
+      .map((item) => ({
+        ...item,
+        supplierApprovalStatus: 'approved' as const,
+        approvalStatus: item.poCreated ? 'approved' as const : 'pending' as const,
+        promisedDeliveryDate: item.dueDate,
+        deliveryStatus: item.arrived ? 'FULL' as const : 'NOT_RECEIVED' as const,
+        fullReceiptDate: item.arrivedDate,
+      }))
+  );
   const [notifications, setNotifications] = useState<ProcurementNotification[]>(initialNotifications);
 
   // Modals state
@@ -185,9 +233,21 @@ function ProcurementWorkspaceComponent({
   const [activeAttachmentFiles, setActiveAttachmentFiles] = useState<string[] | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [newMRModalOpen, setNewMRModalOpen] = useState(false);
+  const [mrApiLoading, setMrApiLoading] = useState(apiDataEnabled);
+  const [mrApiError, setMrApiError] = useState<string | null>(null);
+  const [itemApiLoading, setItemApiLoading] = useState(apiDataEnabled);
+  const [itemApiError, setItemApiError] = useState<string | null>(null);
   const uniqueRequests = useMemo(() => uniqueByMrNo(requests), [requests]);
   const mrQueueRequests = useMemo(
-    () => uniqueRequests.filter((request) => request.status !== '승인'),
+    () => uniqueRequests.filter((request) => {
+      if (request.workflowStatus && ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(request.workflowStatus)) {
+        return false;
+      }
+      if (!request.workflowStage) return request.status !== '승인';
+      return ['MR_REVIEW', 'ITEM_CHECK', 'SUBSTITUTE_DECISION', 'HUMAN_REVIEW'].includes(
+        request.workflowStage
+      );
+    }),
     [uniqueRequests]
   );
   const activeVendorGroups = useMemo(
@@ -202,6 +262,78 @@ function ProcurementWorkspaceComponent({
     );
     return uniqueByMrNo(poItems.filter((item) => !returnedMRNumbers.has(item.mrNo)));
   }, [poItems, uniqueRequests]);
+  const dashboardRequests = useMemo(() => uniqueRequests.filter((request) => {
+    if (request.workflowStatus && ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(request.workflowStatus)) {
+      return false;
+    }
+    const erpStatus = request.erpStatus?.trim().toLocaleLowerCase('en-US');
+    if (erpStatus) return erpStatus === 'draft' || erpStatus === 'pending';
+    // 구형 목업/마이그레이션 데이터에는 ERP 상태가 없으므로 미처리 MR만
+    // 호환 표시하고, 완료·취소된 작업은 대시보드에서 제외합니다.
+    return request.status === '승인대기';
+  }), [uniqueRequests]);
+  const animatedMRQueueRequests = useStageTransitionItems(mrQueueRequests);
+  const animatedVendorGroups = useStageTransitionItems(activeVendorGroups);
+  const animatedPOItems = useStageTransitionItems(activePOItems);
+  const stageItemIds = useMemo(() => ({
+    mr: mrQueueRequests.map((request) => request.id),
+    vendor: activeVendorGroups.map((group) => group.id),
+    po: activePOItems.map((item) => item.id),
+  }), [mrQueueRequests, activeVendorGroups, activePOItems]);
+  const [seenStageItemIds, setSeenStageItemIds] = useState<{
+    mr: string[];
+    vendor: string[];
+    po: string[];
+  }>({ mr: [], vendor: [], po: [] });
+  const previousStageItemIds = useRef(stageItemIds);
+  const [flashingStages, setFlashingStages] = useState({
+    mr: false,
+    vendor: false,
+    po: false,
+  });
+
+  // 현재 단계에 없던 case/item ID가 새로 들어오는 순간만 메뉴를 짧게
+  // 스윕합니다. 단순 재렌더링이나 같은 API 응답 반복으로는 깜빡이지 않습니다.
+  useEffect(() => {
+    const previous = previousStageItemIds.current;
+    const added = {
+      mr: stageItemIds.mr.some((id) => !previous.mr.includes(id)),
+      vendor: stageItemIds.vendor.some((id) => !previous.vendor.includes(id)),
+      po: stageItemIds.po.some((id) => !previous.po.includes(id)),
+    };
+    previousStageItemIds.current = stageItemIds;
+    if (!added.mr && !added.vendor && !added.po) return undefined;
+
+    setFlashingStages(added);
+    const timer = window.setTimeout(() => {
+      setFlashingStages({ mr: false, vendor: false, po: false });
+    }, 760);
+    return () => window.clearTimeout(timer);
+  }, [stageItemIds]);
+
+  // 현재 열어본 단계의 항목은 모두 확인한 것으로 표시합니다. 다른 단계는
+  // 이미 사라진 ID만 seen 목록에서 제거하여, 나중에 같은 케이스가 해당
+  // 단계로 다시 들어오면 새 작업으로 다시 안내할 수 있게 합니다.
+  useEffect(() => {
+    const activeStage = currentTab === 'mr-list'
+      ? 'mr'
+      : currentTab === 'vendor-select'
+        ? 'vendor'
+        : currentTab === 'po-manage'
+          ? 'po'
+          : null;
+    setSeenStageItemIds((previous) => ({
+      mr: activeStage === 'mr'
+        ? stageItemIds.mr
+        : previous.mr.filter((id) => stageItemIds.mr.includes(id)),
+      vendor: activeStage === 'vendor'
+        ? stageItemIds.vendor
+        : previous.vendor.filter((id) => stageItemIds.vendor.includes(id)),
+      po: activeStage === 'po'
+        ? stageItemIds.po
+        : previous.po.filter((id) => stageItemIds.po.includes(id)),
+    }));
+  }, [currentTab, stageItemIds]);
   const searchResults = useMemo<GlobalSearchResult[]>(() => {
     const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
     if (!query) return [];
@@ -266,12 +398,12 @@ function ProcurementWorkspaceComponent({
     });
   }, [currentTab, onAssistantContextChange]);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
     }, 4000);
-  };
+  }, []);
 
   // webhook/SSE를 붙일 때도 이 함수에 동일한 payload를 전달하면
   // 현재 알림 UI와 읽음 처리를 그대로 재사용할 수 있습니다.
@@ -286,21 +418,174 @@ function ProcurementWorkspaceComponent({
     }, ...previous]);
   };
 
+  const loadMRsFromApi = useCallback(async (
+    reconcile = false,
+    silent = false,
+    reconcileMissing = true,
+  ) => {
+    if (!apiDataEnabled) return;
+    if (!silent) {
+      setMrApiLoading(true);
+      setMrApiError(null);
+    }
+    try {
+      if (reconcile) await syncDraftProcurementCases(reconcileMissing);
+      const cases = await listProcurementCases();
+      // #archived-* 케이스는 번호가 재사용되기 전의 감사 이력이며 현재
+      // 구매 업무가 아니므로 대시보드와 각 단계 작업함에서 제외합니다.
+      const visibleCases = cases.filter((entry) => !entry.mr_name.includes('#archived-'));
+      setRequests(visibleCases.map(caseToMaterialRequest));
+      setVendorGroups(
+        visibleCases
+          .filter((entry) => [
+            'SUPPLIER_RECOMMENDATION', 'RFQ_TARGET_SELECTION', 'RFQ_SENDING',
+            'QUOTATION_COLLECTION', 'SUPPLIER_SELECTION', 'ORDER_START',
+          ].includes(entry.stage))
+          .map(caseToVendorSelectionGroup)
+      );
+      setPoItems(
+        visibleCases
+          .filter((entry) => [
+            'PRE_PO_APPROVAL', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
+          ].includes(entry.stage))
+          .map(caseToPOItem)
+      );
+      if (!silent) setNotifications(await listProcurementNotifications());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'MR 목록을 불러오지 못했습니다.';
+      if (!silent) {
+        setMrApiError(message);
+        if (procurementDataMode === 'api') setRequests([]);
+      }
+    } finally {
+      if (!silent) setMrApiLoading(false);
+    }
+  }, []);
+
+  // Item is an ERPNext master-data view. Load it independently from MR case
+  // reconciliation so an MR/webhook error cannot leave mock items on screen.
+  const loadItemsFromApi = useCallback(async () => {
+    if (!apiDataEnabled) return;
+    setItemApiLoading(true);
+    setItemApiError(null);
+    try {
+      setItems(await listERPItems());
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : 'ERPNext 아이템 목록을 불러오지 못했습니다.';
+      setItemApiError(message);
+      if (procurementDataMode === 'api') setItems([]);
+    } finally {
+      setItemApiLoading(false);
+    }
+  }, []);
+
+  // 웹훅이 누락된 비접속 시간대의 Draft MR을 로그인 후 최초 한 번 대사합니다.
+  // 이후 상태 갱신은 작업 액션 직후 재조회하며, SSE 수신기는 같은 함수를
+  // 호출하도록 붙일 수 있어 화면 상태 갱신 경로가 하나로 유지됩니다.
+  useEffect(() => {
+    if (!apiDataEnabled) return;
+    void loadMRsFromApi(true);
+  }, [loadMRsFromApi]);
+
+  useEffect(() => {
+    if (!apiDataEnabled) return;
+    void loadItemsFromApi();
+  }, [loadItemsFromApi]);
+
+  useEffect(() => {
+    if (!apiDataEnabled) return undefined;
+    let disposed = false;
+    let controller: AbortController | null = null;
+
+    const connect = async () => {
+      while (!disposed) {
+        controller = new AbortController();
+        try {
+          await subscribeProcurementEvents(controller.signal, (event) => {
+            showToast(event.title);
+            void loadMRsFromApi(false);
+          });
+        } catch {
+          // Initial list loading already exposes connection errors. SSE retries
+          // quietly so a temporary proxy restart does not disturb the user.
+        }
+        if (!disposed) await new Promise((resolve) => window.setTimeout(resolve, 3000));
+      }
+    };
+
+    void connect();
+    return () => {
+      disposed = true;
+      controller?.abort();
+    };
+  }, [loadMRsFromApi, showToast]);
+
+  // FastAPI BackgroundTasks에서 실행되는 AI 그래프는 시작 응답보다 늦게
+  // 완료됩니다. QUEUED/RUNNING이 하나라도 있는 동안만 조용히 재조회하여
+  // 성공·인터럽트·실패 상태를 놓치지 않고, 종료되면 폴링도 자동 중단합니다.
+  const hasActiveWorkflow = requests.some((request) => (
+    request.workflowStatus === 'QUEUED' || request.workflowStatus === 'RUNNING'
+  ));
+  useEffect(() => {
+    if (!apiDataEnabled || !hasActiveWorkflow) return undefined;
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      await loadMRsFromApi(false, true);
+      if (!disposed) timer = window.setTimeout(poll, 1800);
+    };
+    timer = window.setTimeout(poll, 1000);
+    return () => {
+      disposed = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [hasActiveWorkflow, loadMRsFromApi]);
+
+  useEffect(() => {
+    window.localStorage.setItem('biddingflow.sidebar.collapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
   const handleSelectSearchResult = (result: GlobalSearchResult) => {
     setCurrentTab(result.targetTab);
     setSearchQuery(result.searchValue);
   };
 
   const handleSelectNotification = (notification: ProcurementNotification) => {
-    setNotifications((previous) => previous.map((item) => (
-      item.id === notification.id ? { ...item, unread: false } : item
-    )));
+    // 알림은 작업 화면으로 이동하는 일회성 inbox 항목입니다. 클릭 즉시
+    // 화면에서 제거하고, API 모드에서는 PostgreSQL 행도 함께 삭제합니다.
+    setNotifications((previous) => previous.filter((item) => item.id !== notification.id));
     setCurrentTab(notification.targetTab);
     setSearchQuery(
       notification.targetTab === 'item-register' || notification.targetTab === 'mr-list'
         ? notification.reference ?? ''
         : ''
     );
+    if (apiDataEnabled) {
+      void deleteProcurementNotification(notification.id).catch(async () => {
+        // 낙관적 삭제가 서버에서 실패했으면 실제 inbox를 다시 읽어 화면과
+        // DB가 서로 다른 상태로 남지 않게 합니다.
+        try {
+          setNotifications(await listProcurementNotifications());
+        } catch {
+          // 기존 목록 조회 오류 표시는 정규 로딩 경로에서 처리합니다.
+        }
+      });
+    }
+  };
+
+  const handleDeleteAllNotifications = () => {
+    setNotifications([]);
+    if (apiDataEnabled) {
+      void deleteAllProcurementNotifications().catch(async () => {
+        try {
+          setNotifications(await listProcurementNotifications());
+        } catch {
+          // 기존 목록 조회 오류 표시는 정규 로딩 경로에서 처리합니다.
+        }
+      });
+    }
   };
 
   const handleCreateMaterialRequest = (request: MaterialRequest) => {
@@ -316,6 +601,16 @@ function ProcurementWorkspaceComponent({
       reference: request.mrNo,
       tone: 'info',
     });
+  };
+
+  const handleAnswerWorkflowTask = async (
+    taskId: string,
+    answer: Record<string, unknown>,
+    version?: number,
+  ) => {
+    await answerProcurementTask(taskId, answer, version);
+    showToast('입력이 반영되었습니다. 다음 작업 단계를 확인합니다.');
+    await loadMRsFromApi(false);
   };
 
   // Actions
@@ -380,9 +675,24 @@ function ProcurementWorkspaceComponent({
   };
 
   // 대체품 확인 프로세스 시작: 대체품 후보 존재 여부에 따라 안내대기/미사용확정 단계로 분기
-  const handleStartSubstituteCheck = (id: string) => {
+  const handleStartSubstituteCheck = async (id: string) => {
     const target = requests.find((request) => request.id === id);
     if (!target) return;
+
+    if (apiDataEnabled) {
+      try {
+        await startProcurementCase(id);
+        setRequests((previous) => previous.map((request) => request.id === id
+          ? { ...request, workflowStatus: 'QUEUED', workflowStage: 'ITEM_CHECK' }
+          : request
+        ));
+        showToast(`${target.mrNo} 구매 처리를 시작했습니다. AI가 대체품과 구매 경로를 확인합니다.`);
+        window.setTimeout(() => void loadMRsFromApi(false), 1200);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'MR 시작 요청에 실패했습니다.');
+      }
+      return;
+    }
 
     setRequests((previous) =>
       previous.map((request) =>
@@ -424,8 +734,29 @@ function ProcurementWorkspaceComponent({
     showToast(`${target.mrNo} 건은 대체품 미사용으로 확정되었습니다. MR을 Submit해주세요.`);
   };
 
-  const handleConfirmReject = (reason: string) => {
+  const handleConfirmReject = async (reason: string) => {
     if (!rejectingItem) return;
+
+    if (apiDataEnabled) {
+      try {
+        await rejectProcurementCase(rejectingItem.id, reason);
+        setRequests((previous) => previous.map((request) => request.id === rejectingItem.id
+          ? {
+              ...request,
+              status: '반려' as const,
+              rejectReason: reason,
+              workflowStatus: 'CANCELLED',
+              workflowStage: 'CANCELLED',
+            }
+          : request
+        ));
+        showToast(`${rejectingItem.mrNo} 건이 반려되었습니다.`);
+        setRejectingItem(null);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'MR 반려 요청에 실패했습니다.');
+      }
+      return;
+    }
     setRequests((prev) =>
       prev.map((r) =>
         r.id === rejectingItem.id
@@ -480,7 +811,26 @@ function ProcurementWorkspaceComponent({
     showToast('아이템 코드 등록이 반려되었습니다.');
   };
 
-  const handleExtendDeadline = (groupId: string, newDate: string, newTime: string) => {
+  const handleExtendDeadline = async (groupId: string, newDate: string, newTime: string) => {
+    const target = vendorGroups.find((group) => group.id === groupId);
+    if (apiDataEnabled) {
+      if (!target?.backendCaseId) {
+        showToast('실제 구매 작업 ID를 찾지 못해 마감일을 변경할 수 없습니다. 목록을 새로고침해 주세요.');
+        return false;
+      }
+      try {
+        await extendQuotationDeadline(
+          target.backendCaseId,
+          `${newDate}T${newTime}:00+09:00`,
+        );
+        showToast(`마감시간이 ${newDate} ${newTime}까지 연장되었습니다. 메일은 재발송하지 않았습니다.`);
+        await loadMRsFromApi(false);
+        return true;
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '마감 연장에 실패했습니다.');
+        return false;
+      }
+    }
     setVendorGroups((prev) =>
       prev.map((g) =>
         g.id === groupId
@@ -495,34 +845,173 @@ function ProcurementWorkspaceComponent({
           : g
       )
     );
-    showToast(`마감시간이 ${newDate} ${newTime}까지 연장되었습니다. 미회신 업체에 메일이 재발송되었습니다. 📧`);
+    showToast(`마감시간이 ${newDate} ${newTime}까지 연장되었습니다.`);
+    return true;
   };
 
-  const handleOpenSpecByItemCode = (itemCode: string) => {
-    const found = items.find((i) => i.itemCode === itemCode);
-    if (found) {
-      setActiveSpecItem(found);
-    } else {
-      setActiveSpecItem({
-        id: 'virtual',
-        itemCode,
-        department: '구매팀',
-        itemName: '품목 규격 정보',
-        specSummary: 'stroke 300mm / 210bar 정격 / 바이톤 씰',
-        fullSpec: {
-          dimensions: '표준 규격 치수',
-          material: 'SCM440 합금강 (특수 열처리)',
-          operatingTemp: '-20°C ~ 180°C',
-          pressureRating: '210 bar 고압용',
-          manufacturer: 'ISO 9001 승인 브랜드',
-          notes: '도면 및 성적서 첨부 완료됨',
-        },
-        maintainStock: true,
-        isFixedAsset: false,
-        attributes: { heatResistant: true, highPressure: true, isoCertified: true, waterproof: false, customizable: false },
-        registeredDate: '2025-01-01',
-        status: '승인대기',
+  const handleSendRFQ = async (
+    groupId: string,
+    supplierIds: string[],
+    supplierEmails: Record<string, string>,
+    deadlineDate: string,
+    deadlineTime: string,
+  ) => {
+    const group = vendorGroups.find((entry) => entry.id === groupId);
+    if (!group) return false;
+    if (apiDataEnabled) {
+      if (!group.pendingTaskId || group.workflowStage !== 'RFQ_TARGET_SELECTION') {
+        showToast('현재 단계에 처리 가능한 RFQ 대상 선택 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return false;
+      }
+      const selected = supplierIds.map((supplierId) => {
+        const quotation = group.quotations.find((item) => item.supplierId === supplierId);
+        return {
+          name: quotation?.supplierName ?? supplierId,
+          email: supplierEmails[supplierId]?.trim() ?? quotation?.email ?? '',
+        };
       });
+      try {
+        await answerProcurementTask(group.pendingTaskId, {
+          suppliers: selected.map((supplier) => supplier.name),
+          supplier_updates: selected,
+          quotation_deadline: `${deadlineDate}T${deadlineTime}:00+09:00`,
+        }, group.pendingTask?.version);
+        showToast(`${selected.length}개 협력사로 RFQ 생성 및 발송을 시작했습니다.`);
+        await loadMRsFromApi(false);
+        return true;
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'RFQ 발송에 실패했습니다.');
+        return false;
+      }
+    }
+    return handleExtendDeadline(groupId, deadlineDate, deadlineTime);
+  };
+
+  const handleCheckQuotations = async (groupId: string) => {
+    const group = vendorGroups.find((entry) => entry.id === groupId);
+    if (!apiDataEnabled || !group?.pendingTaskId) return;
+    try {
+      await answerProcurementTask(
+        group.pendingTaskId,
+        { decision: 'check' },
+        group.pendingTask?.version,
+      );
+      showToast(`${group.mrNo} 견적 회신 현황을 새로 확인했습니다.`);
+      await loadMRsFromApi(false);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '견적 회신 확인에 실패했습니다.');
+    }
+  };
+
+  const handleOpenSpecByItemCode = async (
+    itemCode: string,
+    requestSpecificationOverride?: string,
+  ) => {
+    const found = items.find((i) => i.itemCode === itemCode);
+    const request = requests.find((entry) => entry.itemCode === itemCode);
+    const resolvedRequestSpecification = (
+      requestSpecificationOverride ?? request?.fullSpecText
+    )?.trim();
+    const fallback: Item = found ?? {
+      id: `mr-item-${itemCode}`,
+      itemCode,
+      department: request?.department ?? '요청부서 미지정',
+      itemName: request?.itemName ?? itemCode,
+      specSummary: resolvedRequestSpecification ?? request?.specSummary ?? '규격 정보 없음',
+      specifications: [],
+      fullSpec: {
+        dimensions: resolvedRequestSpecification ?? '-',
+        material: '-',
+        operatingTemp: '-',
+        pressureRating: '-',
+        manufacturer: '-',
+        notes: resolvedRequestSpecification ?? '-',
+      },
+      maintainStock: false,
+      isFixedAsset: false,
+      attributes: {
+        heatResistant: false,
+        highPressure: false,
+        isoCertified: false,
+        waterproof: false,
+        customizable: false,
+      },
+      registeredDate: '',
+      status: '승인대기',
+    };
+    const hasResolvedRequestSpecification = Boolean(
+      resolvedRequestSpecification
+      && resolvedRequestSpecification !== '규격 정보 없음',
+    );
+    const fallbackForModal: Item = hasResolvedRequestSpecification ? {
+      ...fallback,
+      specSummary: resolvedRequestSpecification!,
+      specifications: [
+        {
+          key: 'mr_request_specification',
+          label: 'MR 요청 규격',
+          value: resolvedRequestSpecification!,
+          group: '요청 규격',
+          order: 0,
+          required: true,
+          source: 'erpnext',
+        },
+        ...(fallback.specifications ?? []),
+      ],
+    } : fallback;
+
+    if (apiDataEnabled) {
+      try {
+        // Fetch directly by code even when this item is outside list pagination.
+        const detailed = await getERPItemSpecifications(fallback);
+        setItems((previous) => previous.map((item) => (
+          item.itemCode === detailed.itemCode ? detailed : item
+        )));
+        // MR 목록/대시보드에서 연 모달은 클릭한 행의 규격을 우선합니다.
+        // 같은 품목코드가 여러 MR에 쓰여도 다른 MR의 규격을 잘못 보여주지 않습니다.
+        const requestSpecification = resolvedRequestSpecification;
+        const hasRequestSpecification = Boolean(
+          requestSpecification && requestSpecification !== '규격 정보 없음',
+        );
+        const normalizedRequestSpecification = hasRequestSpecification
+          ? normalizeSpecificationText(requestSpecification!)
+          : '';
+        const itemSpecificationFields = detailed.specifications ?? [];
+        const hasSameItemDescription = itemSpecificationFields.some((field) => (
+          typeof field.value === 'string'
+          && normalizeSpecificationText(field.value) === normalizedRequestSpecification
+        ));
+
+        // MR 행에서 연 모달은 Item 마스터보다 해당 MR의 요청 규격을 우선합니다.
+        // 동일한 Item 설명은 중복 노출하지 않고, 다른 커스텀 규격은 아래에 유지합니다.
+        const modalItem: Item = hasRequestSpecification ? {
+          ...detailed,
+          specSummary: requestSpecification!,
+          specifications: [
+            {
+              key: 'mr_request_specification',
+              label: 'MR 요청 규격',
+              value: requestSpecification!,
+              group: '요청 규격',
+              order: 0,
+              required: true,
+              source: 'erpnext',
+            },
+            ...itemSpecificationFields.filter((field) => (
+              !hasSameItemDescription
+              || typeof field.value !== 'string'
+              || normalizeSpecificationText(field.value) !== normalizedRequestSpecification
+            )),
+          ],
+        } : detailed;
+        setActiveSpecItem(modalItem);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '아이템 규격을 불러오지 못했습니다.');
+        // Item 상세 API가 잠시 실패해도 MR에 저장된 요청 규격은 열람할 수 있습니다.
+        setActiveSpecItem(fallbackForModal);
+      }
+    } else {
+      setActiveSpecItem(fallbackForModal);
     }
   };
 
@@ -538,12 +1027,41 @@ function ProcurementWorkspaceComponent({
     });
   };
 
-  const handleSelectSupplier = (groupId: string, supplierId: string) => {
+  const handleSelectSupplier = async (groupId: string, supplierId: string) => {
     const selectedGroup = vendorGroups.find((group) => group.id === groupId);
     const selectedSupplier = selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId);
-    if (!selectedGroup || !selectedSupplier) return;
+    if (!selectedGroup || !selectedSupplier) return false;
 
-    // 선정 단계에서는 협력사만 확정하고, PR/PO 전송은 'PO발송' 액션에서 별도로 처리합니다.
+    if (apiDataEnabled) {
+      if (
+        !selectedGroup.pendingTaskId
+        || !['QUOTATION_COLLECTION', 'SUPPLIER_SELECTION'].includes(selectedGroup.workflowStage ?? '')
+      ) {
+        showToast('현재 단계에 처리 가능한 협력사 선정 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return false;
+      }
+      if (!selectedSupplier.isResponded) {
+        showToast('견적을 회신한 협력사만 최종 선정할 수 있습니다.');
+        return false;
+      }
+      try {
+        await answerProcurementTask(
+          selectedGroup.pendingTaskId,
+          selectedGroup.workflowStage === 'QUOTATION_COLLECTION'
+            ? { decision: 'finalize', supplier: selectedSupplier.supplierName }
+            : { supplier: selectedSupplier.supplierName },
+          selectedGroup.pendingTask?.version,
+        );
+        showToast(`${selectedSupplier.supplierName}이(가) 최종 업체로 선정되었습니다. 발주 시작 전 상태입니다.`);
+        await loadMRsFromApi(false);
+        return true;
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '협력사 선정에 실패했습니다.');
+        return false;
+      }
+    }
+
+    // 선정 단계에서는 협력사만 확정하고, 발주 시작과 PO 최종 승인은 분리합니다.
     setVendorGroups((previous) => previous.map((group) => (
       group.id === groupId
         ? {
@@ -557,40 +1075,56 @@ function ProcurementWorkspaceComponent({
         : group
     )));
 
-    showToast(`${selectedSupplier.supplierName}이(가) 최종 업체로 선정되었습니다. 'PO발송' 버튼을 눌러 PR을 전송해 주세요.`);
+    showToast(`${selectedSupplier.supplierName}이(가) 최종 업체로 선정되었습니다. '발주 시작'을 눌러주세요.`);
+    return true;
   };
 
-  const handleSendPO = (groupId: string) => {
+  const handleSendPO = async (groupId: string) => {
     const selectedGroup = vendorGroups.find((group) => group.id === groupId);
     const supplierId = selectedGroup?.selectedSupplierId;
     const selectedSupplier = selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId);
     if (!selectedGroup || !supplierId || !selectedSupplier) return;
 
-    const prNo = `PR-2025-${selectedGroup.mrNo.split('-')[2] || '0890'}`;
-    const poItemId = `PO-ITEM-${selectedGroup.id}-${supplierId}`;
-    const selectionRound = (selectedGroup.selectionRound ?? 0) + 1;
+    if (apiDataEnabled) {
+      if (!selectedGroup.pendingTaskId || selectedGroup.workflowStage !== 'ORDER_START') {
+        showToast('현재 단계에 처리 가능한 발주 시작 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        await answerProcurementTask(
+          selectedGroup.pendingTaskId,
+          { decision: 'start_order' },
+          selectedGroup.pendingTask?.version,
+        );
+        setVendorGroups((previous) => previous.map((group) => group.id === groupId
+          ? { ...group, prSent: true, orderStarted: true }
+          : group
+        ));
+        showToast(`${selectedGroup.mrNo} 발주를 시작했습니다. PO 관리에서 최종 승인을 진행해주세요.`);
+        pushNotification({
+          title: 'PO 발송 전 최종 승인이 필요합니다',
+          detail: `${selectedGroup.mrNo} · ${selectedSupplier.supplierName}`,
+          targetTab: 'po-manage',
+          reference: selectedGroup.mrNo,
+          tone: 'warning',
+        });
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '발주 시작에 실패했습니다.');
+      }
+      return;
+    }
 
-    // React state updater는 순수하게 유지합니다. 각 도메인 상태는 이벤트에서 한 번씩만 갱신합니다.
+    const poItemId = `PO-ITEM-${selectedGroup.id}-${supplierId}`;
+
+    // PR/협력사 승인 대기 레코드는 만들지 않는다. 발주 시작과 동시에 협력사
+    // 선정 목록에서 빠지고 PO 관리의 사람 최종 승인 대기 건으로 이동한다.
     setVendorGroups((previous) => previous.map((group) => (
       group.id === groupId
         ? {
             ...group,
-            supplierApprovalStatus: 'pending' as const,
-            selectionRound,
-            selectionHistory: [
-              ...(group.selectionHistory ?? []),
-              {
-                id: `${group.id}-selection-${selectionRound}-${Date.now()}`,
-                round: selectionRound,
-                supplierId,
-                supplierName: selectedSupplier.supplierName,
-                prNo,
-                status: 'pending' as const,
-                selectedAt: new Date().toLocaleString('ko-KR', { hour12: false }),
-              },
-            ],
             prSent: true,
-            prNo,
+            orderStarted: true,
           }
         : group
     )));
@@ -598,7 +1132,7 @@ function ProcurementWorkspaceComponent({
     setPoItems((previous) => {
       const nextPOItem: POItem = {
         id: poItemId,
-        prNo,
+        prNo: '발주 승인 대기',
         mrNo: selectedGroup.mrNo,
         itemName: selectedGroup.itemName,
         itemCode: selectedGroup.itemCode,
@@ -606,32 +1140,24 @@ function ProcurementWorkspaceComponent({
         selectedSupplier: selectedSupplier.supplierName,
         totalAmount: selectedSupplier.quoteTotalPrice,
         dueDate: selectedGroup.targetDueDate,
-        supplierApprovalStatus: 'pending',
+        supplierApprovalStatus: 'approved',
+        approvalStatus: 'pending',
         poCreated: false,
+        promisedDeliveryDate: selectedGroup.targetDueDate,
+        deliveryStatus: 'NOT_RECEIVED',
       };
       const existingIndex = previous.findIndex((item) => item.mrNo === selectedGroup.mrNo);
       if (existingIndex < 0) return [nextPOItem, ...previous];
       return previous.map((item, index) => index === existingIndex ? { ...item, ...nextPOItem } : item);
     });
 
-    setRequests((previous) => previous.map((request) => (
-      request.mrNo === selectedGroup.mrNo
-        ? {
-            ...request,
-            returnedFromSupplier: false,
-            returnReason: undefined,
-            processStage: { ...request.processStage, prSupplierApproved: '대기' },
-          }
-        : request
-    )));
-
-    showToast('PO발송이 완료되어 PR이 ERPNext로 자동 전송되었습니다.');
+    showToast('발주를 시작했습니다. PO 관리에서 발송 전 최종 승인을 진행해주세요.');
     pushNotification({
-      title: '협력사 선정과 PR 전송이 완료되었습니다',
-      detail: `${selectedGroup.mrNo} · 협력사 승인 대기`,
+      title: 'PO 발송 전 최종 승인이 필요합니다',
+      detail: `${selectedGroup.mrNo} · ${selectedSupplier.supplierName}`,
       targetTab: 'po-manage',
       reference: selectedGroup.mrNo,
-      tone: 'success',
+      tone: 'warning',
     });
   };
 
@@ -691,13 +1217,33 @@ function ProcurementWorkspaceComponent({
     });
   };
 
-  const handleCreatePO = (poId: string) => {
+  const handleCreatePO = async (poId: string) => {
     const targetPO = poItems.find((item) => item.id === poId);
     if (!targetPO) return;
+
+    if (apiDataEnabled) {
+      if (!targetPO.pendingTaskId || targetPO.pendingTask?.taskType !== 'po_approval') {
+        showToast('현재 단계에 처리 가능한 PO 승인 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        await answerProcurementTask(
+          targetPO.pendingTaskId,
+          { decision: 'approve' },
+          targetPO.pendingTask?.version,
+        );
+        showToast('최종 승인이 완료되어 PO를 생성하고 발송했습니다. 입고를 기다립니다.');
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'PO 승인 및 발송에 실패했습니다.');
+      }
+      return;
+    }
 
     setPoItems((previous) => previous.map((item) => item.id === poId
       ? {
           ...item,
+          approvalStatus: 'approved' as const,
           poCreated: true,
           poNo: `PO-2025-00${Math.floor(Math.random() * 90 + 10)}`,
           createdDate: new Date().toLocaleString('ko-KR', { hour12: false }),
@@ -777,16 +1323,42 @@ function ProcurementWorkspaceComponent({
     if (!targetPO) return;
 
     setPoItems((previous) => previous.map((item) => item.id === poId
-      ? { ...item, arrived: true, arrivedDate: new Date().toLocaleString('ko-KR', { hour12: false }) }
+      ? {
+          ...item,
+          arrived: true,
+          deliveryStatus: 'FULL' as const,
+          receivedQty: item.orderedQty ?? 1,
+          arrivedDate: new Date().toLocaleString('ko-KR', { hour12: false }),
+          fullReceiptDate: new Date().toISOString().slice(0, 10),
+        }
       : item
     ));
     showToast(`${targetPO.poNo} 도착이 확인되었습니다. Supplier Scorecard를 작성해 주세요.`);
   };
 
   // Supplier Scorecard 평가 제출 -> 해당 PO 건 발주 프로세스 종료
-  const handleSubmitScorecard = (poId: string, scores: SupplierScores) => {
+  const handleSubmitScorecard = async (poId: string, scores: SupplierScores) => {
     const targetPO = poItems.find((item) => item.id === poId);
     if (!targetPO) return;
+
+    if (apiDataEnabled) {
+      if (!targetPO.pendingTaskId || targetPO.pendingTask?.taskType !== 'supplier_scorecard') {
+        showToast('현재 단계에 처리 가능한 Supplier Scorecard 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        await answerProcurementTask(
+          targetPO.pendingTaskId,
+          { ...scores },
+          targetPO.pendingTask?.version,
+        );
+        showToast(`${targetPO.poNo} 건의 Supplier Scorecard 평가가 완료되었습니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Scorecard 저장에 실패했습니다.');
+      }
+      return;
+    }
 
     setPoItems((previous) => previous.map((item) => item.id === poId
       ? { ...item, scorecardScores: scores, scorecardCompleted: true }
@@ -795,7 +1367,12 @@ function ProcurementWorkspaceComponent({
     showToast(`${targetPO.poNo} 건의 Supplier Scorecard 평가가 완료되어 발주 프로세스가 종료되었습니다.`);
   };
 
-  const pendingCount = uniqueRequests.filter((request) => request.status === '승인대기').length;
+  const pendingCount = mrQueueRequests.filter((request) => request.status === '승인대기').length;
+  const stageTaskCounts = {
+    mr: stageItemIds.mr.filter((id) => !seenStageItemIds.mr.includes(id)).length,
+    vendor: stageItemIds.vendor.filter((id) => !seenStageItemIds.vendor.includes(id)).length,
+    po: stageItemIds.po.filter((id) => !seenStageItemIds.po.includes(id)).length,
+  };
 
   return (
     <div className="procurement-shell">
@@ -804,8 +1381,12 @@ function ProcurementWorkspaceComponent({
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         pendingCount={pendingCount}
+        stageTaskCounts={stageTaskCounts}
+        flashingStages={flashingStages}
         currentUser={currentUser}
         onLogout={onLogout}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
       />
 
       {/* Main Content Area */}
@@ -819,9 +1400,7 @@ function ProcurementWorkspaceComponent({
           notifications={notifications}
           onSelectSearchResult={handleSelectSearchResult}
           onSelectNotification={handleSelectNotification}
-          onMarkAllNotificationsRead={() => setNotifications((previous) => (
-            previous.map((notification) => ({ ...notification, unread: false }))
-          ))}
+          onMarkAllNotificationsRead={handleDeleteAllNotifications}
           onOpenNewMRModal={() => setNewMRModalOpen(true)}
         />
 
@@ -831,8 +1410,9 @@ function ProcurementWorkspaceComponent({
             {/* Screen 2: 대시보드 */}
             {currentTab === 'dashboard' && (
               <DashboardView
-                requests={uniqueRequests}
-                onApprove={handleApproveRequest}
+                requests={dashboardRequests}
+                poItems={activePOItems}
+                onApprove={apiDataEnabled ? handleStartSubstituteCheck : handleApproveRequest}
                 onOpenRejectModal={(id, mrNo) => setRejectingItem({ id, mrNo })}
                 onOpenSpecModal={handleOpenSpecByItemCode}
                 setCurrentTab={setCurrentTab}
@@ -844,17 +1424,21 @@ function ProcurementWorkspaceComponent({
               <ItemRegistrationView
                 items={items}
                 searchQuery={searchQuery}
-                onOpenSpecModal={setActiveSpecItem}
+                onOpenSpecModal={(item) => void handleOpenSpecByItemCode(item.itemCode)}
                 onAddItem={handleAddItem}
                 onApproveItem={handleApproveItem}
                 onRejectItem={handleRejectItem}
+                readOnly={apiDataEnabled}
+                isLoading={itemApiLoading}
+                loadError={itemApiError}
+                onRefresh={() => void loadItemsFromApi()}
               />
             )}
 
             {/* Screen 4: MR 목록 */}
             {currentTab === 'mr-list' && (
               <MRListView
-                requests={mrQueueRequests}
+                requests={animatedMRQueueRequests}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
                 onOpenSpecModalByItemCode={handleOpenSpecByItemCode}
@@ -864,30 +1448,38 @@ function ProcurementWorkspaceComponent({
                 onStartSubstituteCheck={handleStartSubstituteCheck}
                 onSubstituteSelectedInErp={handleSubstituteSelectedInErp}
                 onConfirmSubstituteUnused={handleConfirmSubstituteUnused}
+                isApiMode={apiDataEnabled}
+                isLoading={mrApiLoading}
+                loadError={mrApiError}
+                onRefresh={() => void loadMRsFromApi(false)}
+                onAnswerTask={handleAnswerWorkflowTask}
               />
             )}
 
             {/* Screen 5: 협력사 선정 */}
             {currentTab === 'vendor-select' && (
               <VendorSelectionView
-                vendorGroups={activeVendorGroups}
+                vendorGroups={animatedVendorGroups}
                 requests={uniqueRequests}
                 onSelectSupplier={handleSelectSupplier}
                 onSendPO={handleSendPO}
                 onWithdrawSupplierSelection={handleWithdrawSupplierSelection}
                 onOpenSpecModalByItemCode={handleOpenSpecByItemCode}
                 onExtendDeadline={handleExtendDeadline}
+                onSendRFQ={handleSendRFQ}
+                onCheckQuotations={handleCheckQuotations}
               />
             )}
 
             {/* Screen 6: PO 관리 */}
             {currentTab === 'po-manage' && (
               <POManagementView
-                poItems={activePOItems}
+                poItems={animatedPOItems}
                 onCreatePO={handleCreatePO}
                 onReturnToMR={handleReturnToMR}
                 onMarkArrived={handleMarkPOArrived}
                 onSubmitScorecard={handleSubmitScorecard}
+                isApiMode={apiDataEnabled}
               />
             )}
           </main>

@@ -25,7 +25,7 @@ export interface ERPItemSpecificationResponse {
   item_group?: string;
   department?: string;
   stock_uom?: string;
-  description?: string;
+  description?: string | null;
   maintain_stock?: boolean;
   is_fixed_asset?: boolean;
   registered_date?: string;
@@ -73,6 +73,20 @@ export interface Item {
 
 export type MRSubstituteStage = 'not_started' | 'notified_waiting' | 'not_used_confirmed';
 
+export type WorkflowTransitionPhase = 'entering' | 'stable' | 'exiting';
+
+export interface PendingHumanTask {
+  taskId: string;
+  taskType: string;
+  title: string;
+  description?: string;
+  audience?: string;
+  channel?: string;
+  inputSchema: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  version?: number;
+}
+
 export interface MaterialRequest {
   id: string;
   mrNo: string;
@@ -101,6 +115,16 @@ export interface MaterialRequest {
   // 승인 후 대체품 확인 진행 상태: 대체품 후보 존재 여부와 진행 단계
   hasSubstituteCandidates?: boolean;
   substituteStage?: MRSubstituteStage;
+  /** PostgreSQL/LangGraph 연동 모드에서만 채워지는 안정적인 서버 상태입니다. */
+  workflowStatus?: string;
+  workflowStage?: string;
+  workflowError?: string;
+  /** 실패한 그래프가 실행 가능한 next 체크포인트를 보유한 경우에만 true입니다. */
+  canRetry?: boolean;
+  pendingTaskCount?: number;
+  pendingTask?: PendingHumanTask;
+  erpStatus?: string;
+  transitionPhase?: WorkflowTransitionPhase;
   // Progress stages
   processStage: {
     approval: '완료' | '진행중' | '대기';
@@ -142,6 +166,7 @@ export interface SupplierQuotation {
   aiScore: number;
   aiReason: string;
   isSelected: boolean;
+  email?: string;
   scores?: SupplierScores;
 }
 
@@ -186,6 +211,12 @@ export interface VendorSelectionGroup {
   resolutionIssue?: VendorResolutionIssue;
   prSent: boolean;
   prNo?: string;
+  backendCaseId?: string;
+  pendingTaskId?: string;
+  pendingTask?: PendingHumanTask;
+  workflowStage?: string;
+  orderStarted?: boolean;
+  transitionPhase?: WorkflowTransitionPhase;
 }
 
 export interface POProcessingIssue {
@@ -204,6 +235,9 @@ export interface POItem {
   department: string;
   selectedSupplier: string;
   totalAmount: number;
+  purchaseMode?: 'direct' | 'quotation';
+  referencePO?: string;
+  referenceUnitPrice?: number;
   dueDate: string;
   supplierApprovalStatus: 'approved' | 'rejected' | 'pending';
   rejectReason?: string;
@@ -217,6 +251,25 @@ export interface POItem {
   arrivedDate?: string;
   scorecardScores?: SupplierScores;
   scorecardCompleted?: boolean;
+  backendCaseId?: string;
+  pendingTaskId?: string;
+  pendingTask?: PendingHumanTask;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
+  orderedQty?: number;
+  receivedQty?: number;
+  deliveryStatus?: 'NOT_RECEIVED' | 'PARTIAL' | 'FULL';
+  promisedDeliveryDate?: string;
+  firstReceiptDate?: string;
+  fullReceiptDate?: string;
+  invoiceCount?: number;
+  latestInvoiceName?: string;
+  invoiceTotal?: number;
+  outstandingAmount?: number;
+  paymentStatus?: 'NOT_INVOICED' | 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+  paidAmount?: number;
+  latestPaymentEntry?: string;
+  lastPaymentDate?: string;
+  transitionPhase?: WorkflowTransitionPhase;
 }
 
 export interface AiLog {

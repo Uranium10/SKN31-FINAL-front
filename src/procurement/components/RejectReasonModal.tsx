@@ -15,11 +15,12 @@ export const RejectReasonModal: React.FC<RejectReasonModalProps> = ({
   onClose,
 }) => {
   const [reason, setReason] = useState('');
+  const [validationMessage, setValidationMessage] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reason.trim()) {
-      alert('반려 사유를 입력해주세요.');
+      setValidationMessage('반려 사유를 입력해주세요.');
       return;
     }
     onConfirm(reason);
@@ -47,10 +48,18 @@ export const RejectReasonModal: React.FC<RejectReasonModalProps> = ({
                 rows={4}
                 placeholder="예: 예산 초과로 인한 사유, 기존 창고 B구역 동일 품목 재고 5개 존재함. 요청 부서 재검토 필요."
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => {
+                  setReason(e.target.value);
+                  if (validationMessage) setValidationMessage('');
+                }}
                 style={{ resize: 'vertical' }}
                 autoFocus
               />
+              {validationMessage && (
+                <div className="form-validation-message" role="alert">
+                  <AlertCircle size={14} /> {validationMessage}
+                </div>
+              )}
             </div>
           </div>
 
