@@ -330,6 +330,7 @@ export const initialMaterialRequests: MaterialRequest[] = [
     dDay: 0,
     isUrgent: true,
     status: '승인대기',
+    hasSubstituteCandidates: true,
     revisionRound: 1,
     returnedFromSupplier: true,
     returnReason: '원자재 수급 지연으로 최초 납기 대응 불가. 납기 변경 또는 대체 협력사 선정이 필요합니다.',
@@ -365,6 +366,7 @@ export const initialVendorGroups: VendorSelectionGroup[] = [
     deadlineDate: '2025-01-22',
     deadlineTime: '18:00',
     deadlineDDay: 2,
+    rfqSent: true,
     prSent: true,
     prNo: 'PR-2025-0891',
     selectedSupplierId: 'SUP-01',
@@ -438,6 +440,7 @@ export const initialVendorGroups: VendorSelectionGroup[] = [
     deadlineDate: '2025-01-20',
     deadlineTime: '17:00',
     deadlineDDay: 1,
+    rfqSent: true,
     prSent: false,
     quotations: [
       {

@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
-import type { VendorSelectionGroup } from '../types';
+import type { VendorSelectionGroup, MaterialRequest, SupplierQuotation, SupplierScores } from '../types';
 import {
-  Bot,
   Sparkles,
   FileText,
   X,
   Paperclip,
-  Award,
   Calendar,
   Clock,
   Mail,
@@ -14,49 +12,163 @@ import {
   XCircle,
   LoaderCircle,
   AlertTriangle,
-  RefreshCw,
-  SearchX,
-  UserPlus
+  Send,
+  Building2,
+  ExternalLink,
+  Award
 } from 'lucide-react';
 
 interface VendorSelectionViewProps {
   vendorGroups: VendorSelectionGroup[];
+  requests?: MaterialRequest[];
   onSelectSupplier: (groupId: string, supplierId: string) => void;
+  onSendPO: (groupId: string) => void;
   onWithdrawSupplierSelection: (groupId: string, reason: string) => void;
   onOpenSpecModalByItemCode: (itemCode: string) => void;
   onExtendDeadline: (groupId: string, newDate: string, newTime: string) => void;
-  onRetrySupplierSearch: (groupId: string) => void;
-  onAddSupplierCandidate: (groupId: string, supplier: { name: string; email: string }) => void;
 }
+
+// AI 5대 항목 평가 점수 생성 헬퍼 함수 (납기, 품질, 가격, 응대, 의사소통 각 5점 만점)
+const getSupplierScores = (quotation: SupplierQuotation): SupplierScores => {
+  if (quotation.scores) return quotation.scores;
+  if (quotation.aiRank === 1) {
+    return { leadTime: 5, quality: 5, price: 5, service: 4, communication: 5 };
+  } else if (quotation.aiRank === 2) {
+    return { leadTime: 5, quality: 4, price: 4, service: 5, communication: 5 };
+  } else {
+    return { leadTime: 4, quality: 5, price: 4, service: 4, communication: 5 };
+  }
+};
+
+// 5점 만점 개수 산출 헬퍼
+const getCountOf5 = (scores: SupplierScores): number => {
+  return Object.values(scores).filter((v) => v === 5).length;
+};
 
 export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   vendorGroups,
+  requests = [],
   onSelectSupplier,
+  onSendPO,
   onWithdrawSupplierSelection,
   onExtendDeadline,
-  onRetrySupplierSearch,
-  onAddSupplierCandidate,
 }) => {
-  // Active selected MR Group
-  const [selectedGroup, setSelectedGroup] = useState<VendorSelectionGroup | null>(vendorGroups[0] || null);
+  // 모달 상태
+  const [selectedGroup, setSelectedGroup] = useState<VendorSelectionGroup | null>(null);
+  
+  // 1. MR 번호 클릭 시 상세 모달
+  const [showMRModal, setShowMRModal] = useState<boolean>(false);
+  const [activeMR, setActiveMR] = useState<MaterialRequest | null>(null);
 
-  // Modals state
-  const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
-  const [showRankModal, setShowRankModal] = useState<boolean>(false);
+  // 2. RFQ 협력사 클릭 시 AI 추천 & 마감일 설정 모달
+  const [showRfqModal, setShowRfqModal] = useState<boolean>(false);
+  const [rfqSelectedSuppliers, setRfqSelectedSuppliers] = useState<Record<string, boolean>>({});
+  const [rfqDeadlineDate, setRfqDeadlineDate] = useState<string>('');
+  const [rfqDeadlineTime, setRfqDeadlineTime] = useState<string>('18:00');
+
+  // 3. 견적 회신율 퍼센트 클릭 시 회신 상세 & 업체 선정 모달
+  const [showQuotationModal, setShowQuotationModal] = useState<boolean>(false);
+  const [selectedSupplierForApproval, setSelectedSupplierForApproval] = useState<string | null>(null);
+
+  // 4. 마감시간 연장 모달
   const [extendingGroup, setExtendingGroup] = useState<VendorSelectionGroup | null>(null);
-  const [confirmingSupplierId, setConfirmingSupplierId] = useState<string | null>(null);
-  const [selectingSupplierId, setSelectingSupplierId] = useState<string | null>(null);
-  const [changingGroup, setChangingGroup] = useState<VendorSelectionGroup | null>(null);
-  const [changeReason, setChangeReason] = useState('');
-  const [retryingGroupId, setRetryingGroupId] = useState<string | null>(null);
-  const [addingSupplierGroup, setAddingSupplierGroup] = useState<VendorSelectionGroup | null>(null);
-  const [manualSupplierName, setManualSupplierName] = useState('');
-  const [manualSupplierEmail, setManualSupplierEmail] = useState('');
-
-  // Extension Modal Form state
   const [extDate, setExtDate] = useState<string>('2025-01-25');
   const [extTime, setExtTime] = useState<string>('18:00');
 
+  // 5. 선정 철회/변경 모달
+  const [changingGroup, setChangingGroup] = useState<VendorSelectionGroup | null>(null);
+  const [changeReason, setChangeReason] = useState('');
+  const [selectingSupplierId, setSelectingSupplierId] = useState<string | null>(null);
+
+  // 1. MR 번호 클릭 처리 (MR 목록 내용 다 확인 가능하도록 설정)
+  const handleOpenMRDetail = (group: VendorSelectionGroup) => {
+    setSelectedGroup(group);
+    const matchedMR = requests.find((r) => r.mrNo === group.mrNo) || null;
+    setActiveMR(matchedMR);
+    setShowMRModal(true);
+  };
+
+  // 2. RFQ 협력사 클릭 처리 (AI 순위/평가표/체크박스/마감일 모달)
+  const handleOpenRfqModal = (group: VendorSelectionGroup) => {
+    setSelectedGroup(group);
+    setRfqDeadlineDate(group.deadlineDate || '2025-01-22');
+    setRfqDeadlineTime(group.deadlineTime || '18:00');
+
+    // 기본적으로 모든 협력사 체크 ON
+    const initialCheckState: Record<string, boolean> = {};
+    group.quotations.forEach((q) => {
+      initialCheckState[q.supplierId] = true;
+    });
+    setRfqSelectedSuppliers(initialCheckState);
+    setShowRfqModal(true);
+  };
+
+  const handleToggleRfqSupplier = (supplierId: string) => {
+    setRfqSelectedSuppliers((prev) => ({
+      ...prev,
+      [supplierId]: !prev[supplierId],
+    }));
+  };
+
+  const handleSendRfq = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGroup) return;
+
+    const checkedCount = Object.values(rfqSelectedSuppliers).filter(Boolean).length;
+    if (checkedCount === 0) {
+      alert('RFQ를 발송할 협력사를 최소 1개 이상 선택해 주세요.');
+      return;
+    }
+
+    onExtendDeadline(selectedGroup.id, rfqDeadlineDate, rfqDeadlineTime);
+    alert(
+      `[${selectedGroup.mrNo}] 선택한 ${checkedCount}개 협력사로 RFQ 발송이 완료되었습니다!\n\n견적 마감일시: ${rfqDeadlineDate} ${rfqDeadlineTime}`
+    );
+    setShowRfqModal(false);
+  };
+
+  // 3. 견적 회신율(%) 클릭 처리 (상세사항 확인 & 체크박스 업체 선정)
+  const handleOpenQuotationModal = (group: VendorSelectionGroup) => {
+    setSelectedGroup(group);
+    // 기본 선택: 기존 선정 업체가 있으면 해당 업체, 없으면 AI 1위 업체
+    const currentSelected = group.selectedSupplierId || group.quotations.find((q) => q.aiRank === 1)?.supplierId || null;
+    setSelectedSupplierForApproval(currentSelected);
+    setShowQuotationModal(true);
+  };
+
+  const handleConfirmSupplierSelection = () => {
+    if (!selectedGroup || !selectedSupplierForApproval || selectingSupplierId) return;
+
+    const groupId = selectedGroup.id;
+    const supplierId = selectedSupplierForApproval;
+
+    setSelectingSupplierId(supplierId);
+
+    window.setTimeout(() => {
+      onSelectSupplier(groupId, supplierId);
+      setSelectedGroup((current) => {
+        if (!current || current.id !== groupId) return current;
+        return {
+          ...current,
+          selectedSupplierId: supplierId,
+          quotations: current.quotations.map((q) => ({
+            ...q,
+            isSelected: q.supplierId === supplierId,
+          })),
+        };
+      });
+      setSelectingSupplierId(null);
+      setShowQuotationModal(false);
+      alert('최종 협력사 선정이 완료되었습니다!\n표의 \'PO발송\' 버튼을 눌러 PR을 ERPNext로 전송해 주세요.');
+    }, 500);
+  };
+
+  // 6. 진행상태 → PO발송 버튼 클릭 처리
+  const handleSendPOClick = (group: VendorSelectionGroup) => {
+    onSendPO(group.id);
+  };
+
+  // 4. 마감시간 연장 처리
   const handleOpenExtendModal = (group: VendorSelectionGroup) => {
     setExtendingGroup(group);
     setExtDate(group.deadlineDate || '2025-01-25');
@@ -67,364 +179,550 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     e.preventDefault();
     if (!extendingGroup) return;
     onExtendDeadline(extendingGroup.id, extDate, extTime);
-    alert(`마감시간이 ${extDate} ${extTime}까지 성공적으로 연장되었습니다!\n\n견적을 회신하지 않은 업체에 마감시간 연장 및 독촉 안내 메일이 즉시 자동 발송되었습니다. 📧`);
+    alert(
+      `마감시간이 ${extDate} ${extTime}까지 성공적으로 연장되었습니다!\n\n미회신 협력사에 마감 연장 독촉 메일이 발송되었습니다. 📧`
+    );
     setExtendingGroup(null);
   };
 
-  const handleCloseRankModal = () => {
-    if (selectingSupplierId) return;
-    setConfirmingSupplierId(null);
-    setShowRankModal(false);
-  };
-
-  const handleConfirmSupplier = (supplierId: string) => {
-    if (!selectedGroup || selectingSupplierId) return;
-
-    const groupId = selectedGroup.id;
-    const prNo = `PR-2025-${selectedGroup.mrNo.split('-')[2] || '0890'}`;
-    setConfirmingSupplierId(null);
-    setSelectingSupplierId(supplierId);
-
-    window.setTimeout(() => {
-      onSelectSupplier(groupId, supplierId);
-      setSelectedGroup((current) => {
-        if (!current || current.id !== groupId) return current;
-        return {
-          ...current,
-          selectedSupplierId: supplierId,
-          supplierApprovalStatus: 'pending',
-          prSent: true,
-          prNo,
-          quotations: current.quotations.map((quotation) => ({
-            ...quotation,
-            isSelected: quotation.supplierId === supplierId,
-          })),
-        };
-      });
-      setSelectingSupplierId(null);
-    }, 520);
-  };
-
+  // 5. 선정 변경 철회 처리
   const handleConfirmSelectionChange = (event: React.FormEvent) => {
     event.preventDefault();
     if (!changingGroup || !changeReason.trim()) return;
 
-    const clearedGroup: VendorSelectionGroup = {
-      ...changingGroup,
-      selectedSupplierId: undefined,
-      supplierApprovalStatus: undefined,
-      prSent: false,
-      prNo: undefined,
-      quotations: changingGroup.quotations.map((quotation) => ({
-        ...quotation,
-        isSelected: false,
-      })),
-    };
-
     onWithdrawSupplierSelection(changingGroup.id, changeReason.trim());
-    setSelectedGroup(clearedGroup);
+    setSelectedGroup(changingGroup);
     setChangingGroup(null);
     setChangeReason('');
-    setConfirmingSupplierId(null);
-    setShowRankModal(true);
-  };
-
-  const handleRetrySupplierSearch = (groupId: string) => {
-    if (retryingGroupId) return;
-    setRetryingGroupId(groupId);
-    window.setTimeout(() => {
-      onRetrySupplierSearch(groupId);
-      setRetryingGroupId(null);
-    }, 650);
-  };
-
-  const handleOpenManualSupplier = (group: VendorSelectionGroup) => {
-    setAddingSupplierGroup(group);
-    setManualSupplierName('');
-    setManualSupplierEmail('');
-  };
-
-  const handleAddManualSupplier = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!addingSupplierGroup || !manualSupplierName.trim() || !manualSupplierEmail.trim()) return;
-    onAddSupplierCandidate(addingSupplierGroup.id, {
-      name: manualSupplierName.trim(),
-      email: manualSupplierEmail.trim(),
-    });
-    setAddingSupplierGroup(null);
-    setManualSupplierName('');
-    setManualSupplierEmail('');
+    setShowQuotationModal(true);
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* 안내 상단 바 */}
       <div
         style={{
           backgroundColor: 'var(--primary-soft)',
           border: '1px solid rgba(60, 60, 67, 0.12)',
           borderRadius: 'var(--radius-md)',
-          padding: '12px 18px',
+          padding: '14px 20px',
           fontSize: '13px',
           color: 'var(--primary-hover)',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px'
+          gap: '12px',
         }}
       >
-        <Sparkles size={18} color="var(--accent)" />
+        <Sparkles size={20} color="var(--accent)" />
         <span>
-          <strong>협력사 선정 및 마감관리</strong>: 마감시간 연장(1, 2번 위치)으로 미회신 업체 메일 발송 및 <strong>[상세사항 확인] 한눈에 보는 비교 표(Table)</strong>를 지원합니다.
+          <strong>협력사 선정 및 비교 관리 (표 형식)</strong>: 
+          MR 번호 클릭 시 <strong>MR 상세정보 확인</strong>, RFQ 협력사 클릭 시 <strong>AI 5대 평가표 및 마감일 설정</strong>, 
+          회신율 클릭 시 <strong>견적 상세비교 및 체크박스 업체 선정</strong>이 가능합니다.
         </span>
       </div>
 
-      {/* MR 번호와 아이템명 묶음 카드 리스트 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {vendorGroups.map((group) => {
-          const respondedCount = group.quotations.filter((q) => q.isResponded).length;
-          const totalSuppliers = group.quotations.length;
-          const percent = totalSuppliers > 0 ? Math.round((respondedCount / totalSuppliers) * 100) : 0;
-          const bestQuotation = group.quotations.find((q) => q.aiRank === 1);
-          const selectedQuotation = group.quotations.find((q) => q.supplierId === group.selectedSupplierId);
-          const hasSelection = Boolean(group.selectedSupplierId);
-          const isApproved = group.supplierApprovalStatus === 'approved';
-          const isPendingApproval = group.supplierApprovalStatus === 'pending';
-          const hasResolutionIssue = Boolean(group.resolutionIssue);
+      {/* 요구사항 핵심: 협력사 선정 표 (Table) */}
+      <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '10px', backgroundColor: 'var(--bg-card)', boxShadow: 'var(--shadow-sm)' }}>
+        <table className="custom-table" style={{ width: '100%', minWidth: '950px' }}>
+          <thead>
+            <tr>
+              <th style={{ width: '150px' }}>MR 번호</th>
+              <th style={{ width: '160px' }}>납기요청일</th>
+              <th style={{ width: '220px' }}>RFQ 협력사</th>
+              <th style={{ width: '200px' }}>마감시간 (마감연장)</th>
+              <th style={{ width: '170px', textAlign: 'center' }}>견적 회신율 (%)</th>
+              <th style={{ width: '160px' }}>진행상태</th>
+              <th style={{ width: '140px' }}>PO발송</th>
+            </tr>
+          </thead>
+          <tbody>
+            {vendorGroups.map((group) => {
+              const respondedCount = group.quotations.filter((q) => q.isResponded).length;
+              const totalSuppliers = group.quotations.length;
+              const percent = totalSuppliers > 0 ? Math.round((respondedCount / totalSuppliers) * 100) : 0;
+              const selectedQuotation = group.quotations.find((q) => q.supplierId === group.selectedSupplierId);
+              const hasSelection = Boolean(group.selectedSupplierId);
+              const rfqActive = Boolean(group.rfqSent);
 
-          return (
-            <div
-              key={group.id}
-              className={`vendor-group-card ${isApproved ? 'is-approved' : isPendingApproval ? 'is-pending-approval' : ''} ${hasResolutionIssue ? 'is-resolution-failed' : ''}`}
-            >
-              {/* Header: MR 번호 & 아이템명 묶음 + 위치 1 (마감일수) + 위치 2 (마감시간 연장 버튼) */}
-              <div className="vendor-group-header" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div className="vendor-group-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <h3>
-                    <span style={{ color: 'var(--primary)', fontFamily: 'monospace' }}>{group.mrNo}</span>
-                    <span style={{ color: 'var(--text-dim)', margin: '0 6px' }}>|</span>
-                    <span>{group.itemName}</span>
-                    <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '6px' }}>
-                      ({group.quantity} {group.unit})
-                    </span>
-                  </h3>
-
-                  {/* 📍 위치 1: 협력사 선정 마감일수 기재 (이미지 1번 위치) */}
-                  {hasSelection ? (
-                    <span className="badge badge-gray vendor-closed-badge">
-                      <CheckCircle2 size={12} /> 견적 마감 완료
-                    </span>
-                  ) : (
-                    <span
-                      className="badge vendor-deadline-badge"
-                      title="협력사 견적 제출 마감 일시"
-                    >
-                      <Clock size={13} />
-                      <span>마감 D-{group.deadlineDDay}일 ({group.deadlineDate} {group.deadlineTime} 마감)</span>
-                      {group.isExtended && <span className="vendor-extended-label">(연장됨)</span>}
-                    </span>
-                  )}
-                </div>
-
-                {/* 📍 위치 2: 마감시간 연장 버튼 (이미지 2번 위치) & 회신율 Badge */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
-                  {/* 위치 2: 마감시간 연장 버튼 */}
-                  {!hasSelection && (
-                    <button
-                      className="btn-sm btn-warning"
-                      onClick={() => handleOpenExtendModal(group)}
-                      title="마감시간을 늘리고 미회신 협력사에 안내 메일을 재발송합니다."
-                    >
-                      <Calendar size={13} />
-                      <span>📅 마감시간 연장</span>
-                    </button>
-                  )}
-
-                  <span className="badge badge-purple">
-                    {totalSuppliers > 0
-                      ? `협력사 회신율: ${respondedCount}/${totalSuppliers}개사 (${percent}%)`
-                      : '협력사 후보 미확보'}
-                  </span>
-                  {group.resolutionIssue && (
-                    <span className="badge badge-red vendor-issue-badge">
-                      <AlertTriangle size={12} /> 조치 필요
-                    </span>
-                  )}
-                  {group.prSent && (
-                    <span
-                      className={`badge ${
-                        group.supplierApprovalStatus === 'approved'
-                          ? 'badge-green'
-                          : group.supplierApprovalStatus === 'rejected'
-                            ? 'badge-red'
-                            : 'badge-yellow'
-                      }`}
-                      style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                    >
-                      {group.supplierApprovalStatus === 'approved' ? (
-                        <><CheckCircle2 size={12} /> 협력사 승인 완료 · {group.prNo}</>
-                      ) : group.supplierApprovalStatus === 'rejected' ? (
-                        <><XCircle size={12} /> 협력사 승인 거절 · {group.prNo}</>
-                      ) : (
-                        <><Clock size={12} /> 협력사 승인 대기 중 · {group.prNo}</>
-                      )}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {group.resolutionIssue && (
-                <div className="vendor-resolution-issue" role="alert">
-                  <div className="vendor-resolution-issue-icon" aria-hidden="true">
-                    <SearchX size={19} />
-                  </div>
-                  <div className="vendor-resolution-issue-copy">
-                    <strong>{group.resolutionIssue.title}</strong>
-                    <p>{group.resolutionIssue.detail}</p>
-                    <span>실패 시각 {group.resolutionIssue.failedAt} · 기존 MR과 탐색 이력은 그대로 보존됩니다.</span>
-                  </div>
-                  <div className="vendor-resolution-actions">
+              return (
+                <tr key={group.id} style={{ height: '64px' }}>
+                  {/* 1. MR 번호 (클릭 시 MR 목록 내용 다 확인 가능) */}
+                  <td>
                     <button
                       type="button"
-                      className="btn-sm btn-reject"
-                      onClick={() => handleRetrySupplierSearch(group.id)}
-                      disabled={retryingGroupId === group.id}
+                      onClick={() => handleOpenMRDetail(group)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--primary)',
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: 0,
+                        textDecoration: 'underline',
+                      }}
+                      title="클릭하여 MR 상세 내용 확인"
                     >
-                      <RefreshCw size={14} className={retryingGroupId === group.id ? 'is-spinning' : ''} />
-                      {retryingGroupId === group.id ? '재탐색 중' : '자동 재탐색'}
+                      <span>{group.mrNo}</span>
+                      <ExternalLink size={13} color="var(--primary)" />
                     </button>
-                    <button
-                      type="button"
-                      className="btn-sm btn-outline"
-                      onClick={() => handleOpenManualSupplier(group)}
-                    >
-                      <UserPlus size={14} /> 직접 후보 추가
-                    </button>
-                  </div>
-                </div>
-              )}
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {group.itemName}
+                    </div>
+                  </td>
 
-              {/* Body: Card Content */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                    요청 부서: <strong style={{ color: 'var(--text-main)' }}>{group.department}</strong> · 납기요청일: {group.targetDueDate}
-                  </div>
-                  {selectedQuotation ? (
-                    <div className="vendor-selected-summary">
-                      <CheckCircle2 size={16} />
-                      <span>
-                        선정 협력사: <strong>{selectedQuotation.supplierName}</strong>
-                        {' '}(₩{selectedQuotation.quoteUnitPrice.toLocaleString()} / EA, 납기 {selectedQuotation.leadTimeDays}일)
+                  {/* 2. 납기요청일 (요청부서에서 요청한 납기일자) */}
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '13px' }}>
+                        📅 {group.targetDueDate}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        요청부서: {group.department}
                       </span>
                     </div>
-                  ) : bestQuotation ? (
-                    <div style={{ fontSize: '13px', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                      <Award size={16} />
-                      <span>AI 1위 추천 공급사: {bestQuotation.supplierName} (₩{bestQuotation.quoteUnitPrice.toLocaleString()} / EA, 납기 {bestQuotation.leadTimeDays}일)</span>
-                    </div>
-                  ) : null}
-                </div>
+                  </td>
 
-                {/* 버튼들: 상세사항 확인 & 견적 순위 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {group.selectedSupplierId && group.supplierApprovalStatus === 'pending' && (
+                  {/* 3. RFQ 협력사 (클릭 시 AI 추천 순위/평가표/체크박스/마감일 설정 창) */}
+                  <td>
                     <button
-                      className="btn-outline"
-                      onClick={() => {
-                        setChangingGroup(group);
-                        setChangeReason('');
+                      type="button"
+                      className="btn-outline btn-sm"
+                      onClick={() => handleOpenRfqModal(group)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--primary)',
+                        color: 'var(--primary)',
+                        backgroundColor: 'var(--primary-soft)',
                       }}
+                      title="클릭하여 AI 추천 협력사 순위, 평가표 확인 및 RFQ 발송"
                     >
-                      선정 변경
+                      <Building2 size={14} color="var(--primary)" />
+                      <span>RFQ 협력사 추천 ({totalSuppliers}개사)</span>
                     </button>
-                  )}
-                  {/* (1) 상세사항 확인 버튼 */}
-                  <button
-                    className="btn-outline"
-                    onClick={() => {
-                      setSelectedGroup(group);
-                      setShowDetailModal(true);
-                    }}
-                  >
-                    <FileText size={16} />
-                    <span>상세사항 확인</span>
-                  </button>
+                  </td>
 
-                  {/* (2) 견적 순위 (AI 분석) 버튼 */}
-                  <button
-                    className={hasSelection ? 'btn-outline' : 'btn-primary'}
-                    onClick={() => {
-                      setSelectedGroup(group);
-                      setShowRankModal(true);
-                    }}
-                    disabled={hasResolutionIssue || !bestQuotation}
-                    title={hasResolutionIssue ? '공급사 후보를 먼저 확보해 주세요.' : undefined}
-                  >
-                    {hasSelection ? <CheckCircle2 size={16} /> : <Bot size={16} />}
-                    <span>{hasSelection ? '선정 결과 보기' : 'AI 견적 순위 & 업체 선정'}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        {vendorGroups.length === 0 && (
-          <div className="workflow-empty-state">
-            <CheckCircle2 size={22} />
-            <strong>현재 협력사 선정 대기 건이 없습니다.</strong>
-            <span>PR 발송을 마친 건은 PO 관리 화면으로 이동했습니다.</span>
-          </div>
-        )}
+                  {/* 4. 마감시간 (마감연장도 가능한) - RFQ 발송 전에는 흐리게 비활성화 */}
+                  <td>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        flexWrap: 'wrap',
+                        opacity: rfqActive ? 1 : 0.4,
+                        pointerEvents: rfqActive ? 'auto' : 'none',
+                      }}
+                      title={rfqActive ? undefined : 'RFQ 발송 후 이용할 수 있습니다.'}
+                    >
+                      {hasSelection ? (
+                        <span className="badge badge-gray" style={{ fontSize: '11px' }}>
+                          <CheckCircle2 size={11} /> 마감 완료
+                        </span>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column' }}>
+                            <span>{group.deadlineDate} {group.deadlineTime}</span>
+                            <span style={{ fontSize: '11px', color: 'var(--warning)', fontWeight: 600 }}>
+                              (D-{group.deadlineDDay}일 마감)
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-sm btn-warning"
+                            disabled={!rfqActive}
+                            onClick={() => handleOpenExtendModal(group)}
+                            style={{ fontSize: '11px', padding: '3px 8px', height: '26px' }}
+                            title="마감시간을 연장하고 미회신 업체에 독촉 메일을 발송합니다."
+                          >
+                            <Calendar size={11} />
+                            <span>연장</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* 5. 견적 회신율(%) (클릭 시 상세사항 확인 및 체크박스 업체 선정) - RFQ 발송 전에는 흐리게 비활성화 */}
+                  <td style={{ textAlign: 'center' }}>
+                    <button
+                      type="button"
+                      disabled={!rfqActive}
+                      onClick={() => handleOpenQuotationModal(group)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: rfqActive ? 'pointer' : 'not-allowed',
+                        display: 'inline-flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        opacity: rfqActive ? 1 : 0.4,
+                      }}
+                      title={rfqActive ? '클릭하여 공급사별 견적 상세 비교 및 업체 선정' : 'RFQ 발송 후 이용할 수 있습니다.'}
+                    >
+                      <span
+                        className={`badge ${percent === 100 ? 'badge-green' : percent > 0 ? 'badge-purple' : 'badge-yellow'}`}
+                        style={{ fontSize: '12px', fontWeight: 700, padding: '5px 10px', textDecoration: 'underline' }}
+                      >
+                        {percent}% ({respondedCount}/{totalSuppliers}개사)
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                        [상세보기 & 업체선정]
+                      </span>
+                    </button>
+                  </td>
+
+                  {/* 6. 진행상태 (RFQ 진행 중이면 견적 요청상태, 업체 선정 완료면 업체 선정완료) */}
+                  <td>
+                    {selectedQuotation ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700, width: 'fit-content' }}>
+                          <CheckCircle2 size={13} /> 업체 선정완료
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {selectedQuotation.supplierName}
+                        </span>
+                        {group.supplierApprovalStatus === 'pending' && (
+                          <button
+                            type="button"
+                            className="btn-outline"
+                            style={{ fontSize: '10px', padding: '2px 6px', marginTop: '2px', width: 'fit-content' }}
+                            onClick={() => {
+                              setChangingGroup(group);
+                              setChangeReason('');
+                            }}
+                          >
+                            선정 변경
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                        <Clock size={11} /> 견적 요청상태
+                      </span>
+                    )}
+                  </td>
+
+                  {/* 7. PO발송 (업체 선정이 완료된 건만 발송 가능) */}
+                  <td>
+                    {hasSelection ? (
+                      <button
+                        type="button"
+                        className="btn-sm btn-primary"
+                        onClick={() => handleSendPOClick(group)}
+                        style={{ fontSize: '11px', padding: '5px 10px' }}
+                        title="선정된 업체로 PR을 ERPNext에 전송하고 PO 관리 단계로 넘깁니다."
+                      >
+                        <Send size={12} />
+                        <span>PO발송</span>
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                        -
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+
+            {vendorGroups.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+                  현재 협력사 선정 대기 건이 없습니다.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
-      {addingSupplierGroup && (
-        <div className="modal-overlay" onClick={() => setAddingSupplierGroup(null)}>
-          <div className="modal-content vendor-candidate-modal" onClick={(event) => event.stopPropagation()}>
+      {/* ========================================================================= */}
+      {/* 팝업 모달 1: MR 번호 클릭 시 -> MR 상세 정보 모달 */}
+      {/* ========================================================================= */}
+      {showMRModal && selectedGroup && (
+        <div className="modal-overlay" onClick={() => setShowMRModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '800px' }}>
             <div className="modal-header">
-              <div className="modal-title-with-icon">
-                <UserPlus size={20} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FileText size={22} color="var(--primary)" />
                 <div>
-                  <h3>협력사 후보 직접 추가</h3>
-                  <p>{addingSupplierGroup.mrNo} · RFQ 발송 전에 ERPNext Supplier 등록 정보를 보완합니다.</p>
+                  <h3 style={{ margin: 0 }}>MR 상세 내역 ({selectedGroup.mrNo})</h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    MR 목록의 모든 요청 사양 및 첨부파일을 확인합니다.
+                  </span>
                 </div>
               </div>
-              <button type="button" className="icon-btn" onClick={() => setAddingSupplierGroup(null)} aria-label="후보 추가 창 닫기">
+              <button type="button" className="icon-btn" onClick={() => setShowMRModal(false)}>
                 <X size={18} />
               </button>
             </div>
-            <form onSubmit={handleAddManualSupplier}>
-              <div className="modal-body vendor-candidate-form">
-                <div className="vendor-candidate-guide">
-                  자동 검색에서 누락된 업체를 직접 등록할 수 있습니다. 실제 연동 시에는 저장 전에 ERPNext의 기존 Supplier와 중복 여부를 확인합니다.
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* 기본 요약 카드 */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', backgroundColor: 'var(--bg-input)', padding: '16px', borderRadius: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>MR 번호</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'monospace', color: 'var(--primary)' }}>
+                    {selectedGroup.mrNo}
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label htmlFor="manual-supplier-name">협력사명</label>
-                  <input
-                    id="manual-supplier-name"
-                    className="form-input"
-                    value={manualSupplierName}
-                    onChange={(event) => setManualSupplierName(event.target.value)}
-                    placeholder="예: 코리아세이프티(주)"
-                    autoFocus
-                    required
-                  />
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>품목명 / 아이템코드</div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)' }}>
+                    {selectedGroup.itemName} <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>({selectedGroup.itemCode})</span>
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label htmlFor="manual-supplier-email">견적 요청 이메일</label>
-                  <input
-                    id="manual-supplier-email"
-                    className="form-input"
-                    type="email"
-                    value={manualSupplierEmail}
-                    onChange={(event) => setManualSupplierEmail(event.target.value)}
-                    placeholder="purchase@example.com"
-                    required
-                  />
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>요청 부서 및 요청자</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                    {selectedGroup.department} {activeMR?.requester ? `· ${activeMR.requester}` : ''}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>납기요청일</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--danger)' }}>
+                    📅 {selectedGroup.targetDueDate} (D-{selectedGroup.deadlineDDay}일)
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>요청 수량 / 단가</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                    {selectedGroup.quantity} {selectedGroup.unit} {activeMR ? `(₩${activeMR.unitPrice.toLocaleString()} / EA)` : ''}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>총 금액</div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--primary)', fontFamily: 'monospace' }}>
+                    {activeMR ? `₩${activeMR.totalPrice.toLocaleString()}` : '-'}
+                  </div>
                 </div>
               </div>
+
+              {/* 규격 및 상세 사양 */}
+              <div>
+                <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--text-main)' }}>
+                  규격 및 상세 사양 (Full Spec)
+                </h4>
+                <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px 16px', fontSize: '13px', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                  {activeMR?.fullSpecText || activeMR?.specSummary || '상세 사양 데이터가 존재하지 않습니다.'}
+                </div>
+              </div>
+
+              {/* 첨부파일 */}
+              <div>
+                <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--text-main)' }}>
+                  첨부파일 ({activeMR?.attachmentCount || 0}개)
+                </h4>
+                {activeMR?.attachmentFiles && activeMR.attachmentFiles.length > 0 ? (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {activeMR.attachmentFiles.map((file, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          fontSize: '12px',
+                          color: 'var(--primary)',
+                          backgroundColor: 'var(--primary-soft)',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          border: '1px solid rgba(60,60,67,0.1)',
+                        }}
+                      >
+                        <Paperclip size={13} /> {file}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>첨부된 파일이 없습니다.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn-primary" onClick={() => setShowMRModal(false)}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 팝업 모달 2: RFQ 협력사 클릭 시 -> AI 추천 순위 / 5대 평가표 / 체크박스 / 마감일 설정 */}
+      {/* ========================================================================= */}
+      {showRfqModal && selectedGroup && (
+        <div className="modal-overlay" onClick={() => setShowRfqModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '850px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Building2 size={22} color="var(--accent)" />
+                <div>
+                  <h3 style={{ margin: 0 }}>AI 추천 RFQ 협력사 및 견적마감일 설정</h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    MR 번호: {selectedGroup.mrNo} · 품목: {selectedGroup.itemName}
+                  </span>
+                </div>
+              </div>
+              <button type="button" className="icon-btn" onClick={() => setShowRfqModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendRfq}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* AI 추천 안내 */}
+                <div
+                  style={{
+                    backgroundColor: 'var(--primary-soft)',
+                    borderLeft: '3px solid var(--accent)',
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    color: 'var(--primary-hover)',
+                  }}
+                >
+                  <Sparkles size={14} style={{ display: 'inline', marginRight: '6px' }} />
+                  AI가 <strong>납기, 품질, 가격, 응대, 의사소통</strong> 5개 항목을 5점 만점으로 평가하여 <strong>5점이 많은 순위</strong>대로 랭킹을 산출했습니다. RFQ를 발송할 업체를 체크해 주세요.
+                </div>
+
+                {/* 5대 항목 평가표 (Table) */}
+                <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                  <table className="custom-table" style={{ fontSize: '12px' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '40px', textAlign: 'center' }}>선택</th>
+                        <th style={{ width: '60px', textAlign: 'center' }}>순위</th>
+                        <th>협력사명</th>
+                        <th style={{ textAlign: 'center' }}>납기 (5점)</th>
+                        <th style={{ textAlign: 'center' }}>품질 (5점)</th>
+                        <th style={{ textAlign: 'center' }}>가격 (5점)</th>
+                        <th style={{ textAlign: 'center' }}>응대 (5점)</th>
+                        <th style={{ textAlign: 'center' }}>의사소통 (5점)</th>
+                        <th style={{ textAlign: 'center', width: '90px' }}>5점 개수</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...selectedGroup.quotations]
+                        .map((q) => {
+                          const scores = getSupplierScores(q);
+                          const count5 = getCountOf5(scores);
+                          return { ...q, scores, count5 };
+                        })
+                        .sort((a, b) => b.count5 - a.count5)
+                        .map((q, idx) => {
+                          const rank = idx + 1;
+                          const isChecked = Boolean(rfqSelectedSuppliers[q.supplierId]);
+
+                          return (
+                            <tr key={q.supplierId} style={{ backgroundColor: isChecked ? 'rgba(60,60,67,0.02)' : 'transparent' }}>
+                              {/* 체크박스 */}
+                              <td style={{ textAlign: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleRfqSupplier(q.supplierId)}
+                                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                />
+                              </td>
+                              {/* 순위 */}
+                              <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                                <span className={`rank-badge rank-${rank}`} style={{ display: 'inline-block', width: '22px', height: '22px', lineHeight: '22px', fontSize: '11px' }}>
+                                  {rank}
+                                </span>
+                              </td>
+                              {/* 협력사명 */}
+                              <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                                {q.supplierName}
+                                {rank === 1 && (
+                                  <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 최우수]</span>
+                                )}
+                              </td>
+                              {/* 납기 */}
+                              <td style={{ textAlign: 'center', color: q.scores.leadTime === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.leadTime === 5 ? 700 : 400 }}>
+                                ⭐ {q.scores.leadTime}점
+                              </td>
+                              {/* 품질 */}
+                              <td style={{ textAlign: 'center', color: q.scores.quality === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.quality === 5 ? 700 : 400 }}>
+                                ⭐ {q.scores.quality}점
+                              </td>
+                              {/* 가격 */}
+                              <td style={{ textAlign: 'center', color: q.scores.price === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.price === 5 ? 700 : 400 }}>
+                                ⭐ {q.scores.price}점
+                              </td>
+                              {/* 응대 */}
+                              <td style={{ textAlign: 'center', color: q.scores.service === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.service === 5 ? 700 : 400 }}>
+                                ⭐ {q.scores.service}점
+                              </td>
+                              {/* 의사소통 */}
+                              <td style={{ textAlign: 'center', color: q.scores.communication === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.communication === 5 ? 700 : 400 }}>
+                                ⭐ {q.scores.communication}점
+                              </td>
+                              {/* 5점 개수 */}
+                              <td style={{ textAlign: 'center' }}>
+                                <span className="badge badge-purple" style={{ fontWeight: 700 }}>
+                                  {q.count5}개 보유
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 창 아래쪽: '견적마감일' 선택 (날짜-달력 / 시간) */}
+                <div style={{ backgroundColor: 'var(--bg-input)', padding: '16px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Calendar size={14} color="var(--primary)" />
+                    견적 마감일시 지정
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '12px' }}>마감 날짜 (달력 선택)</label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={rfqDeadlineDate}
+                        onChange={(e) => setRfqDeadlineDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '12px' }}>마감 시간</label>
+                      <input
+                        type="time"
+                        className="form-input"
+                        value={rfqDeadlineTime}
+                        onChange={(e) => setRfqDeadlineTime(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="modal-footer">
-                <button type="button" className="btn-outline" onClick={() => setAddingSupplierGroup(null)}>취소</button>
-                <button type="submit" className="btn-primary" disabled={!manualSupplierName.trim() || !manualSupplierEmail.trim()}>
-                  후보 저장 및 RFQ 준비
+                <button type="button" className="btn-outline" onClick={() => setShowRfqModal(false)}>
+                  취소
+                </button>
+                <button type="submit" className="btn-primary">
+                  <Send size={14} />
+                  선택한 협력사로 RFQ 발송
                 </button>
               </div>
             </form>
@@ -432,55 +730,151 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
         </div>
       )}
 
-      {changingGroup && (
-        <div className="modal-overlay" onClick={() => setChangingGroup(null)}>
-          <div className="modal-content vendor-change-modal" onClick={(event) => event.stopPropagation()}>
+      {/* ========================================================================= */}
+      {/* 팝업 모달 3: 견적 회신율(%) 클릭 시 -> 상세사항 확인 및 체크박스 업체 선정 */}
+      {/* ========================================================================= */}
+      {showQuotationModal && selectedGroup && (
+        <div className="modal-overlay" onClick={() => setShowQuotationModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: 'min(1500px, 95vw)' }}>
             <div className="modal-header">
-              <div className="modal-title-with-icon">
-                <AlertTriangle size={20} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Award size={22} color="var(--primary)" />
                 <div>
-                  <h3>협력사 선정 변경</h3>
-                  <p>{changingGroup.mrNo} · 기존 PR을 철회한 뒤 새 업체를 선정합니다.</p>
+                  <h3 style={{ margin: 0 }}>공급사 견적 상세 비교 및 최종 업체 선정 ({selectedGroup.mrNo})</h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    회신된 견적을 비교하고 체크박스로 선택하여 업체를 최종 선정합니다.
+                  </span>
                 </div>
               </div>
-              <button type="button" className="icon-btn" onClick={() => setChangingGroup(null)} aria-label="선정 변경 창 닫기">
+              <button type="button" className="icon-btn" onClick={() => setShowQuotationModal(false)}>
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleConfirmSelectionChange}>
-              <div className="modal-body vendor-change-body">
-                <div className="vendor-change-warning">
-                  현재 선정 업체 <strong>
-                    {changingGroup.quotations.find((quotation) => quotation.supplierId === changingGroup.selectedSupplierId)?.supplierName}
-                  </strong>의 {changingGroup.prNo} 요청을 철회하고 철회 이력을 보존합니다.
-                </div>
-                <div className="form-group">
-                  <label htmlFor="vendor-change-reason">선정 변경 사유</label>
-                  <textarea
-                    id="vendor-change-reason"
-                    className="form-input"
-                    rows={4}
-                    value={changeReason}
-                    onChange={(event) => setChangeReason(event.target.value)}
-                    placeholder="납기 대응 불가, 조건 변경 등 기존 요청을 철회하는 사유를 입력하세요."
-                    autoFocus
-                    required
-                  />
-                </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* 회신 현황 상세 표 (Table) */}
+              <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflowX: 'visible' }}>
+                <table className="custom-table" style={{ fontSize: '12px', width: '100%', minWidth: 0, tableLayout: 'fixed' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '50px', textAlign: 'center' }}>선택</th>
+                      <th style={{ width: '150px' }}>협력사명</th>
+                      <th style={{ textAlign: 'center', width: '90px' }}>회신 상태</th>
+                      <th style={{ textAlign: 'right', width: '110px' }}>견적 단가</th>
+                      <th style={{ textAlign: 'right', width: '120px' }}>총 견적금액</th>
+                      <th style={{ textAlign: 'center', width: '90px' }}>제시 납기</th>
+                      <th style={{ width: '160px' }}>제출 첨부자료</th>
+                      <th>회신 요약 및 AI 분석</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedGroup.quotations.map((q) => {
+                      const isChecked = selectedSupplierForApproval === q.supplierId;
+
+                      return (
+                        <tr key={q.supplierId} style={{ backgroundColor: isChecked ? 'var(--success-bg)' : 'transparent' }}>
+                          {/* 라디오/체크박스 */}
+                          <td style={{ textAlign: 'center' }}>
+                            <input
+                              type="radio"
+                              name="selected_supplier_radio"
+                              disabled={!q.isResponded}
+                              checked={isChecked}
+                              onChange={() => setSelectedSupplierForApproval(q.supplierId)}
+                              style={{ width: '16px', height: '16px', cursor: q.isResponded ? 'pointer' : 'not-allowed' }}
+                            />
+                          </td>
+                          {/* 협력사명 */}
+                          <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                            {q.supplierName}
+                            {q.aiRank === 1 && (
+                              <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 추천]</span>
+                            )}
+                          </td>
+                          {/* 회신 상태 */}
+                          <td style={{ textAlign: 'center' }}>
+                            {q.isResponded ? (
+                              <span className="badge badge-green" style={{ fontSize: '11px' }}>
+                                <CheckCircle2 size={11} /> 회신완료
+                              </span>
+                            ) : (
+                              <span className="badge badge-red" style={{ fontSize: '11px' }}>
+                                <XCircle size={11} /> 미회신
+                              </span>
+                            )}
+                          </td>
+                          {/* 견적 단가 */}
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                            {q.isResponded ? `₩${q.quoteUnitPrice.toLocaleString()}` : '-'}
+                          </td>
+                          {/* 총 견적금액 */}
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: q.isResponded ? 'var(--primary)' : 'var(--text-dim)' }}>
+                            {q.isResponded ? `₩${q.quoteTotalPrice.toLocaleString()}` : '-'}
+                          </td>
+                          {/* 제시 납기 */}
+                          <td style={{ textAlign: 'center' }}>
+                            {q.isResponded ? `${q.leadTimeDays}일 소요` : '-'}
+                          </td>
+                          {/* 제출 첨부자료 */}
+                          <td>
+                            {q.resAttachments.length > 0 ? (
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                {q.resAttachments.map((f, i) => (
+                                  <span key={i} style={{ fontSize: '11px', color: 'var(--primary)', backgroundColor: 'var(--primary-soft)', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <Paperclip size={10} /> {f}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span style={{ color: 'var(--text-dim)' }}>없음</span>
+                            )}
+                          </td>
+                          {/* 회신 요약 및 AI 분석 */}
+                          <td style={{ color: 'var(--text-muted)', fontSize: '11px', lineHeight: 1.4, whiteSpace: 'normal', wordBreak: 'keep-all' }}>
+                            {q.resContent}
+                            {q.aiReason && (
+                              <div style={{ color: 'var(--primary-hover)', marginTop: '4px', fontWeight: 500 }}>
+                                💡 {q.aiReason}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn-outline" onClick={() => setChangingGroup(null)}>취소</button>
-                <button type="submit" className="btn-warning" disabled={!changeReason.trim()}>
-                  기존 요청 철회 후 재선정
-                </button>
-              </div>
-            </form>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn-outline" onClick={() => setShowQuotationModal(false)}>
+                닫기
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={!selectedSupplierForApproval || Boolean(selectingSupplierId)}
+                onClick={handleConfirmSupplierSelection}
+              >
+                {selectingSupplierId ? (
+                  <>
+                    <LoaderCircle size={14} /> 업체 선정 중...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={14} />
+                    선택한 업체로 최종 선정
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* 📍 위치 2 클릭 시: 마감시간 연장 & 미회신 업체 메일 발송 Modal */}
+      {/* ========================================================================= */}
+      {/* 팝업 모달 4: 마감시간 연장 모달 */}
+      {/* ========================================================================= */}
       {extendingGroup && (
         <div className="modal-overlay" onClick={() => setExtendingGroup(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '500px' }}>
@@ -488,13 +882,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Calendar size={22} color="var(--warning)" />
                 <div>
-                  <h3>견적 제출 마감시간 연장</h3>
+                  <h3 style={{ margin: 0 }}>견적 제출 마감시간 연장</h3>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                     {extendingGroup.mrNo} · {extendingGroup.itemName}
                   </span>
                 </div>
               </div>
-              <button className="icon-btn" onClick={() => setExtendingGroup(null)}>
+              <button type="button" className="icon-btn" onClick={() => setExtendingGroup(null)}>
                 <X size={18} />
               </button>
             </div>
@@ -509,18 +903,18 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     borderRadius: '6px',
                     fontSize: '12px',
                     color: 'var(--warning)',
-                    lineHeight: '1.5'
+                    lineHeight: '1.5',
                   }}
                 >
                   <Mail size={14} style={{ display: 'inline', marginRight: '6px' }} />
-                  마감시간을 연장하면 견적을 회신하지 않은 <strong>미회신 협력사</strong>에게 마감 연장 안내 및 독촉 메일이 즉시 자동 발송됩니다.
+                  마감시간을 연장하면 견적을 회신하지 않은 <strong>미회신 협력사</strong>에게 마감 연장 안내 및 독촉 메일이 자동 발송됩니다.
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
                     <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <Calendar size={13} color="var(--primary)" />
-                      연장할 마감 날짜 선택
+                      연장할 마감 날짜
                     </label>
                     <input
                       type="date"
@@ -534,7 +928,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   <div className="form-group">
                     <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <Clock size={13} color="var(--primary)" />
-                      연장할 마감 시간 선택
+                      연장할 마감 시간
                     </label>
                     <input
                       type="time"
@@ -544,10 +938,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       required
                     />
                   </div>
-                </div>
-
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  현재 설정 변경: <strong style={{ color: 'var(--text-main)' }}>{extDate} {extTime}</strong> (미회신 업체 자동 리마인드 처리됨)
                 </div>
               </div>
 
@@ -565,249 +955,57 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
         </div>
       )}
 
-      {/* 5-1-1) 상세사항 확인 Modal (요구사항: 한눈에 보는 '표(Table) 형식'으로 개선) */}
-      {showDetailModal && selectedGroup && (
-        <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '880px' }}>
+      {/* ========================================================================= */}
+      {/* 팝업 모달 5: 선정 변경 철회 모달 */}
+      {/* ========================================================================= */}
+      {changingGroup && (
+        <div className="modal-overlay" onClick={() => setChangingGroup(null)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ width: '520px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FileText size={20} color="var(--primary)" />
-                <h3>MR 내용 및 협력사 회신 비교 표 ({selectedGroup.mrNo})</h3>
-              </div>
-              <button className="icon-btn" onClick={() => setShowDetailModal(false)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* MR 기본 정보 요약 바 */}
-              <div style={{ backgroundColor: 'var(--bg-input)', padding: '14px 18px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <AlertTriangle size={22} color="var(--warning)" />
                 <div>
-                  <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '15px' }}>
-                    {selectedGroup.itemName} ({selectedGroup.itemCode})
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    요청부서: {selectedGroup.department} · 수량: {selectedGroup.quantity} {selectedGroup.unit} · 희망 납기일: {selectedGroup.targetDueDate}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span className="badge badge-purple">
-                    마감일시: {selectedGroup.deadlineDate} {selectedGroup.deadlineTime}
-                  </span>
-                </div>
-              </div>
-
-              {/* 요구사항 반영: 협력사별 전체 회신 내용을 한눈에 한 줄씩 비교하는 표(Table) */}
-              <div>
-                <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '10px' }}>
-                  공급사별 회신 현황 종합 비교표 ({selectedGroup.quotations.length}개사)
-                </h4>
-
-                <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                  <table className="custom-table" style={{ minWidth: '800px', fontSize: '12px' }}>
-                    <thead>
-                      <tr>
-                        <th>협력사명</th>
-                        <th style={{ textAlign: 'center' }}>회신 여부</th>
-                        <th style={{ textAlign: 'right' }}>견적 단가</th>
-                        <th style={{ textAlign: 'right' }}>총 견적금액</th>
-                        <th style={{ textAlign: 'center' }}>제시 납기</th>
-                        <th>제출 첨부자료</th>
-                        <th>회신 요약 설명</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedGroup.quotations.map((q) => (
-                        <tr key={q.supplierId} style={{ backgroundColor: q.isSelected ? 'var(--success-bg)' : 'transparent' }}>
-                          {/* 협력사명 */}
-                          <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                            {q.supplierName}
-                            {q.aiRank === 1 && (
-                              <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px', fontWeight: 800 }}>[AI 1위]</span>
-                            )}
-                          </td>
-
-                          {/* 회신 여부 */}
-                          <td style={{ textAlign: 'center' }}>
-                            {q.isResponded ? (
-                              <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                <CheckCircle2 size={11} /> 회신 완료
-                              </span>
-                            ) : (
-                              <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                <XCircle size={11} /> 미회신 (독촉중)
-                              </span>
-                            )}
-                          </td>
-
-                          {/* 견적 단가 */}
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                            {q.isResponded ? `₩${q.quoteUnitPrice.toLocaleString()}` : '-'}
-                          </td>
-
-                          {/* 총 견적금액 */}
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: q.isResponded ? 'var(--primary)' : 'var(--text-dim)' }}>
-                            {q.isResponded ? `₩${q.quoteTotalPrice.toLocaleString()}` : '-'}
-                          </td>
-
-                          {/* 제시 납기 */}
-                          <td style={{ textAlign: 'center' }}>
-                            {q.isResponded ? (
-                              <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{q.leadTimeDays}일 소요</span>
-                            ) : '-'}
-                          </td>
-
-                          {/* 제출 첨부자료 */}
-                          <td>
-                            {q.resAttachments.length > 0 ? (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                {q.resAttachments.map((file, idx) => (
-                                  <span
-                                    key={idx}
-                                    style={{
-                                      fontSize: '11px',
-                                      color: 'var(--primary-hover)',
-                                      backgroundColor: 'var(--primary-soft)',
-                                      padding: '2px 6px',
-                                      borderRadius: '4px',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '3px'
-                                    }}
-                                  >
-                                    <Paperclip size={11} /> {file}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span style={{ color: 'var(--text-dim)' }}>없음</span>
-                            )}
-                          </td>
-
-                          {/* 회신 요약 설명 */}
-                          <td style={{ maxWidth: '220px', color: 'var(--text-muted)' }}>
-                            {q.resContent}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn-primary" onClick={() => setShowDetailModal(false)}>
-                확인 완료
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 5-1-2) 견적 순위 (AI 추천 및 업체 선정 + PR 자동 전송) Modal */}
-      {showRankModal && selectedGroup && (
-        <div className="modal-overlay" onClick={handleCloseRankModal}>
-          <div className="modal-content vendor-rank-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Bot size={22} color="var(--accent)" />
-                <div>
-                  <h3>AI 견적 분석 순위 & 최적 업체 선정 ({selectedGroup.mrNo})</h3>
+                  <h3 style={{ margin: 0 }}>협력사 선정 변경</h3>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    적합성, 단가, 납기, 품질 점수를 종합 평가하여 랭킹을 산출합니다.
+                    {changingGroup.mrNo} · 기존 PR을 철회한 뒤 새 업체를 선정합니다.
                   </span>
                 </div>
               </div>
-              <button className="icon-btn" onClick={handleCloseRankModal} disabled={Boolean(selectingSupplierId)}>
+              <button type="button" className="icon-btn" onClick={() => setChangingGroup(null)}>
                 <X size={18} />
               </button>
             </div>
 
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="vendor-rank-list">
-                {[...selectedGroup.quotations]
-                  .sort((a, b) => a.aiRank - b.aiRank)
-                  .map((q) => (
-                    <div
-                      key={q.supplierId}
-                      className={`vendor-rank-item ${q.aiRank === 1 ? 'top-rank' : ''}`}
-                    >
-                      <div className="vendor-rank-main">
-                        <div className={`rank-badge rank-${q.aiRank}`}>
-                          {q.aiRank}
-                        </div>
-                        <div className="vendor-rank-copy">
-                          <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span>{q.supplierName}</span>
-                            {q.aiRank === 1 && (
-                              <span className="ai-recommend-badge">
-                                <Sparkles size={11} /> AI 1위 최적 추천
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            단가: ₩{q.quoteUnitPrice.toLocaleString()} · 총액: ₩{q.quoteTotalPrice.toLocaleString()} · 납기: {q.leadTimeDays}일
-                          </div>
-                          <div style={{ fontSize: '12px', color: 'var(--primary-hover)', marginTop: '6px', lineHeight: 1.4 }}>
-                            {q.aiReason}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="vendor-rank-action">
-                        {selectedGroup.selectedSupplierId === q.supplierId ? (
-                          <span className="badge badge-green vendor-selection-complete" aria-live="polite">
-                            <CheckCircle2 size={13} /> 업체 선정 완료 (PR 전송됨)
-                          </span>
-                        ) : selectedGroup.selectedSupplierId ? (
-                          <span className="badge badge-gray vendor-selection-locked">
-                            선정 변경 후 선택 가능
-                          </span>
-                        ) : selectingSupplierId === q.supplierId ? (
-                          <span className="vendor-selection-transition" role="status" aria-live="polite">
-                            <LoaderCircle size={14} /> 업체 선정 및 PR 전송 중
-                          </span>
-                        ) : confirmingSupplierId === q.supplierId ? (
-                          <div className="vendor-selection-confirm" role="group" aria-label={`${q.supplierName} 업체 선정 확인`}>
-                            <span>이 업체로 선정하시겠습니까?</span>
-                            <div>
-                              <button
-                                type="button"
-                                className="btn-sm btn-primary"
-                                onClick={() => handleConfirmSupplier(q.supplierId)}
-                              >
-                                예
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-sm btn-outline"
-                                onClick={() => setConfirmingSupplierId(null)}
-                              >
-                                아니오
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            className="btn-sm btn-primary"
-                            onClick={() => setConfirmingSupplierId(q.supplierId)}
-                            disabled={Boolean(selectingSupplierId)}
-                          >
-                            업체 선정 및 PR 자동 전송
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+            <form onSubmit={handleConfirmSelectionChange}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-main)', backgroundColor: 'var(--warning-bg)', padding: '12px', borderRadius: '6px' }}>
+                  현재 선정 업체 <strong>
+                    {changingGroup.quotations.find((q) => q.supplierId === changingGroup.selectedSupplierId)?.supplierName}
+                  </strong>의 {changingGroup.prNo} 요청을 철회합니다.
+                </div>
+                <div className="form-group">
+                  <label htmlFor="vendor-change-reason">선정 변경 사유</label>
+                  <textarea
+                    id="vendor-change-reason"
+                    className="form-input"
+                    rows={4}
+                    value={changeReason}
+                    onChange={(event) => setChangeReason(event.target.value)}
+                    placeholder="납기 대응 불가, 조건 변경 등 철회 사유를 입력하세요."
+                    autoFocus
+                    required
+                  />
+                </div>
               </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn-outline" onClick={handleCloseRankModal} disabled={Boolean(selectingSupplierId)}>
-                닫기
-              </button>
-            </div>
+              <div className="modal-footer">
+                <button type="button" className="btn-outline" onClick={() => setChangingGroup(null)}>
+                  취소
+                </button>
+                <button type="submit" className="btn-warning" disabled={!changeReason.trim()}>
+                  기존 요청 철회 후 재선정
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
