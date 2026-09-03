@@ -60,7 +60,7 @@ const LEGACY_CASE_STATE: Record<string, Pick<ProcurementCaseDTO, 'status' | 'sta
   checking_mr_item: { status: 'RUNNING', stage: 'ITEM_CHECK' },
   awaiting_substitute_selection: { status: 'WAITING_INPUT', stage: 'SUBSTITUTE_DECISION' },
   substitute_selected: { status: 'CANCELLED', stage: 'SUBSTITUTE_SELECTED' },
-  urgent_no_supplier_cancelled: { status: 'CANCELLED', stage: 'CANCELLED' },
+  urgent_no_supplier_cancelled: { status: 'REJECTED', stage: 'CANCELLED' },
   checking_bidding: { status: 'RUNNING', stage: 'BIDDING_DECISION' },
   // Legacy checkpoints created before the direct-purchase node was connected
   // remain recoverable from HUMAN_REVIEW and are restarted at bidding decision.
@@ -281,7 +281,7 @@ export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialReques
   return {
     id: entry.case_id,
     mrNo: entry.mr_name,
-    department: text(summary.department, '요청부서 미지정'),
+    department: text(summary.department, '미지정'),
     requester: text(summary.requester, '요청자 미지정'),
     itemCode: text(entry.item_code ?? summary.item_code, '미등록 품목'),
     category: text(summary.item_group, '미분류'),
@@ -298,7 +298,9 @@ export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialReques
     dDay,
     isUrgent: dDay <= 3,
     status: isRejected ? '반려' : isAwaitingMRApproval ? '승인대기' : '승인',
-    rejectReason: isRejected ? entry.last_error ?? undefined : undefined,
+    rejectReason: isRejected
+      ? text(rawValues.cancellation_reason) || entry.last_error || undefined
+      : undefined,
     hasSubstituteCandidates: entry.stage === 'SUBSTITUTE_DECISION',
     substituteStage: entry.stage === 'SUBSTITUTE_DECISION' ? 'notified_waiting' : 'not_started',
     workflowStatus: entry.status,
@@ -364,14 +366,25 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   return source.map((row, index) => {
     const name = supplierName(row);
     const responded = rankingBySupplier.has(name);
-    const unitPrice = numberValue(row.rate ?? row.unit_price ?? row.quote_unit_price);
-    const totalPrice = numberValue(row.amount ?? row.total ?? row.total_price) || unitPrice;
+    const unitPrice = numberValue(row.rate ?? row.unit_price ?? row.net_rate ?? row.quote_unit_price);
+    const totalPrice = numberValue(
+      row.total_amount
+      ?? row.grand_total
+      ?? row.rounded_total
+      ?? row.amount
+      ?? row.net_amount
+      ?? row.total
+      ?? row.total_price,
+    ) || unitPrice;
     return {
       supplierId: name,
       supplierName: name,
       quoteUnitPrice: unitPrice,
       quoteTotalPrice: totalPrice,
       leadTimeDays: numberValue(row.lead_time_days ?? row.lead_time),
+      expectedDeliveryDate: text(
+        row.expected_delivery_date ?? row.schedule_date ?? row.delivery_date,
+      ) || undefined,
       isResponded: responded,
       resContent: text(row.reason ?? row.ai_reason, 'AI 및 거래 이력을 바탕으로 확인된 협력사입니다.'),
       resAttachments: [],
@@ -380,6 +393,13 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       aiReason: text(row.reason ?? row.ai_reason, '추천 근거를 준비 중입니다.'),
       isSelected: text(values.selected_supplier) === name,
       email: text(row.email ?? row.email_id) || undefined,
+      phone: text(
+        row.phone ?? row.phone_no ?? row.telephone ?? row.mobile_no ?? row.contact,
+      ) || undefined,
+      sourceUrl: text(
+        row.site_url ?? row.source_url ?? row.website ?? row.url,
+      ) || (text(row.source).startsWith('http') ? text(row.source) : undefined),
+      source: text(row.source ?? row.operation) || undefined,
     };
   });
 };
@@ -447,6 +467,15 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
   const directTotalAmount = directUnitPrice > 0
     ? directUnitPrice * (request.quantity ?? 0)
     : 0;
+  // 견적구매의 발주금액은 MR의 요청 당시 예상금액이 아니라 사람이
+  // 최종 선택한 Supplier Quotation의 세금 포함 총액을 사용해야 합니다.
+  // 신규 MR은 rate/amount가 0인 채 시작할 수 있으므로 이 우선순위가
+  // 없으면 실제 견적이 있어도 PO 화면에 0원으로 표시됩니다.
+  const selectedQuotation = supplierQuotations(entry).find((quotation) => (
+    quotation.isSelected || quotation.supplierName === selectedSupplier
+  ));
+  const quotationTotalAmount = selectedQuotation?.quoteTotalPrice ?? 0;
+  const projectedInvoiceTotal = numberValue(delivery?.invoice_total);
   const approvalStatus = entry.stage === 'PRE_PO_APPROVAL' ? 'pending' : 'approved';
   const fullReceipt = delivery?.delivery_status === 'FULL';
   const scorecard = delivery?.scorecard;
@@ -471,7 +500,10 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     itemCode: request.itemCode,
     department: request.department,
     selectedSupplier,
-    totalAmount: directTotalAmount || request.totalPrice,
+    totalAmount: directTotalAmount
+      || quotationTotalAmount
+      || request.totalPrice
+      || projectedInvoiceTotal,
     purchaseMode: values.direct_purchase === true ? 'direct' : 'quotation',
     referencePO: text(directBasis.reference_po) || undefined,
     referenceUnitPrice: directUnitPrice || undefined,

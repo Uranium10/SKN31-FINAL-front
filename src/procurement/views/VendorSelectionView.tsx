@@ -1,5 +1,19 @@
-import React, { useState } from 'react';
-import type { VendorSelectionGroup, MaterialRequest, SupplierQuotation, SupplierScores } from '../types';
+import React, { useMemo, useState } from 'react';
+import type {
+  VendorSelectionGroup,
+  MaterialRequest,
+  SupplierQuotation,
+  SupplierScores,
+  StageMovePlaceholder,
+} from '../types';
+import { SmartTableContainer } from '../components/SmartTableContainer';
+import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
+import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
+import {
+  matchesTableFilters,
+  useSessionTableState,
+  type TableColumnDefinition,
+} from '../hooks/useSessionTableState';
 import {
   Sparkles,
   FileText,
@@ -17,8 +31,41 @@ import {
   Award
 } from 'lucide-react';
 
+type VendorColumnKey = 'mr' | 'dueDate' | 'suppliers' | 'deadline' | 'response' | 'status' | 'order';
+
+const VENDOR_COLUMNS: readonly TableColumnDefinition<VendorColumnKey>[] = [
+  { key: 'mr', label: 'MR 번호', defaultWidth: 205, minWidth: 150 },
+  { key: 'dueDate', label: '납기요청일', defaultWidth: 180, minWidth: 135 },
+  { key: 'suppliers', label: 'RFQ 협력사', defaultWidth: 230, minWidth: 170 },
+  { key: 'deadline', label: '마감시간 (마감연장)', defaultWidth: 225, minWidth: 175 },
+  { key: 'response', label: '견적 회신율 (%)', defaultWidth: 185, minWidth: 145, align: 'center' },
+  { key: 'status', label: '진행상태', defaultWidth: 175, minWidth: 135 },
+  { key: 'order', label: '발주 시작', defaultWidth: 155, minWidth: 120 },
+] as const;
+
+const responsePercent = (group: VendorSelectionGroup): number => {
+  const responded = group.quotations.filter((quotation) => quotation.isResponded).length;
+  return group.quotations.length > 0 ? Math.round((responded / group.quotations.length) * 100) : 0;
+};
+
+const vendorFilterValue = (group: VendorSelectionGroup, key: VendorColumnKey): string | number => {
+  const selected = group.quotations.find((quotation) => quotation.supplierId === group.selectedSupplierId);
+  switch (key) {
+    case 'mr': return `${group.mrNo} · ${group.itemName}`;
+    case 'dueDate': return `${group.targetDueDate} · ${group.department}`;
+    case 'suppliers': return `${group.quotations.length}개사`;
+    case 'deadline': return !group.rfqSent ? 'RFQ 발송 전' : selected ? '마감 완료' : `${group.deadlineDate} ${group.deadlineTime}`;
+    case 'response': return `${responsePercent(group)}%`;
+    case 'status': return selected ? '업체 선정완료' : '견적 요청상태';
+    case 'order': return selected && (!group.workflowStage || group.workflowStage === 'ORDER_START') ? '발주 가능' : '대기';
+  }
+};
+
 interface VendorSelectionViewProps {
   vendorGroups: VendorSelectionGroup[];
+  movePlaceholders?: StageMovePlaceholder[];
+  onDismissMovePlaceholder?: (id: string) => void;
+  onNavigateMovePlaceholder?: (placeholder: StageMovePlaceholder) => void;
   requests?: MaterialRequest[];
   onSelectSupplier: (groupId: string, supplierId: string) => Promise<boolean> | boolean;
   onSendPO: (groupId: string) => void;
@@ -33,6 +80,13 @@ interface VendorSelectionViewProps {
     deadlineTime: string,
   ) => Promise<boolean> | boolean;
   onCheckQuotations: (groupId: string) => void;
+}
+
+interface RfqCandidateRow extends Omit<SupplierQuotation, 'scores'> {
+  scores: SupplierScores | null;
+  count5: number | null;
+  rank: number | null;
+  isManual: boolean;
 }
 
 // AI 5대 항목 평가 점수 생성 헬퍼 함수 (납기, 품질, 가격, 응대, 의사소통 각 5점 만점)
@@ -52,8 +106,31 @@ const getCountOf5 = (scores: SupplierScores): number => {
   return Object.values(scores).filter((v) => v === 5).length;
 };
 
+const formatExpectedDelivery = (quotation: SupplierQuotation): string => {
+  if (quotation.expectedDeliveryDate) {
+    const date = new Date(`${quotation.expectedDeliveryDate.slice(0, 10)}T00:00:00`);
+    return Number.isNaN(date.getTime())
+      ? quotation.expectedDeliveryDate
+      : date.toLocaleDateString('ko-KR');
+  }
+  return quotation.leadTimeDays > 0 ? `${quotation.leadTimeDays}일 소요` : '미기재';
+};
+
+const safeExternalUrl = (value?: string): string | null => {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
 export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   vendorGroups,
+  movePlaceholders = [],
+  onDismissMovePlaceholder = () => undefined,
+  onNavigateMovePlaceholder = () => undefined,
   requests = [],
   onSelectSupplier,
   onSendPO,
@@ -78,6 +155,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const [rfqManualSuppliers, setRfqManualSuppliers] = useState<string[]>([]);
   const [rfqManualSupplierName, setRfqManualSupplierName] = useState('');
   const [rfqManualSupplierEmail, setRfqManualSupplierEmail] = useState('');
+  const [rfqEmailErrors, setRfqEmailErrors] = useState<Record<string, boolean>>({});
+  const [rfqValidationMessage, setRfqValidationMessage] = useState<string | null>(null);
 
   // 3. 견적 회신율 퍼센트 클릭 시 회신 상세 & 업체 선정 모달
   const [showQuotationModal, setShowQuotationModal] = useState<boolean>(false);
@@ -97,6 +176,67 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     message: string;
     tone: 'success' | 'warning';
   } | null>(null);
+  const tableState = useSessionTableState('vendor-selection', VENDOR_COLUMNS);
+  const [sortColumn, setSortColumn] = useState<VendorColumnKey>('dueDate');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const vendorFilterOptions = useMemo(() => Object.fromEntries(VENDOR_COLUMNS.map((column) => [
+    column.key,
+    vendorGroups.map((group) => String(vendorFilterValue(group, column.key))),
+  ])) as Record<VendorColumnKey, string[]>, [vendorGroups]);
+
+  const visibleVendorGroups = useMemo(() => vendorGroups
+    .filter((group) => matchesTableFilters(group, tableState.filters, vendorFilterValue))
+    .sort((left, right) => {
+      const leftValue = vendorFilterValue(left, sortColumn);
+      const rightValue = vendorFilterValue(right, sortColumn);
+      const compared = typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? leftValue - rightValue
+        : String(leftValue).localeCompare(String(rightValue), 'ko-KR', { numeric: true });
+      return sortDirection === 'asc' ? compared : -compared;
+    }), [sortColumn, sortDirection, tableState.filters, vendorGroups]);
+
+  const rfqCandidateRows = useMemo<RfqCandidateRow[]>(() => {
+    if (!selectedGroup) return [];
+    const ranked = [...selectedGroup.quotations]
+      .map((quotation) => {
+        const scores = getSupplierScores(quotation);
+        return { quotation, scores, count5: getCountOf5(scores) };
+      })
+      .sort((left, right) => right.count5 - left.count5)
+      .map(({ quotation, scores, count5 }, index) => ({
+        ...quotation,
+        scores,
+        count5,
+        rank: index + 1,
+        isManual: false,
+      }));
+    const manual = rfqManualSuppliers.map((name) => ({
+      supplierId: name,
+      supplierName: name,
+      quoteUnitPrice: 0,
+      quoteTotalPrice: 0,
+      leadTimeDays: 0,
+      isResponded: false,
+      resContent: '사용자가 직접 추가한 RFQ 대상입니다.',
+      resAttachments: [],
+      aiRank: 0,
+      aiScore: 0,
+      aiReason: '직접 추가',
+      isSelected: false,
+      email: rfqSupplierEmails[name] || undefined,
+      source: 'manual',
+      scores: null,
+      count5: null,
+      rank: null,
+      isManual: true,
+    } satisfies RfqCandidateRow));
+    return [...ranked, ...manual];
+  }, [rfqManualSuppliers, rfqSupplierEmails, selectedGroup]);
+
+  const selectedRfqCandidateCount = rfqCandidateRows.filter(
+    (candidate) => rfqSelectedSuppliers[candidate.supplierId],
+  ).length;
 
   // 1. MR 번호 클릭 처리 (MR 목록 내용 다 확인 가능하도록 설정)
   const handleOpenMRDetail = (group: VendorSelectionGroup) => {
@@ -112,18 +252,16 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setRfqDeadlineDate(group.deadlineDate || '2025-01-22');
     setRfqDeadlineTime(group.deadlineTime || '18:00');
 
-    // 기본적으로 모든 협력사 체크 ON
-    const initialCheckState: Record<string, boolean> = {};
-    group.quotations.forEach((q) => {
-      initialCheckState[q.supplierId] = true;
-    });
-    setRfqSelectedSuppliers(initialCheckState);
+    // 사람의 최종 확인 없이 RFQ 대상이 암묵적으로 선택되지 않도록 기본은 전체 해제합니다.
+    setRfqSelectedSuppliers({});
     setRfqSupplierEmails(Object.fromEntries(
       group.quotations.map((quotation) => [quotation.supplierId, quotation.email ?? ''])
     ));
     setRfqManualSuppliers([]);
     setRfqManualSupplierName('');
     setRfqManualSupplierEmail('');
+    setRfqEmailErrors({});
+    setRfqValidationMessage(null);
     setShowRfqModal(true);
   };
 
@@ -152,6 +290,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setRfqManualSuppliers((previous) => [...previous, name]);
     setRfqSelectedSuppliers((previous) => ({ ...previous, [name]: true }));
     setRfqSupplierEmails((previous) => ({ ...previous, [name]: email }));
+    setRfqEmailErrors((previous) => ({ ...previous, [name]: false }));
+    setRfqValidationMessage(null);
     setRfqManualSupplierName('');
     setRfqManualSupplierEmail('');
   };
@@ -161,25 +301,71 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       ...prev,
       [supplierId]: !prev[supplierId],
     }));
+    setRfqEmailErrors((previous) => ({ ...previous, [supplierId]: false }));
+    setRfqValidationMessage(null);
+  };
+
+  const handleRemoveManualSupplier = (supplierId: string) => {
+    setRfqManualSuppliers((previous) => previous.filter((name) => name !== supplierId));
+    setRfqSelectedSuppliers((previous) => {
+      const next = { ...previous };
+      delete next[supplierId];
+      return next;
+    });
+    setRfqSupplierEmails((previous) => {
+      const next = { ...previous };
+      delete next[supplierId];
+      return next;
+    });
+    setRfqEmailErrors((previous) => {
+      const next = { ...previous };
+      delete next[supplierId];
+      return next;
+    });
+    setRfqValidationMessage(null);
+  };
+
+  const handleSelectAllRfqSuppliers = () => {
+    setRfqSelectedSuppliers(Object.fromEntries(
+      rfqCandidateRows.map((candidate) => [candidate.supplierId, true]),
+    ));
+    setRfqValidationMessage(null);
+  };
+
+  const handleClearAllRfqSuppliers = () => {
+    setRfqSelectedSuppliers({});
+    setRfqEmailErrors({});
+    setRfqValidationMessage(null);
   };
 
   const handleSendRfq = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedGroup) return;
 
-    const checkedCount = Object.values(rfqSelectedSuppliers).filter(Boolean).length;
+    const selectedSupplierIds = rfqCandidateRows
+      .filter((candidate) => rfqSelectedSuppliers[candidate.supplierId])
+      .map((candidate) => candidate.supplierId);
+    const checkedCount = selectedSupplierIds.length;
     if (checkedCount === 0) {
-      setResultModal({
-        title: '협력사 선택이 필요합니다',
-        message: 'RFQ를 발송할 협력사를 최소 1개 이상 선택해 주세요.',
-        tone: 'warning',
-      });
+      setRfqValidationMessage('RFQ를 발송할 협력사를 최소 1개 이상 선택해 주세요.');
       return;
     }
 
-    const selectedSupplierIds = Object.entries(rfqSelectedSuppliers)
-      .filter(([, selected]) => selected)
-      .map(([supplierId]) => supplierId);
+    const missingEmailIds = selectedSupplierIds.filter((supplierId) => (
+      !(rfqSupplierEmails[supplierId] ?? '').trim()
+    ));
+    if (missingEmailIds.length > 0) {
+      setRfqEmailErrors(Object.fromEntries(
+        missingEmailIds.map((supplierId) => [supplierId, true]),
+      ));
+      setRfqValidationMessage(
+        `선택한 협력사 ${missingEmailIds.length}곳의 이메일을 입력해야 RFQ를 발송할 수 있습니다.`,
+      );
+      return;
+    }
+
+    setRfqEmailErrors({});
+    setRfqValidationMessage(null);
     const sent = await onSendRFQ(
       selectedGroup.id,
       selectedSupplierIds,
@@ -317,21 +503,38 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       </div>
 
       {/* 요구사항 핵심: 협력사 선정 표 (Table) */}
-      <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '10px', backgroundColor: 'var(--bg-card)', boxShadow: 'var(--shadow-sm)' }}>
-        <table className="custom-table" style={{ width: '100%', minWidth: '950px' }}>
+      <SmartTableContainer style={{ border: '1px solid var(--border-color)', borderRadius: '10px', backgroundColor: 'var(--bg-card)', boxShadow: 'var(--shadow-sm)' }}>
+        <table
+          className="custom-table configurable-table"
+          style={{ width: `${tableState.totalWidth}px`, minWidth: '100%' }}
+        >
+          <colgroup>
+            {VENDOR_COLUMNS.map((column) => (
+              <col key={column.key} style={{ width: tableState.widths[column.key] }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              <th style={{ width: '150px' }}>MR 번호</th>
-              <th style={{ width: '160px' }}>납기요청일</th>
-              <th style={{ width: '220px' }}>RFQ 협력사</th>
-              <th style={{ width: '200px' }}>마감시간 (마감연장)</th>
-              <th style={{ width: '170px', textAlign: 'center' }}>견적 회신율 (%)</th>
-              <th style={{ width: '160px' }}>진행상태</th>
-              <th style={{ width: '140px' }}>발주 시작</th>
+              {VENDOR_COLUMNS.map((column) => (
+                <ExcelColumnHeader
+                  key={column.key}
+                  columnKey={column.key}
+                  label={column.label}
+                  width={tableState.widths[column.key]}
+                  minWidth={column.minWidth}
+                  align={column.align}
+                  values={vendorFilterOptions[column.key]}
+                  selectedValues={tableState.filters[column.key]}
+                  onFilterChange={(selected) => tableState.setFilter(column.key, selected)}
+                  onResizeStart={(event) => tableState.beginResize(column.key, event)}
+                  activeSort={sortColumn === column.key ? sortDirection : undefined}
+                  onSort={(direction) => { setSortColumn(column.key); setSortDirection(direction); }}
+                />
+              ))}
             </tr>
           </thead>
           <tbody>
-            {vendorGroups.map((group) => {
+            {visibleVendorGroups.map((group, rowIndex) => {
               const respondedCount = group.quotations.filter((q) => q.isResponded).length;
               const totalSuppliers = group.quotations.length;
               const percent = totalSuppliers > 0 ? Math.round((respondedCount / totalSuppliers) * 100) : 0;
@@ -347,8 +550,19 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               );
 
               return (
-                <tr
-                  key={group.id}
+                <React.Fragment key={group.id}>
+                  {movePlaceholders
+                    .filter((placeholder) => placeholder.index === rowIndex)
+                    .map((placeholder) => (
+                      <StageMovePlaceholderRow
+                        key={placeholder.id}
+                        placeholder={placeholder}
+                        colSpan={7}
+                        onNavigate={onNavigateMovePlaceholder}
+                        onDismiss={onDismissMovePlaceholder}
+                      />
+                    ))}
+                  <tr
                   className={`workflow-transition-${group.transitionPhase ?? 'stable'}`}
                   style={{ height: '64px' }}
                 >
@@ -555,11 +769,24 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       </span>
                     )}
                   </td>
-                </tr>
+                  </tr>
+                </React.Fragment>
               );
             })}
 
-            {vendorGroups.length === 0 && (
+            {movePlaceholders
+              .filter((placeholder) => placeholder.index >= visibleVendorGroups.length)
+              .map((placeholder) => (
+                <StageMovePlaceholderRow
+                  key={placeholder.id}
+                  placeholder={placeholder}
+                  colSpan={7}
+                  onNavigate={onNavigateMovePlaceholder}
+                  onDismiss={onDismissMovePlaceholder}
+                />
+              ))}
+
+            {visibleVendorGroups.length === 0 && movePlaceholders.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
                   현재 협력사 선정 대기 건이 없습니다.
@@ -568,7 +795,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
             )}
           </tbody>
         </table>
-      </div>
+      </SmartTableContainer>
 
       {/* ========================================================================= */}
       {/* 팝업 모달 1: MR 번호 클릭 시 -> MR 상세 정보 모달 */}
@@ -688,7 +915,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       {/* ========================================================================= */}
       {showRfqModal && selectedGroup && (
         <div className="modal-overlay" onClick={() => setShowRfqModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '850px' }}>
+          <div className="modal-content rfq-target-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Building2 size={22} color="var(--accent)" />
@@ -704,8 +931,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSendRfq}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <form onSubmit={handleSendRfq} className="rfq-target-form">
+              <div className="modal-body rfq-target-modal-body">
                 {/* AI 추천 안내 */}
                 <div
                   style={{
@@ -721,14 +948,45 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   AI가 <strong>납기, 품질, 가격, 응대, 의사소통</strong> 5개 항목을 5점 만점으로 평가하여 <strong>5점이 많은 순위</strong>대로 랭킹을 산출했습니다. RFQ를 발송할 업체를 체크해 주세요.
                 </div>
 
+                <div className="rfq-selection-toolbar">
+                  <span>
+                    후보 {rfqCandidateRows.length}개사 · <strong>{selectedRfqCandidateCount}개사 선택</strong>
+                  </span>
+                  <div>
+                    <button
+                      type="button"
+                      className="btn-sm btn-outline"
+                      onClick={handleSelectAllRfqSuppliers}
+                      disabled={rfqCandidateRows.length === 0}
+                    >
+                      후보 전체 선택
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-sm btn-outline"
+                      onClick={handleClearAllRfqSuppliers}
+                      disabled={selectedRfqCandidateCount === 0}
+                    >
+                      전체 해제
+                    </button>
+                  </div>
+                </div>
+
+                {rfqValidationMessage && (
+                  <div className="rfq-validation-banner" role="alert">
+                    <AlertTriangle size={15} />
+                    <span>{rfqValidationMessage}</span>
+                  </div>
+                )}
+
                 {/* 5대 항목 평가표 (Table) */}
-                <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                  <table className="custom-table" style={{ fontSize: '12px' }}>
+                <div className="table-container rfq-candidate-list">
+                  <table className="custom-table rfq-candidate-table">
                     <thead>
                       <tr>
                         <th style={{ width: '40px', textAlign: 'center' }}>선택</th>
                         <th style={{ width: '60px', textAlign: 'center' }}>순위</th>
-                        <th>협력사명 / 이메일</th>
+                        <th>협력사 정보</th>
                         <th style={{ textAlign: 'center' }}>납기 (5점)</th>
                         <th style={{ textAlign: 'center' }}>품질 (5점)</th>
                         <th style={{ textAlign: 'center' }}>가격 (5점)</th>
@@ -738,16 +996,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {[...selectedGroup.quotations]
+                      {rfqCandidateRows
                         .map((q) => {
-                          const scores = getSupplierScores(q);
-                          const count5 = getCountOf5(scores);
-                          return { ...q, scores, count5 };
-                        })
-                        .sort((a, b) => b.count5 - a.count5)
-                        .map((q, idx) => {
-                          const rank = idx + 1;
+                          const rank = q.rank;
                           const isChecked = Boolean(rfqSelectedSuppliers[q.supplierId]);
+                          const sourceUrl = safeExternalUrl(q.sourceUrl);
 
                           return (
                             <tr key={q.supplierId} style={{ backgroundColor: isChecked ? 'rgba(60,60,67,0.02)' : 'transparent' }}>
@@ -762,63 +1015,102 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               </td>
                               {/* 순위 */}
                               <td style={{ textAlign: 'center', fontWeight: 700 }}>
-                                <span className={`rank-badge rank-${rank}`} style={{ display: 'inline-block', width: '22px', height: '22px', lineHeight: '22px', fontSize: '11px' }}>
-                                  {rank}
-                                </span>
+                                {rank ? (
+                                  <span className={`rank-badge rank-${rank}`} style={{ display: 'inline-block', width: '22px', height: '22px', lineHeight: '22px', fontSize: '11px' }}>
+                                    {rank}
+                                  </span>
+                                ) : <span className="badge badge-gray">직접</span>}
                               </td>
-                              {/* 협력사명 */}
-                              <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                                <div style={{ display: 'grid', gap: '5px' }}>
+                              {/* 협력사명·이메일·연락처·출처 */}
+                              <td className="rfq-supplier-info-cell">
+                                <div className="rfq-supplier-info-name">
                                   <span>
                                     {q.supplierName}
                                     {rank === 1 && (
                                       <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 최우수]</span>
                                     )}
                                   </span>
+                                  {q.isManual && (
+                                    <span className="rfq-manual-actions">
+                                      <span className="badge badge-gray">사용자 추가</span>
+                                      <button
+                                        type="button"
+                                        className="icon-btn"
+                                        onClick={() => handleRemoveManualSupplier(q.supplierId)}
+                                        aria-label={`${q.supplierName} 후보에서 제거`}
+                                        title="직접 추가 후보 제거"
+                                      >
+                                        <X size={11} />
+                                      </button>
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="rfq-email-field">
                                   <input
                                     type="email"
-                                    className="form-input"
+                                    className={`form-input ${rfqEmailErrors[q.supplierId] ? 'is-error' : ''}`}
                                     value={rfqSupplierEmails[q.supplierId] ?? ''}
-                                    onChange={(event) => setRfqSupplierEmails((previous) => ({
-                                      ...previous,
-                                      [q.supplierId]: event.target.value,
-                                    }))}
+                                    onChange={(event) => {
+                                      setRfqSupplierEmails((previous) => ({
+                                        ...previous,
+                                        [q.supplierId]: event.target.value,
+                                      }));
+                                      setRfqEmailErrors((previous) => ({
+                                        ...previous,
+                                        [q.supplierId]: false,
+                                      }));
+                                      setRfqValidationMessage(null);
+                                    }}
                                     placeholder="이메일 없음 · 직접 입력 가능"
-                                    style={{ minWidth: '190px', height: '30px', fontSize: '11px' }}
                                     aria-label={`${q.supplierName} 이메일`}
+                                    aria-invalid={Boolean(rfqEmailErrors[q.supplierId])}
                                   />
+                                  {rfqEmailErrors[q.supplierId] && (
+                                    <small>* 이메일을 입력하세요</small>
+                                  )}
+                                </div>
+                                <div className="rfq-supplier-info-meta">
+                                  <span>연락처: {q.phone || '없음'}</span>
+                                  {sourceUrl ? (
+                                    <a href={sourceUrl} target="_blank" rel="noreferrer">
+                                      출처 URL <ExternalLink size={11} />
+                                    </a>
+                                  ) : <span>출처 URL: 없음</span>}
+                                  {q.source && <span>출처: {q.source}</span>}
                                 </div>
                               </td>
                               {/* 납기 */}
-                              <td style={{ textAlign: 'center', color: q.scores.leadTime === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.leadTime === 5 ? 700 : 400 }}>
-                                ⭐ {q.scores.leadTime}점
+                              <td style={{ textAlign: 'center', color: q.scores?.leadTime === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.leadTime === 5 ? 700 : 400 }}>
+                                {q.scores ? `⭐ ${q.scores.leadTime}점` : '—'}
                               </td>
                               {/* 품질 */}
-                              <td style={{ textAlign: 'center', color: q.scores.quality === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.quality === 5 ? 700 : 400 }}>
-                                ⭐ {q.scores.quality}점
+                              <td style={{ textAlign: 'center', color: q.scores?.quality === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.quality === 5 ? 700 : 400 }}>
+                                {q.scores ? `⭐ ${q.scores.quality}점` : '—'}
                               </td>
                               {/* 가격 */}
-                              <td style={{ textAlign: 'center', color: q.scores.price === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.price === 5 ? 700 : 400 }}>
-                                ⭐ {q.scores.price}점
+                              <td style={{ textAlign: 'center', color: q.scores?.price === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.price === 5 ? 700 : 400 }}>
+                                {q.scores ? `⭐ ${q.scores.price}점` : '—'}
                               </td>
                               {/* 응대 */}
-                              <td style={{ textAlign: 'center', color: q.scores.service === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.service === 5 ? 700 : 400 }}>
-                                ⭐ {q.scores.service}점
+                              <td style={{ textAlign: 'center', color: q.scores?.service === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.service === 5 ? 700 : 400 }}>
+                                {q.scores ? `⭐ ${q.scores.service}점` : '—'}
                               </td>
                               {/* 의사소통 */}
-                              <td style={{ textAlign: 'center', color: q.scores.communication === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores.communication === 5 ? 700 : 400 }}>
-                                ⭐ {q.scores.communication}점
+                              <td style={{ textAlign: 'center', color: q.scores?.communication === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.communication === 5 ? 700 : 400 }}>
+                                {q.scores ? `⭐ ${q.scores.communication}점` : '—'}
                               </td>
                               {/* 5점 개수 */}
                               <td style={{ textAlign: 'center' }}>
-                                <span className="badge badge-purple" style={{ fontWeight: 700 }}>
-                                  {q.count5}개 보유
-                                </span>
+                                {q.count5 === null ? '—' : (
+                                  <span className="badge badge-purple" style={{ fontWeight: 700 }}>
+                                    {q.count5}개 보유
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );
                         })}
-                      {selectedGroup.quotations.length === 0 && (
+                      {rfqCandidateRows.length === 0 && (
                         <tr>
                           <td colSpan={9} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
                             AI가 찾은 협력사가 없습니다. 아래에서 RFQ 수신 협력사를 직접 입력해 주세요.
@@ -852,27 +1144,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       + 대상 추가
                     </button>
                   </div>
-                  {rfqManualSuppliers.length > 0 && (
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {rfqManualSuppliers.map((name) => (
-                        <span key={name} className="badge badge-gray" style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
-                          {name} · {rfqSupplierEmails[name]}
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            style={{ width: '18px', height: '18px', minWidth: '18px' }}
-                            onClick={() => {
-                              setRfqManualSuppliers((previous) => previous.filter((item) => item !== name));
-                              setRfqSelectedSuppliers((previous) => ({ ...previous, [name]: false }));
-                            }}
-                            aria-label={`${name} 제거`}
-                          >
-                            <X size={11} />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
                 {/* 창 아래쪽: '견적마감일' 선택 (날짜-달력 / 시간) */}
@@ -958,7 +1229,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedGroup.quotations.map((q) => {
+                    {[...selectedGroup.quotations]
+                      .sort((a, b) => {
+                        // 회신 여부가 AI 순위보다 우선이다. 미회신 업체에 과거
+                        // 후보 순위가 남아 있어도 상세 비교표의 맨 아래로 보낸다.
+                        if (a.isResponded !== b.isResponded) return a.isResponded ? -1 : 1;
+                        return a.aiRank - b.aiRank;
+                      })
+                      .map((q) => {
                       const isChecked = selectedSupplierForApproval === q.supplierId;
 
                       return (
@@ -977,7 +1255,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           {/* 협력사명 */}
                           <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                             {q.supplierName}
-                            {q.aiRank === 1 && (
+                            {q.isResponded && q.aiRank === 1 && (
                               <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 추천]</span>
                             )}
                           </td>
@@ -1003,7 +1281,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           </td>
                           {/* 제시 납기 */}
                           <td style={{ textAlign: 'center' }}>
-                            {q.isResponded ? `${q.leadTimeDays}일 소요` : '-'}
+                            {q.isResponded ? formatExpectedDelivery(q) : '-'}
                           </td>
                           {/* 제출 첨부자료 */}
                           <td>

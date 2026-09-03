@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { SmartTableContainer } from '../components/SmartTableContainer';
 import {
   Clock,
   Users,
@@ -166,7 +167,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* MR Progress Table */}
-        <div className="table-container" style={{ border: 'none' }}>
+        <SmartTableContainer style={{ border: 'none' }}>
           <table className="custom-table" style={{ minWidth: '950px' }}>
             <thead>
               <tr>
@@ -294,7 +295,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               })}
             </tbody>
           </table>
-        </div>
+        </SmartTableContainer>
       </div>
 
       {/* 2-3) 내가 처리해야 할 항목 (간단하게 표시) */}

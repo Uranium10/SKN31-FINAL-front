@@ -28,13 +28,17 @@ export const useStageTransitionItems = <T extends StageItem>(
         ...item,
         transitionPhase: previousIds.current.has(item.id) ? 'stable' : 'entering',
       } as T));
-      const exiting = previous
-        .filter((item) => !nextIds.has(item.id) && item.transitionPhase !== 'exiting')
-        .map((item) => ({
+      const nextDisplayed = [...active];
+      previous.forEach((item, previousIndex) => {
+        if (nextIds.has(item.id) || item.transitionPhase === 'exiting') return;
+        // 퇴장 항목을 목록 끝에 붙이지 않고 원래 인덱스에 남겨 두어
+        // 슬라이드 아웃과 뒤이은 이동 안내가 같은 자리에서 이어지게 한다.
+        nextDisplayed.splice(Math.min(previousIndex, nextDisplayed.length), 0, {
           ...(previousById.get(item.id) ?? item),
           transitionPhase: 'exiting',
-        } as T));
-      return [...active, ...exiting];
+        } as T);
+      });
+      return nextDisplayed;
     });
     previousIds.current = nextIds;
 

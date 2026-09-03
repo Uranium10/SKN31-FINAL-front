@@ -1,5 +1,7 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import type { Item } from '../types';
+import { SmartTableContainer } from '../components/SmartTableContainer';
+import { HoverMarqueeText } from '../components/HoverMarqueeText';
 import {
   PackagePlus,
   ArrowUpDown,
@@ -226,7 +228,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
       )}
 
       {/* 3-1 & 3-2) Item Table */}
-      <div className="table-container">
+      <SmartTableContainer>
         <table className="custom-table">
           <thead>
             <tr>
@@ -265,7 +267,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
                 <td>
                   <button className="spec-clickable-btn" onClick={() => onOpenSpecModal(item)}>
                     <Eye size={13} />
-                    <span>{item.specSummary}</span>
+                    <HoverMarqueeText text={item.specSummary} />
                   </button>
                 </td>
                 {/* Maintain Stock 여부 */}
@@ -362,7 +364,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
             )}
           </tbody>
         </table>
-      </div>
+      </SmartTableContainer>
 
       {sortedItems.length > 0 && (
         <div className="pagination-bar" aria-label="아이템 목록 페이지 이동">

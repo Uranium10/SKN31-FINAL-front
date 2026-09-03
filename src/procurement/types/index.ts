@@ -159,6 +159,8 @@ export interface SupplierQuotation {
   quoteUnitPrice: number;
   quoteTotalPrice: number;
   leadTimeDays: number;
+  /** Supplier Quotation 품목에 공급사가 직접 제시한 납기일(YYYY-MM-DD). */
+  expectedDeliveryDate?: string;
   isResponded: boolean;
   resContent: string;
   resAttachments: string[];
@@ -167,6 +169,12 @@ export interface SupplierQuotation {
   aiReason: string;
   isSelected: boolean;
   email?: string;
+  /** AI/ERP 공급사 탐색에서 확인한 대표 연락처입니다. 화면에서는 읽기 전용입니다. */
+  phone?: string;
+  /** 공급사 정보를 확인한 원문 페이지입니다. */
+  sourceUrl?: string;
+  /** ERPNext, 나라장터, 웹 검색 등 후보가 유입된 경로입니다. */
+  source?: string;
   scores?: SupplierScores;
 }
 
@@ -290,6 +298,19 @@ export interface ProcurementNotification {
   targetTab: NavigationTab;
   reference?: string;
   tone: 'info' | 'success' | 'warning' | 'danger';
+}
+
+export type WorkflowStageTab = 'mr-list' | 'vendor-select' | 'po-manage';
+
+/** 단계 이동 직후 원래 행 자리에 잠시 남는 프론트 전용 안내입니다. */
+export interface StageMovePlaceholder {
+  id: string;
+  mrNo: string;
+  itemName: string;
+  sourceTab: WorkflowStageTab;
+  destinationTab?: NavigationTab;
+  destinationLabel: string;
+  index: number;
 }
 
 export interface GlobalSearchResult {

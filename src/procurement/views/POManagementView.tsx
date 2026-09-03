@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
-import type { POItem, SupplierScores } from '../types';
+import React, { useMemo, useState } from 'react';
+import type { POItem, SupplierScores, StageMovePlaceholder } from '../types';
+import { SmartTableContainer } from '../components/SmartTableContainer';
+import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
+import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
+import {
+  matchesTableFilters,
+  useSessionTableState,
+  type TableColumnDefinition,
+} from '../hooks/useSessionTableState';
 import {
   ShoppingCart,
   CheckCircle2,
@@ -13,8 +21,24 @@ import {
   CircleDollarSign
 } from 'lucide-react';
 
+type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'amount' | 'promisedDate' | 'receivedDate' | 'payment' | 'status';
+
+const PO_COLUMNS: readonly TableColumnDefinition<POColumnKey>[] = [
+  { key: 'poNo', label: 'PO 번호', defaultWidth: 175, minWidth: 130 },
+  { key: 'mrNo', label: 'MR 번호', defaultWidth: 175, minWidth: 135 },
+  { key: 'item', label: '품목명 및 아이템코드', defaultWidth: 250, minWidth: 180 },
+  { key: 'amount', label: '발주금액', defaultWidth: 145, minWidth: 110, align: 'right' },
+  { key: 'promisedDate', label: '약정 납기일', defaultWidth: 145, minWidth: 115 },
+  { key: 'receivedDate', label: '실제 수령일', defaultWidth: 145, minWidth: 115 },
+  { key: 'payment', label: '대금결제', defaultWidth: 165, minWidth: 130 },
+  { key: 'status', label: '진행상태', defaultWidth: 265, minWidth: 190 },
+] as const;
+
 interface POManagementViewProps {
   poItems: POItem[];
+  movePlaceholders?: StageMovePlaceholder[];
+  onDismissMovePlaceholder?: (id: string) => void;
+  onNavigateMovePlaceholder?: (placeholder: StageMovePlaceholder) => void;
   onCreatePO: (poId: string) => void;
   onReturnToMR: (poId: string) => void;
   onMarkArrived: (poId: string) => void;
@@ -39,13 +63,36 @@ const getOverallProgress = (item: POItem) => {
   if (item.deliveryStatus === 'PARTIAL') return { label: '부분 입고 진행 중', className: 'badge-yellow' };
   if (!item.arrived) return { label: '입고 대기', className: 'badge-gray' };
   if (item.paymentStatus === 'PARTIALLY_PAID') return { label: '부분 결제 진행 중', className: 'badge-yellow' };
-  if (item.paymentStatus !== 'PAID') return { label: '대금 결제 대기', className: 'badge-yellow' };
+  if (item.paymentStatus !== 'PAID') return { label: '물품 도착', className: 'badge-green' };
   if (!item.scorecardCompleted) return { label: '협력사 평가 대기', className: 'badge-yellow' };
   return { label: '구매 업무 완료', className: 'badge-green' };
 };
 
+const paymentLabel = (item: POItem): string => ({
+  PAID: '결제 완료',
+  PARTIALLY_PAID: '부분 결제',
+  UNPAID: '결제 대기',
+  NOT_INVOICED: '매입송장 대기',
+}[item.paymentStatus ?? 'NOT_INVOICED']);
+
+const poFilterValue = (item: POItem, key: POColumnKey): string | number => {
+  switch (key) {
+    case 'poNo': return item.poNo ?? '발주 대기';
+    case 'mrNo': return item.mrNo;
+    case 'item': return `${item.itemName} · ${item.itemCode}`;
+    case 'amount': return item.totalAmount;
+    case 'promisedDate': return item.promisedDeliveryDate ?? item.dueDate;
+    case 'receivedDate': return item.fullReceiptDate ?? item.arrivedDate ?? item.firstReceiptDate ?? '-';
+    case 'payment': return paymentLabel(item);
+    case 'status': return getOverallProgress(item).label;
+  }
+};
+
 export const POManagementView: React.FC<POManagementViewProps> = ({
   poItems,
+  movePlaceholders = [],
+  onDismissMovePlaceholder = () => undefined,
+  onNavigateMovePlaceholder = () => undefined,
   onCreatePO,
   onReturnToMR,
   onMarkArrived,
@@ -57,6 +104,33 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   const [approvalModalItem, setApprovalModalItem] = useState<POItem | null>(null);
   const [scorecardItem, setScorecardItem] = useState<POItem | null>(null);
   const [draftScores, setDraftScores] = useState<Partial<SupplierScores>>({});
+  const tableState = useSessionTableState('po-management', PO_COLUMNS);
+  const [sortColumn, setSortColumn] = useState<POColumnKey>('mrNo');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const poFilterOptions = useMemo(() => Object.fromEntries(PO_COLUMNS.map((column) => [
+    column.key,
+    poItems.map((item) => column.key === 'amount'
+      ? `₩${item.totalAmount.toLocaleString()}`
+      : String(poFilterValue(item, column.key))),
+  ])) as Record<POColumnKey, string[]>, [poItems]);
+
+  const visiblePOItems = useMemo(() => poItems
+    .filter((item) => {
+      // 금액은 화면에 원화 형식으로 노출되므로 필터 값도 같은 문자열로 맞춥니다.
+      const value = (row: POItem, key: POColumnKey) => key === 'amount'
+        ? `₩${row.totalAmount.toLocaleString()}`
+        : poFilterValue(row, key);
+      return matchesTableFilters(item, tableState.filters, value);
+    })
+    .sort((left, right) => {
+      const leftValue = poFilterValue(left, sortColumn);
+      const rightValue = poFilterValue(right, sortColumn);
+      const compared = typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? leftValue - rightValue
+        : String(leftValue).localeCompare(String(rightValue), 'ko-KR', { numeric: true });
+      return sortDirection === 'asc' ? compared : -compared;
+    }), [poItems, sortColumn, sortDirection, tableState.filters]);
 
   const openScorecard = (item: POItem) => {
     setScorecardItem(item);
@@ -92,22 +166,51 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
       </div>
 
       {/* PO Management Table */}
-      <div className="table-container">
-        <table className="custom-table" style={{ minWidth: '1180px' }}>
+      <SmartTableContainer>
+        <table
+          className="custom-table configurable-table"
+          style={{ width: `${tableState.totalWidth}px`, minWidth: '100%' }}
+        >
+          <colgroup>
+            {PO_COLUMNS.map((column) => (
+              <col key={column.key} style={{ width: tableState.widths[column.key] }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              <th>PO 번호</th>
-              <th>MR 번호</th>
-              <th>품목명 및 아이템코드</th>
-              <th>약정 납기일</th>
-              <th>실제 수령일</th>
-              <th>대금결제</th>
-              <th>진행상태</th>
+              {PO_COLUMNS.map((column) => (
+                <ExcelColumnHeader
+                  key={column.key}
+                  columnKey={column.key}
+                  label={column.label}
+                  width={tableState.widths[column.key]}
+                  minWidth={column.minWidth}
+                  align={column.align}
+                  values={poFilterOptions[column.key]}
+                  selectedValues={tableState.filters[column.key]}
+                  onFilterChange={(selected) => tableState.setFilter(column.key, selected)}
+                  onResizeStart={(event) => tableState.beginResize(column.key, event)}
+                  activeSort={sortColumn === column.key ? sortDirection : undefined}
+                  onSort={(direction) => { setSortColumn(column.key); setSortDirection(direction); }}
+                />
+              ))}
             </tr>
           </thead>
           <tbody>
-            {poItems.map((item) => (
-              <tr key={item.id} className={`workflow-transition-${item.transitionPhase ?? 'stable'}`}>
+            {visiblePOItems.map((item, rowIndex) => (
+              <React.Fragment key={item.id}>
+                {movePlaceholders
+                  .filter((placeholder) => placeholder.index === rowIndex)
+                  .map((placeholder) => (
+                    <StageMovePlaceholderRow
+                      key={placeholder.id}
+                      placeholder={placeholder}
+                      colSpan={8}
+                      onNavigate={onNavigateMovePlaceholder}
+                      onDismiss={onDismissMovePlaceholder}
+                    />
+                  ))}
+                <tr className={`workflow-transition-${item.transitionPhase ?? 'stable'}`}>
                 {/* PO 번호 */}
                 <td>
                   {item.poCreated ? (
@@ -141,6 +244,9 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                       {item.itemName} ({item.itemCode})
                     </span>
                   </button>
+                </td>
+                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
+                  {item.totalAmount > 0 ? `₩${item.totalAmount.toLocaleString()}` : '금액 확인 중'}
                 </td>
                 <td>
                   <span style={{ fontWeight: 600 }}>{item.promisedDeliveryDate ?? item.dueDate}</span>
@@ -230,18 +336,30 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                     )}
                   </div>
                 </td>
-              </tr>
+                </tr>
+              </React.Fragment>
             ))}
-            {poItems.length === 0 && (
+            {movePlaceholders
+              .filter((placeholder) => placeholder.index >= visiblePOItems.length)
+              .map((placeholder) => (
+                <StageMovePlaceholderRow
+                  key={placeholder.id}
+                  placeholder={placeholder}
+                  colSpan={8}
+                  onNavigate={onNavigateMovePlaceholder}
+                  onDismiss={onDismissMovePlaceholder}
+                />
+              ))}
+            {visiblePOItems.length === 0 && movePlaceholders.length === 0 && (
               <tr>
-                <td colSpan={7} className="table-empty-state">
+                <td colSpan={8} className="table-empty-state">
                   발주 시작 또는 입고 진행 중인 건이 없습니다.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-      </div>
+      </SmartTableContainer>
 
       {/* MR/PR 상세 확인 Modal */}
       {selectedMRDetail && (

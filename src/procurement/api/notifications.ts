@@ -41,7 +41,10 @@ export const listProcurementNotifications = async (): Promise<ProcurementNotific
       : item.notification_type === 'MATERIAL_REQUEST_CREATED'
         || item.notification_type === 'WORKFLOW_FAILED'
         || item.notification_type === 'SUBSTITUTE_SELECTED'
+        || item.notification_type === 'URGENT_MR_REJECTED'
         ? 'mr-list'
+      : item.notification_type === 'MATERIAL_REQUEST_UPDATED'
+        ? workflowTarget
       : item.notification_type === 'SUBSTITUTE_NEW_PURCHASE_REQUESTED'
         ? workflowTarget
       : item.notification_type.startsWith('PURCHASE_RECEIPT')
@@ -62,7 +65,7 @@ export const listProcurementNotifications = async (): Promise<ProcurementNotific
           : undefined,
     tone: ['PURCHASE_RECEIPT_COMPLETED', 'ITEM_VALIDATION_APPROVED', 'SUBSTITUTE_SELECTED'].includes(item.notification_type)
       ? 'success'
-      : ['WORKFLOW_FAILED', 'PURCHASE_RECEIPT_REVERSED', 'PURCHASE_ORDER_CANCELLED'].includes(item.notification_type)
+      : ['WORKFLOW_FAILED', 'PURCHASE_RECEIPT_REVERSED', 'PURCHASE_ORDER_CANCELLED', 'URGENT_MR_REJECTED'].includes(item.notification_type)
         ? 'danger'
       : ['ITEM_VALIDATION_REVIEW', 'WORKFLOW_INPUT_REQUIRED', 'SUBSTITUTE_NEW_PURCHASE_REQUESTED'].includes(item.notification_type)
         ? 'warning'

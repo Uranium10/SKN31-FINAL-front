@@ -851,6 +851,294 @@
   background-color: rgba(255, 255, 255, 0.02);
 }
 
+/* Excel형 헤더: 고유값 필터, 열 폭 조절, MR 열 순서 변경을 세 표가 공유합니다. */
+.configurable-table {
+  table-layout: fixed;
+}
+
+.configurable-table td {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.excel-table-header {
+  position: relative;
+  padding: 8px 7px 8px 12px !important;
+  user-select: none;
+}
+
+.excel-table-header[draggable='true'] {
+  cursor: grab;
+}
+
+.excel-table-header.is-dragging {
+  opacity: 0.42;
+  cursor: grabbing;
+}
+
+.excel-table-header.is-before::before,
+.excel-table-header.is-after::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 3px;
+  background: #3a3a3c;
+}
+
+.excel-table-header.is-before::before { left: -1px; }
+.excel-table-header.is-after::after { right: -1px; }
+
+.excel-table-header-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.excel-table-header-content.align-center { justify-content: center; }
+.excel-table-header-content.align-right { justify-content: flex-end; }
+
+.excel-header-label,
+.excel-filter-trigger {
+  border: 0;
+  color: inherit;
+  background: transparent;
+}
+
+.excel-header-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: inherit;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 2px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.excel-header-label:disabled {
+  cursor: default;
+}
+
+.excel-header-label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excel-filter-trigger {
+  flex: 0 0 auto;
+  width: 23px;
+  height: 23px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.excel-filter-trigger:hover,
+.excel-filter-trigger.is-active {
+  color: #1d1d1f;
+  background: rgba(60, 60, 67, 0.1);
+  border-color: rgba(60, 60, 67, 0.12);
+}
+
+.excel-filter-trigger.is-active {
+  color: #b42318;
+  background: #fff0ee;
+}
+
+.excel-column-resizer {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.excel-column-resizer::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  right: 4px;
+  bottom: 7px;
+  width: 1px;
+  background: transparent;
+}
+
+.excel-column-resizer:hover::after,
+body.is-resizing-table-column .excel-column-resizer::after {
+  background: #6e6e73;
+}
+
+body.is-resizing-table-column {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* Portal로 body 아래에 그려 표의 overflow에 잘리지 않는 필터 메뉴입니다. */
+.excel-filter-menu {
+  position: fixed;
+  z-index: 10020;
+  width: 286px;
+  color: #1d1d1f;
+  background: rgba(255, 255, 255, 0.985);
+  border: 1px solid rgba(60, 60, 67, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+  animation: excel-filter-in 130ms ease-out;
+}
+
+@keyframes excel-filter-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.excel-filter-sort-actions {
+  display: grid;
+  border-bottom: 1px solid rgba(60, 60, 67, 0.12);
+}
+
+.excel-filter-sort-actions button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  color: #3a3a3c;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-size: 12px;
+}
+
+.excel-filter-sort-actions button:hover { background: #f2f2f5; }
+
+.excel-filter-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px;
+  padding: 7px 9px;
+  color: #6e6e73;
+  background: #f3f3f5;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.excel-filter-search:focus-within {
+  border-color: rgba(60, 60, 67, 0.32);
+  background: #fff;
+}
+
+.excel-filter-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #1d1d1f;
+  background: transparent;
+  font-size: 12px;
+}
+
+.excel-filter-values {
+  max-height: 230px;
+  padding: 0 10px 8px;
+  overflow-y: auto;
+}
+
+.excel-filter-values label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 3px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.excel-filter-values label > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.excel-filter-values label > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excel-checkbox-mark {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #fff;
+  border: 1px solid #b6b6bb;
+  border-radius: 3px;
+}
+
+.excel-filter-values input:checked + .excel-checkbox-mark {
+  background: #3a3a3c;
+  border-color: #3a3a3c;
+}
+
+.excel-filter-values p {
+  padding: 14px 4px;
+  color: #86868b;
+  text-align: center;
+  font-size: 12px;
+}
+
+.excel-filter-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 9px 10px;
+  background: #fafafa;
+  border-top: 1px solid rgba(60, 60, 67, 0.12);
+}
+
+.excel-filter-footer button {
+  min-height: 31px;
+  padding: 5px 11px;
+  font-size: 11px;
+}
+
+.configurable-grid-row {
+  display: grid;
+  width: 100%;
+}
+
+.mr-configurable-row > :nth-child(1) { order: var(--mr-order-department); }
+.mr-configurable-row > :nth-child(2) { order: var(--mr-order-requester); }
+.mr-configurable-row > :nth-child(3) { order: var(--mr-order-mr); }
+.mr-configurable-row > :nth-child(4) { order: var(--mr-order-item-code); }
+.mr-configurable-row > :nth-child(5) { order: var(--mr-order-category); }
+.mr-configurable-row > :nth-child(6) { order: var(--mr-order-item-name); }
+.mr-configurable-row > :nth-child(7) { order: var(--mr-order-spec); }
+.mr-configurable-row > :nth-child(8) { order: var(--mr-order-attachment); }
+.mr-configurable-row > :nth-child(9) { order: var(--mr-order-unit-price); }
+.mr-configurable-row > :nth-child(10) { order: var(--mr-order-total-price); }
+.mr-configurable-row > :nth-child(11) { order: var(--mr-order-due-date); }
+.mr-configurable-row > :nth-child(12) { order: var(--mr-order-revision); }
+.mr-configurable-row > :nth-child(13) { order: var(--mr-order-workflow); }
+
 .spec-clickable-btn {
   background-color: var(--primary-soft);
   border: 1px solid var(--border-color);
@@ -1128,6 +1416,30 @@
   z-index: 30;
   overflow: visible;
   transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1), padding 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.smart-horizontal-scroll {
+  position: fixed;
+  bottom: 8px;
+  z-index: 80;
+  display: none;
+  height: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-card) 94%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-dim) transparent;
+}
+
+.smart-horizontal-scroll.is-visible {
+  display: block;
+}
+
+.smart-horizontal-scroll-spacer {
+  height: 1px;
 }
 
 .procurement-shell .sidebar-collapse-toggle {
@@ -1603,6 +1915,154 @@
 }
 .procurement-shell .modal-header,
 .procurement-shell .modal-footer { border-color: var(--border-color); }
+
+/* RFQ 대상 모달은 외곽을 고정하고 후보 목록만 스크롤합니다. */
+.procurement-shell .rfq-target-modal {
+  width: min(1180px, calc(100vw - 40px));
+  height: min(880px, calc(100vh - 32px));
+  max-width: none;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.procurement-shell .rfq-target-form {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.procurement-shell .rfq-target-modal-body {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.procurement-shell .rfq-selection-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.procurement-shell .rfq-selection-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.procurement-shell .rfq-validation-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 11px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid rgba(190, 31, 31, 0.18);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.procurement-shell .rfq-candidate-list {
+  min-height: 150px;
+  flex: 1 1 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.procurement-shell .rfq-candidate-table {
+  min-width: 1080px;
+  font-size: 12px;
+}
+
+.procurement-shell .rfq-candidate-table thead {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+}
+
+.procurement-shell .rfq-supplier-info-cell {
+  width: 310px;
+  min-width: 310px;
+  color: var(--text-main);
+}
+
+.procurement-shell .rfq-supplier-info-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.procurement-shell .rfq-manual-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.procurement-shell .rfq-manual-actions .icon-btn {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+}
+
+.procurement-shell .rfq-email-field {
+  display: grid;
+  gap: 3px;
+}
+
+.procurement-shell .rfq-email-field .form-input {
+  min-width: 220px;
+  height: 30px;
+  font-size: 11px;
+}
+
+.procurement-shell .rfq-email-field .form-input.is-error {
+  border-color: rgba(190, 31, 31, 0.58);
+  background: #fff8f7;
+  box-shadow: 0 0 0 2px rgba(190, 31, 31, 0.07);
+}
+
+.procurement-shell .rfq-email-field small {
+  color: var(--danger);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.procurement-shell .rfq-supplier-info-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  margin-top: 6px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.procurement-shell .rfq-supplier-info-meta a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.procurement-shell .rfq-supplier-info-meta a:hover {
+  color: var(--text-main);
+}
 
 .procurement-shell .form-input,
 .procurement-shell .select-box {
@@ -2542,6 +3002,134 @@
   border-color: rgba(60, 60, 67, 0.28);
 }
 
+.procurement-shell .spec-clickable-btn > svg {
+  flex: 0 0 auto;
+}
+
+.procurement-shell .hover-marquee-text {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.procurement-shell .hover-marquee-text-content {
+  display: inline-block;
+  width: max-content;
+  min-width: 100%;
+  transform: translate3d(0, 0, 0);
+  will-change: auto;
+}
+
+.procurement-shell .spec-clickable-btn:hover .hover-marquee-text.is-overflowing .hover-marquee-text-content {
+  will-change: transform;
+  animation: spec-text-pan var(--marquee-duration) linear infinite;
+}
+
+/* 시작을 읽을 시간 → 끝까지 이동 → 끝에서 정지 → 처음으로 복귀. */
+@keyframes spec-text-pan {
+  0%, 12% { transform: translate3d(0, 0, 0); }
+  72%, 86% { transform: translate3d(calc(-1 * var(--marquee-distance)), 0, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+.procurement-shell .stage-move-placeholder-row:hover {
+  background: transparent;
+}
+
+.procurement-shell .stage-move-placeholder-row td {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.procurement-shell .stage-move-placeholder {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  color: var(--text-muted);
+  background: rgba(60, 60, 67, 0.045);
+  border: 1px dashed rgba(60, 60, 67, 0.2);
+  border-radius: 10px;
+  cursor: pointer;
+  animation: stage-placeholder-in 220ms ease-out both;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.procurement-shell .stage-move-placeholder:hover,
+.procurement-shell .stage-move-placeholder:focus-visible {
+  background: rgba(60, 60, 67, 0.075);
+  border-color: rgba(60, 60, 67, 0.34);
+  outline: none;
+}
+
+.procurement-shell .stage-move-placeholder-icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  color: var(--success);
+  background: var(--success-bg);
+  border-radius: 50%;
+}
+
+.procurement-shell .stage-move-placeholder-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.procurement-shell .stage-move-placeholder-copy strong {
+  flex: 0 0 auto;
+  color: var(--text-main);
+  font-family: monospace;
+}
+
+.procurement-shell .stage-move-placeholder-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.procurement-shell .stage-move-placeholder-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-main);
+  font-weight: 650;
+}
+
+.procurement-shell .stage-move-placeholder-close {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.procurement-shell .stage-move-placeholder-close:hover {
+  color: var(--text-main);
+  background: rgba(60, 60, 67, 0.09);
+}
+
+@keyframes stage-placeholder-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .procurement-shell .mr-sort-button {
   width: 100%;
   display: inline-flex;
@@ -2597,8 +3185,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .procurement-shell .workflow-transition-entering,
-  .procurement-shell .workflow-transition-exiting {
+  .procurement-shell .workflow-transition-exiting,
+  .procurement-shell .stage-move-placeholder,
+  .procurement-shell .spec-clickable-btn:hover .hover-marquee-text.is-overflowing .hover-marquee-text-content {
     animation-duration: 1ms;
+    animation-iteration-count: 1;
   }
 }
 
