@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
+export type TableFilterMode = 'none' | 'values' | 'number-range' | 'date-range';
+
+export interface TableColumnRangeFilter {
+  start?: string;
+  end?: string;
+}
+
 export interface TableColumnDefinition<Key extends string> {
   key: Key;
   label: string;
   defaultWidth: number;
   minWidth: number;
   align?: 'left' | 'center' | 'right';
+  filterMode?: TableFilterMode;
 }
 
 export type TableColumnFilters<Key extends string> = Partial<Record<Key, string[]>>;
@@ -48,6 +56,27 @@ export const matchesTableFilters = <Row, Key extends string>(
     selected === undefined || selected.includes(normalizeTableFilterValue(getValue(row, key)))
   ))
 );
+
+/** 숫자 및 ISO 날짜 값을 시작/끝 범위와 비교합니다. 빈 입력은 해당 방향을 제한하지 않습니다. */
+export const matchesTableRange = (
+  value: unknown,
+  range: TableColumnRangeFilter | undefined,
+  mode: 'number-range' | 'date-range',
+): boolean => {
+  if (!range?.start && !range?.end) return true;
+
+  if (mode === 'date-range') {
+    const comparable = String(value ?? '').slice(0, 10);
+    if (!comparable) return false;
+    return (!range.start || comparable >= range.start) && (!range.end || comparable <= range.end);
+  }
+
+  const comparable = Number(value);
+  const start = range.start === undefined ? undefined : Number(range.start);
+  const end = range.end === undefined ? undefined : Number(range.end);
+  if (!Number.isFinite(comparable)) return false;
+  return (start === undefined || comparable >= start) && (end === undefined || comparable <= end);
+};
 
 /**
  * 표의 열 폭과 헤더 필터를 브라우저 탭(sessionStorage)에 저장합니다.

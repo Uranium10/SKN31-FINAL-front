@@ -4,8 +4,11 @@ import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
 import {
-  matchesTableFilters,
+  matchesTableRange,
+  normalizeTableFilterValue,
+  useSessionStoredState,
   useSessionTableState,
+  type TableColumnRangeFilter,
   type TableColumnDefinition,
 } from '../hooks/useSessionTableState';
 import {
@@ -27,12 +30,14 @@ const PO_COLUMNS: readonly TableColumnDefinition<POColumnKey>[] = [
   { key: 'poNo', label: 'PO 번호', defaultWidth: 175, minWidth: 130 },
   { key: 'mrNo', label: 'MR 번호', defaultWidth: 175, minWidth: 135 },
   { key: 'item', label: '품목명 및 아이템코드', defaultWidth: 250, minWidth: 180 },
-  { key: 'amount', label: '발주금액', defaultWidth: 145, minWidth: 110, align: 'right' },
-  { key: 'promisedDate', label: '약정 납기일', defaultWidth: 145, minWidth: 115 },
-  { key: 'receivedDate', label: '실제 수령일', defaultWidth: 145, minWidth: 115 },
+  { key: 'amount', label: '발주금액', defaultWidth: 145, minWidth: 110, align: 'right', filterMode: 'number-range' },
+  { key: 'promisedDate', label: '약정 납기일', defaultWidth: 145, minWidth: 115, filterMode: 'date-range' },
+  { key: 'receivedDate', label: '실제 수령일', defaultWidth: 145, minWidth: 115, filterMode: 'date-range' },
   { key: 'payment', label: '대금결제', defaultWidth: 165, minWidth: 130 },
   { key: 'status', label: '진행상태', defaultWidth: 265, minWidth: 190 },
 ] as const;
+
+type PORangeFilters = Partial<Record<POColumnKey, TableColumnRangeFilter>>;
 
 interface POManagementViewProps {
   poItems: POItem[];
@@ -105,6 +110,10 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   const [scorecardItem, setScorecardItem] = useState<POItem | null>(null);
   const [draftScores, setDraftScores] = useState<Partial<SupplierScores>>({});
   const tableState = useSessionTableState('po-management', PO_COLUMNS);
+  const [rangeFilters, setRangeFilters] = useSessionStoredState<PORangeFilters>(
+    'biddingflow.table.po-management.ranges',
+    {},
+  );
   const [sortColumn, setSortColumn] = useState<POColumnKey>('mrNo');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
@@ -116,13 +125,19 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   ])) as Record<POColumnKey, string[]>, [poItems]);
 
   const visiblePOItems = useMemo(() => poItems
-    .filter((item) => {
-      // 금액은 화면에 원화 형식으로 노출되므로 필터 값도 같은 문자열로 맞춥니다.
-      const value = (row: POItem, key: POColumnKey) => key === 'amount'
-        ? `₩${row.totalAmount.toLocaleString()}`
-        : poFilterValue(row, key);
-      return matchesTableFilters(item, tableState.filters, value);
-    })
+    .filter((item) => PO_COLUMNS.every((column) => {
+      if (column.filterMode === 'number-range' || column.filterMode === 'date-range') {
+        return matchesTableRange(
+          poFilterValue(item, column.key),
+          rangeFilters[column.key],
+          column.filterMode,
+        );
+      }
+      if (column.filterMode === 'none') return true;
+      const selected = tableState.filters[column.key];
+      return selected === undefined
+        || selected.includes(normalizeTableFilterValue(poFilterValue(item, column.key)));
+    }))
     .sort((left, right) => {
       const leftValue = poFilterValue(left, sortColumn);
       const rightValue = poFilterValue(right, sortColumn);
@@ -130,7 +145,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         ? leftValue - rightValue
         : String(leftValue).localeCompare(String(rightValue), 'ko-KR', { numeric: true });
       return sortDirection === 'asc' ? compared : -compared;
-    }), [poItems, sortColumn, sortDirection, tableState.filters]);
+    }), [poItems, rangeFilters, sortColumn, sortDirection, tableState.filters]);
 
   const openScorecard = (item: POItem) => {
     setScorecardItem(item);
@@ -187,8 +202,16 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   minWidth={column.minWidth}
                   align={column.align}
                   values={poFilterOptions[column.key]}
-                  selectedValues={tableState.filters[column.key]}
+                  selectedValues={column.filterMode ? undefined : tableState.filters[column.key]}
                   onFilterChange={(selected) => tableState.setFilter(column.key, selected)}
+                  filterMode={column.filterMode}
+                  rangeValue={rangeFilters[column.key]}
+                  onRangeFilterChange={(range) => setRangeFilters((current) => {
+                    const next = { ...current };
+                    if (range) next[column.key] = range;
+                    else delete next[column.key];
+                    return next;
+                  })}
                   onResizeStart={(event) => tableState.beginResize(column.key, event)}
                   activeSort={sortColumn === column.key ? sortDirection : undefined}
                   onSort={(direction) => { setSortColumn(column.key); setSortDirection(direction); }}

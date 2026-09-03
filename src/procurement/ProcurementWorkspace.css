@@ -399,6 +399,122 @@
   overflow-y: auto;
 }
 
+/* Initial dashboard database synchronization */
+.dashboard-initial-load-region {
+  position: relative;
+  min-height: calc(100vh - 112px);
+  isolation: isolate;
+}
+
+.dashboard-initial-load-content {
+  transition: opacity 260ms ease, filter 260ms ease;
+}
+
+.dashboard-initial-load-region.is-loading {
+  overflow: hidden;
+}
+
+.dashboard-initial-load-region.is-loading .dashboard-initial-load-content {
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.22;
+  filter: blur(6px) saturate(0.25);
+}
+
+.dashboard-database-loader {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  color: #111113;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dashboard-database-loader-grid {
+  display: grid;
+  grid-template-areas:
+    'top-left top-right'
+    'bottom-left bottom-right';
+  grid-template-columns: repeat(2, 27px);
+  grid-template-rows: repeat(2, 27px);
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.dashboard-database-loader-cell {
+  position: relative;
+  overflow: hidden;
+  border: 4px solid #111113;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.dashboard-database-loader-cell::after {
+  position: absolute;
+  inset: -1px;
+  border-radius: 3px;
+  background: #111113;
+  content: '';
+  opacity: 0;
+  will-change: opacity;
+}
+
+.dashboard-database-loader-cell.cell-top-left {
+  grid-area: top-left;
+}
+
+.dashboard-database-loader-cell.cell-top-right {
+  grid-area: top-right;
+}
+
+.dashboard-database-loader-cell.cell-bottom-right {
+  grid-area: bottom-right;
+}
+
+.dashboard-database-loader-cell.cell-bottom-left {
+  grid-area: bottom-left;
+}
+
+.dashboard-database-loader-cell.cell-top-left::after {
+  animation: dashboard-db-tone-cycle 1s ease-in-out infinite;
+}
+
+.dashboard-database-loader-cell.cell-top-right::after {
+  animation: dashboard-db-tone-cycle 1s ease-in-out 250ms infinite;
+}
+
+.dashboard-database-loader-cell.cell-bottom-right::after {
+  animation: dashboard-db-tone-cycle 1s ease-in-out 500ms infinite;
+}
+
+.dashboard-database-loader-cell.cell-bottom-left::after {
+  animation: dashboard-db-tone-cycle 1s ease-in-out 750ms infinite;
+}
+
+.dashboard-database-loader > strong {
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.dashboard-database-loader > span {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@keyframes dashboard-db-tone-cycle {
+  0%, 100% { opacity: 0.04; }
+  25% { opacity: 1; }
+  50% { opacity: 0.04; }
+}
+
 /* Right AI Agent Drawer Panel */
 .ai-agent-panel {
   width: 320px;
@@ -1105,6 +1221,65 @@ body.is-resizing-table-column {
   font-size: 12px;
 }
 
+.excel-filter-range {
+  display: grid;
+  gap: 10px;
+  padding: 12px 12px 14px;
+}
+
+.excel-filter-range > p {
+  margin: 0;
+  color: #6e6e73;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.excel-filter-range label {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: #3a3a3c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.excel-filter-range input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  color: #1d1d1f;
+  background: #f7f7f8;
+  border: 1px solid rgba(60, 60, 67, 0.18);
+  border-radius: 7px;
+  outline: none;
+  font: inherit;
+  font-weight: 500;
+}
+
+.excel-filter-range input:focus {
+  background: #fff;
+  border-color: rgba(60, 60, 67, 0.42);
+  box-shadow: 0 0 0 3px rgba(60, 60, 67, 0.07);
+}
+
+.excel-filter-range-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.excel-filter-range-inline > span {
+  color: #86868b;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.excel-filter-range-inline input {
+  width: 100%;
+}
+
 .excel-filter-footer {
   display: flex;
   justify-content: flex-end;
@@ -1118,6 +1293,17 @@ body.is-resizing-table-column {
   min-height: 31px;
   padding: 5px 11px;
   font-size: 11px;
+}
+
+.excel-filter-footer .btn-primary {
+  color: #fff;
+  background: #1d1d1f;
+  border: 1px solid #1d1d1f;
+}
+
+.excel-filter-footer .btn-primary:hover {
+  background: #000;
+  border-color: #000;
 }
 
 .configurable-grid-row {
@@ -1357,6 +1543,108 @@ body.is-resizing-table-column {
   justify-content: space-between;
   margin-bottom: 20px;
   gap: 16px;
+}
+
+.procurement-shell .mr-list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.procurement-shell .mr-list-view > .filter-toolbar {
+  margin-bottom: 0;
+}
+
+.procurement-shell .mr-list-toolbar-primary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.procurement-shell .mr-list-search-box {
+  width: 420px;
+  height: 38px;
+}
+
+.procurement-shell .mr-list-view .filter-group > .select-box {
+  height: 38px;
+}
+
+.procurement-shell .mr-table-reset-button {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.procurement-shell .mr-table-reset-button:hover,
+.procurement-shell .mr-table-reset-button:focus-visible {
+  color: var(--text-main);
+  background: rgba(60, 60, 67, 0.08);
+  border-color: rgba(60, 60, 67, 0.28);
+  outline: none;
+}
+
+.procurement-shell .mr-table-reset-button::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 8px;
+  color: #fff;
+  background: rgba(28, 28, 30, 0.94);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -3px);
+  transition: opacity 130ms ease, transform 130ms ease;
+}
+
+.procurement-shell .mr-table-reset-button:hover::after,
+.procurement-shell .mr-table-reset-button:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.procurement-shell .mr-table-action-row .mr-table-reset-button::after {
+  right: 0;
+  left: auto;
+  transform: translateY(-3px);
+}
+
+.procurement-shell .mr-table-action-row .mr-table-reset-button:hover::after,
+.procurement-shell .mr-table-action-row .mr-table-reset-button:focus-visible::after {
+  transform: translateY(0);
+}
+
+.procurement-shell .mr-table-region {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.procurement-shell .mr-table-action-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .filter-group {
@@ -2044,11 +2332,17 @@ body.is-resizing-table-column {
 .procurement-shell .rfq-supplier-info-meta {
   display: flex;
   flex-wrap: wrap;
+  justify-content: space-between;
   gap: 3px 10px;
   margin-top: 6px;
   color: var(--text-dim);
   font-size: 10.5px;
   font-weight: 500;
+}
+
+.procurement-shell .rfq-supplier-source-link {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .procurement-shell .rfq-supplier-info-meta a {
@@ -3079,7 +3373,7 @@ body.is-resizing-table-column {
 
 .procurement-shell .stage-move-placeholder-copy {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   display: flex;
   align-items: baseline;
   gap: 9px;
@@ -3104,6 +3398,7 @@ body.is-resizing-table-column {
   gap: 4px;
   color: var(--text-main);
   font-weight: 650;
+  white-space: nowrap;
 }
 
 .procurement-shell .stage-move-placeholder-close {
@@ -3187,9 +3482,14 @@ body.is-resizing-table-column {
   .procurement-shell .workflow-transition-entering,
   .procurement-shell .workflow-transition-exiting,
   .procurement-shell .stage-move-placeholder,
-  .procurement-shell .spec-clickable-btn:hover .hover-marquee-text.is-overflowing .hover-marquee-text-content {
+  .procurement-shell .spec-clickable-btn:hover .hover-marquee-text.is-overflowing .hover-marquee-text-content,
+  .procurement-shell .dashboard-database-loader-cell::after {
     animation-duration: 1ms;
     animation-iteration-count: 1;
+  }
+
+  .procurement-shell .dashboard-database-loader-cell::after {
+    opacity: 0.46;
   }
 }
 
@@ -3218,6 +3518,40 @@ body.is-resizing-table-column {
   border-color: rgba(190, 42, 42, 0.22);
   background: var(--danger-bg);
   color: var(--danger);
+}
+
+/* MR 동기화 상태는 표 흐름 밖에 고정해 데이터 갱신 중에도 레이아웃이 움직이지 않습니다. */
+.mr-api-state.is-floating {
+  position: fixed;
+  z-index: 1800;
+  left: 50%;
+  bottom: 22px;
+  width: fit-content;
+  max-width: min(620px, calc(100vw - 48px));
+  min-height: 30px;
+  margin: 0;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.11);
+  backdrop-filter: blur(14px);
+  font-size: 11px;
+  transform: translateX(-50%);
+}
+
+.mr-api-state.is-floating > div {
+  min-width: 0;
+}
+
+.mr-api-state.is-floating > div > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mr-api-state.is-floating .spin-icon {
+  width: 13px;
+  height: 13px;
 }
 
 .mr-stage-cell .badge {

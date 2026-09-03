@@ -29,16 +29,6 @@ export const StageMovePlaceholderRow = ({
           }
         }}
       >
-        <span className="stage-move-placeholder-icon"><CheckCircle2 size={16} /></span>
-        <span className="stage-move-placeholder-copy">
-          <strong>{placeholder.mrNo}</strong>
-          <span>{placeholder.itemName} 작업이 {placeholder.destinationLabel}(으)로 이동했습니다.</span>
-        </span>
-        {placeholder.destinationTab && (
-          <span className="stage-move-placeholder-link">
-            바로 가기 <ArrowRight size={14} />
-          </span>
-        )}
         <button
           type="button"
           className="stage-move-placeholder-close"
@@ -50,6 +40,16 @@ export const StageMovePlaceholderRow = ({
         >
           <X size={15} />
         </button>
+        <span className="stage-move-placeholder-icon"><CheckCircle2 size={16} /></span>
+        <span className="stage-move-placeholder-copy">
+          <strong>{placeholder.mrNo}</strong>
+          <span>{placeholder.itemName} 작업이 {placeholder.destinationLabel}(으)로 이동했습니다.</span>
+        </span>
+        {placeholder.destinationTab && (
+          <span className="stage-move-placeholder-link">
+            바로 가기 <ArrowRight size={14} />
+          </span>
+        )}
       </div>
     </td>
   </tr>

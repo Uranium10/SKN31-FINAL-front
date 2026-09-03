@@ -15,6 +15,7 @@ import type {
   NavigationTab,
   Item,
   MaterialRequest,
+  MaterialRequestAttachment,
   VendorSelectionGroup,
   POItem,
   SupplierScores,
@@ -36,6 +37,7 @@ import {
   caseToMaterialRequest,
   caseToPOItem,
   caseToVendorSelectionGroup,
+  downloadMaterialRequestAttachment,
   extendQuotationDeadline,
   listProcurementCases,
   rejectProcurementCase,
@@ -84,6 +86,31 @@ interface ProcurementWorkspaceProps {
     title: string;
     detail: string;
   }) => void;
+}
+
+/**
+ * 최초 대시보드 동기화 중에만 표시되는 로더입니다.
+ * 네 칸은 좌상단 → 우상단 → 우하단 → 좌하단 순서로 채워져
+ * 데이터가 단계적으로 적재되는 인상을 줍니다.
+ */
+function DashboardDatabaseLoader() {
+  return (
+    <div
+      className="dashboard-database-loader"
+      role="status"
+      aria-live="polite"
+      aria-label="구매 데이터베이스를 동기화하는 중"
+    >
+      <div className="dashboard-database-loader-grid" aria-hidden="true">
+        <span className="dashboard-database-loader-cell cell-top-left" />
+        <span className="dashboard-database-loader-cell cell-top-right" />
+        <span className="dashboard-database-loader-cell cell-bottom-right" />
+        <span className="dashboard-database-loader-cell cell-bottom-left" />
+      </div>
+      <strong>구매 데이터 동기화 중</strong>
+      <span>ERPNext와 작업 저장소를 확인하고 있습니다.</span>
+    </div>
+  );
 }
 
 const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
@@ -244,10 +271,12 @@ function ProcurementWorkspaceComponent({
   // Modals state
   const [activeSpecItem, setActiveSpecItem] = useState<Item | null>(null);
   const [rejectingItem, setRejectingItem] = useState<{ id: string; mrNo: string } | null>(null);
-  const [activeAttachmentFiles, setActiveAttachmentFiles] = useState<string[] | null>(null);
+  const [activeAttachmentFiles, setActiveAttachmentFiles] = useState<Array<string | MaterialRequestAttachment> | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [newMRModalOpen, setNewMRModalOpen] = useState(false);
   const [mrApiLoading, setMrApiLoading] = useState(apiDataEnabled);
+  // 일반 재조회와 구분해, 대시보드 전체 로더는 최초 진입 때 한 번만 보여줍니다.
+  const [initialDashboardLoading, setInitialDashboardLoading] = useState(apiDataEnabled);
   const [mrApiError, setMrApiError] = useState<string | null>(null);
   const [itemApiLoading, setItemApiLoading] = useState(apiDataEnabled);
   const [itemApiError, setItemApiError] = useState<string | null>(null);
@@ -554,6 +583,32 @@ function ProcurementWorkspaceComponent({
     }, 4000);
   }, []);
 
+  const handleDownloadAttachment = useCallback(async (
+    attachment: string | MaterialRequestAttachment,
+  ) => {
+    const normalized = typeof attachment === 'string'
+      ? { fileName: attachment }
+      : attachment;
+    if (!normalized.fileId) {
+      showToast('이 첨부파일에는 ERPNext 다운로드 정보가 없습니다. MR을 다시 동기화해 주세요.');
+      return;
+    }
+
+    try {
+      const blob = await downloadMaterialRequestAttachment(normalized.fileId);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = normalized.fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '첨부파일 다운로드에 실패했습니다.');
+    }
+  }, [showToast]);
+
   // webhook/SSE를 붙일 때도 이 함수에 동일한 payload를 전달하면
   // 현재 알림 UI와 읽음 처리를 그대로 재사용할 수 있습니다.
   const pushNotification = (
@@ -647,7 +702,20 @@ function ProcurementWorkspaceComponent({
   // 호출하도록 붙일 수 있어 화면 상태 갱신 경로가 하나로 유지됩니다.
   useEffect(() => {
     if (!apiDataEnabled) return;
-    void loadMRsFromApi(true);
+    let active = true;
+
+    const loadInitialDashboardData = async () => {
+      try {
+        await loadMRsFromApi(true);
+      } finally {
+        if (active) setInitialDashboardLoading(false);
+      }
+    };
+
+    void loadInitialDashboardData();
+    return () => {
+      active = false;
+    };
   }, [loadMRsFromApi]);
 
   useEffect(() => {
@@ -667,6 +735,12 @@ function ProcurementWorkspaceComponent({
           await subscribeProcurementEvents(controller.signal, (event) => {
             showToast(event.title);
             void loadMRsFromApi(false);
+            if (event.notification_type.startsWith('ITEM_')) {
+              // 신규 비활성 Item, 규격 보완 요청, 자동 승인 결과를 같은 목록에
+              // 즉시 반영한다. 새로고침 전까지 승인 대기 품목이 보이지 않던
+              // 문제를 막는다.
+              void loadItemsFromApi();
+            }
           });
         } catch {
           // Initial list loading already exposes connection errors. SSE retries
@@ -681,7 +755,7 @@ function ProcurementWorkspaceComponent({
       disposed = true;
       controller?.abort();
     };
-  }, [loadMRsFromApi, showToast]);
+  }, [loadItemsFromApi, loadMRsFromApi, showToast]);
 
   // FastAPI BackgroundTasks에서 실행되는 AI 그래프는 시작 응답보다 늦게
   // 완료됩니다. QUEUED/RUNNING이 하나라도 있는 동안만 조용히 재조회하여
@@ -854,7 +928,9 @@ function ProcurementWorkspaceComponent({
           : request
         ));
         showToast(`${target.mrNo} 구매 처리를 시작했습니다. AI가 대체품과 구매 경로를 확인합니다.`);
-        window.setTimeout(() => void loadMRsFromApi(false), 1200);
+        // 승인 직후 재조회는 백그라운드에서 처리합니다. 일반 로딩 배너를 띄우면
+        // 테이블 위에 임시 영역이 생겼다 사라지며 MR 목록 전체가 흔들려 보입니다.
+        window.setTimeout(() => void loadMRsFromApi(false, true), 1200);
       } catch (error) {
         showToast(error instanceof Error ? error.message : 'MR 시작 요청에 실패했습니다.');
       }
@@ -1064,7 +1140,10 @@ function ProcurementWorkspaceComponent({
 
   const handleCheckQuotations = async (groupId: string) => {
     const group = vendorGroups.find((entry) => entry.id === groupId);
-    if (!apiDataEnabled || !group?.pendingTaskId) return;
+    if (!apiDataEnabled || !group?.pendingTaskId) {
+      showToast('현재 단계에 실행 가능한 AI 견적 분석 작업이 없습니다.');
+      return false;
+    }
     try {
       await answerProcurementTask(
         group.pendingTaskId,
@@ -1072,10 +1151,12 @@ function ProcurementWorkspaceComponent({
         group.pendingTask?.version,
       );
       clearNotificationsForMR(group.mrNo);
-      showToast(`${group.mrNo} 견적 회신 현황을 새로 확인했습니다.`);
+      showToast(`${group.mrNo} 공급사 견적 AI 분석과 순위 산정이 완료되었습니다.`);
       await loadMRsFromApi(false);
+      return true;
     } catch (error) {
-      showToast(error instanceof Error ? error.message : '견적 회신 확인에 실패했습니다.');
+      showToast(error instanceof Error ? error.message : '공급사 견적 AI 분석에 실패했습니다.');
+      return false;
     }
   };
 
@@ -1596,14 +1677,25 @@ function ProcurementWorkspaceComponent({
           <main className="view-content">
             {/* Screen 2: 대시보드 */}
             {currentTab === 'dashboard' && (
-              <DashboardView
-                requests={dashboardRequests}
-                poItems={activePOItems}
-                onApprove={apiDataEnabled ? handleStartSubstituteCheck : handleApproveRequest}
-                onOpenRejectModal={(id, mrNo) => setRejectingItem({ id, mrNo })}
-                onOpenSpecModal={handleOpenSpecByItemCode}
-                setCurrentTab={setCurrentTab}
-              />
+              <section
+                className={`dashboard-initial-load-region${initialDashboardLoading ? ' is-loading' : ''}`}
+                aria-busy={initialDashboardLoading}
+              >
+                <div
+                  className="dashboard-initial-load-content"
+                  aria-hidden={initialDashboardLoading || undefined}
+                >
+                  <DashboardView
+                    requests={dashboardRequests}
+                    poItems={activePOItems}
+                    onApprove={apiDataEnabled ? handleStartSubstituteCheck : handleApproveRequest}
+                    onOpenRejectModal={(id, mrNo) => setRejectingItem({ id, mrNo })}
+                    onOpenSpecModal={handleOpenSpecByItemCode}
+                    setCurrentTab={setCurrentTab}
+                  />
+                </div>
+                {initialDashboardLoading && <DashboardDatabaseLoader />}
+              </section>
             )}
 
             {/* Screen 3: 아이템 등록 */}
@@ -1661,6 +1753,7 @@ function ProcurementWorkspaceComponent({
                 onExtendDeadline={handleExtendDeadline}
                 onSendRFQ={handleSendRFQ}
                 onCheckQuotations={handleCheckQuotations}
+                onDownloadAttachment={(attachment) => void handleDownloadAttachment(attachment)}
               />
             )}
 
@@ -1720,24 +1813,36 @@ function ProcurementWorkspaceComponent({
               </button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {activeAttachmentFiles.map((file, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    backgroundColor: 'var(--bg-input)',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    fontSize: '13px',
-                    color: 'var(--text-main)'
-                  }}
-                >
-                  <span>📄 {file}</span>
-                  <button className="btn-sm btn-outline">다운로드</button>
-                </div>
-              ))}
+              {activeAttachmentFiles.map((file, idx) => {
+                const fileName = typeof file === 'string' ? file : file.fileName;
+                return (
+                  <div
+                    key={`${fileName}-${idx}`}
+                    style={{
+                      backgroundColor: 'var(--bg-input)',
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                      fontSize: '13px',
+                      color: 'var(--text-main)'
+                    }}
+                  >
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      📄 {fileName}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-sm btn-outline"
+                      onClick={() => void handleDownloadAttachment(file)}
+                    >
+                      다운로드
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

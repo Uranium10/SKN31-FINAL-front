@@ -2,6 +2,12 @@ import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import type { Item } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { HoverMarqueeText } from '../components/HoverMarqueeText';
+import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
+import {
+  normalizeTableFilterValue,
+  useSessionTableState,
+  type TableColumnDefinition,
+} from '../hooks/useSessionTableState';
 import {
   PackagePlus,
   ArrowUpDown,
@@ -33,6 +39,38 @@ interface ItemRegistrationViewProps {
 
 const PAGE_SIZE = 25;
 
+type ItemColumnKey =
+  | 'itemCode' | 'department' | 'itemName' | 'specSummary'
+  | 'maintainStock' | 'isFixedAsset' | 'attributes' | 'status';
+
+const ITEM_COLUMNS: readonly TableColumnDefinition<ItemColumnKey>[] = [
+  { key: 'itemCode', label: '아이템코드', defaultWidth: 170, minWidth: 130, filterMode: 'none' },
+  { key: 'department', label: '요청부서', defaultWidth: 130, minWidth: 96 },
+  { key: 'itemName', label: '품목명', defaultWidth: 180, minWidth: 120, filterMode: 'none' },
+  { key: 'specSummary', label: '규격 (클릭 시 전체보기)', defaultWidth: 270, minWidth: 170, filterMode: 'none' },
+  { key: 'maintainStock', label: 'Maintain Stock', defaultWidth: 135, minWidth: 110 },
+  { key: 'isFixedAsset', label: 'Is Fixed Asset', defaultWidth: 125, minWidth: 105 },
+  { key: 'attributes', label: 'Item Attributes 체크 항목', defaultWidth: 220, minWidth: 150 },
+  { key: 'status', label: '단계 (승인 / 반려)', defaultWidth: 210, minWidth: 150 },
+] as const;
+
+const itemAttributeLabels = (item: Item): string[] => [
+  item.attributes.heatResistant ? '내열성' : '',
+  item.attributes.highPressure ? '고압용' : '',
+  item.attributes.isoCertified ? 'ISO인증' : '',
+  item.attributes.waterproof ? '방수' : '',
+].filter(Boolean);
+
+const itemFilterValue = (item: Item, key: ItemColumnKey): string => {
+  switch (key) {
+    case 'maintainStock': return item.maintainStock ? 'Yes' : 'No';
+    case 'isFixedAsset': return item.isFixedAsset ? 'Yes' : 'No';
+    case 'attributes': return itemAttributeLabels(item).join(', ') || '없음';
+    case 'status': return item.status === '승인대기' ? 'AI 규격 검증 대기' : item.status;
+    default: return normalizeTableFilterValue(item[key]);
+  }
+};
+
 export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
   items,
   searchQuery,
@@ -51,6 +89,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [rejectingItem, setRejectingItem] = useState<{ id: string; itemCode: string } | null>(null);
+  const tableState = useSessionTableState('item-list', ITEM_COLUMNS);
 
   // New Item Form state
   const [newItemCode, setNewItemCode] = useState(`ITEM-00${items.length + 1}`);
@@ -70,7 +109,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
 
   // 상단 통합 검색과 목록 전용 검색을 함께 적용합니다. 통합 검색 결과에서 이
   // 화면으로 이동했을 때도 선택한 아이템이 그대로 좁혀져 보입니다.
-  const sortedItems = useMemo(() => {
+  const baseItems = useMemo(() => {
     const normalizedQueries = [searchQuery, deferredItemSearchQuery]
       .map((query) => query.trim().toLocaleLowerCase('ko-KR'))
       .filter(Boolean);
@@ -88,15 +127,32 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
         ]
           .map((value) => String(value ?? '').toLocaleLowerCase('ko-KR'))
           .join(' ');
-
         return normalizedQueries.every((query) => searchableText.includes(query));
-      })
+      });
+  }, [deferredItemSearchQuery, items, searchQuery]);
+
+  const columnFilterOptions = useMemo(() => Object.fromEntries(ITEM_COLUMNS.map((column) => [
+    column.key,
+    baseItems.map((item) => itemFilterValue(item, column.key)),
+  ])) as Record<ItemColumnKey, string[]>, [baseItems]);
+
+  const sortedItems = useMemo(() => (
+    baseItems
+      .filter((item) => ITEM_COLUMNS.every((column) => {
+        if (column.filterMode === 'none') return true;
+        const selected = tableState.filters[column.key];
+        return selected === undefined || selected.includes(itemFilterValue(item, column.key));
+      }))
       .sort((a, b) => sortAsc
         ? a.itemCode.localeCompare(b.itemCode)
-        : b.itemCode.localeCompare(a.itemCode));
-  }, [deferredItemSearchQuery, items, searchQuery, sortAsc]);
+        : b.itemCode.localeCompare(a.itemCode))
+  ), [baseItems, sortAsc, tableState.filters]);
 
   const totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
+  const pendingItemCount = useMemo(
+    () => items.filter((item) => item.status === '승인대기').length,
+    [items],
+  );
   const pageItems = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
     return sortedItems.slice(start, start + PAGE_SIZE);
@@ -104,7 +160,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [deferredItemSearchQuery, searchQuery, sortAsc]);
+  }, [deferredItemSearchQuery, searchQuery, sortAsc, tableState.filters]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -198,6 +254,11 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
           <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
             표시 아이템: <strong style={{ color: 'var(--text-main)' }}>{sortedItems.length}</strong> / {items.length}건
           </span>
+          {pendingItemCount > 0 && (
+            <span className="badge badge-yellow">
+              승인·AI 검증 대기 {pendingItemCount}건
+            </span>
+          )}
         </div>
 
         {readOnly ? (
@@ -229,25 +290,34 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
 
       {/* 3-1 & 3-2) Item Table */}
       <SmartTableContainer>
-        <table className="custom-table">
+        <table
+          className="custom-table configurable-table"
+          style={{ width: `${tableState.totalWidth}px`, minWidth: '100%' }}
+        >
+          <colgroup>
+            {ITEM_COLUMNS.map((column) => (
+              <col key={column.key} style={{ width: `${tableState.widths[column.key]}px` }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              {/* 3-1) 아이템코드 */}
-              <th>아이템코드</th>
-              {/* 3-2) 요청부서 */}
-              <th>요청부서</th>
-              {/* 품목명 */}
-              <th>품목명</th>
-              {/* 규격 (클릭 시 전체보기) */}
-              <th>규격 (클릭 시 전체보기)</th>
-              {/* Maintain Stock */}
-              <th>Maintain Stock</th>
-              {/* Is Fixed Asset */}
-              <th>Is Fixed Asset</th>
-              {/* Item Attributes */}
-              <th>Item Attributes 체크 항목</th>
-              {/* 승인 / 반려 단계 */}
-              <th>단계 (승인 / 반려)</th>
+              {ITEM_COLUMNS.map((column) => (
+                <ExcelColumnHeader
+                  key={column.key}
+                  columnKey={column.key}
+                  label={column.label}
+                  width={tableState.widths[column.key]}
+                  minWidth={column.minWidth}
+                  align={column.align}
+                  values={columnFilterOptions[column.key]}
+                  selectedValues={tableState.filters[column.key]}
+                  onFilterChange={(selected) => tableState.setFilter(column.key, selected)}
+                  filterMode={column.filterMode}
+                  onResizeStart={(event) => tableState.beginResize(column.key, event)}
+                  activeSort={column.key === 'itemCode' ? (sortAsc ? 'asc' : 'desc') : undefined}
+                  onSort={column.key === 'itemCode' ? (direction) => setSortAsc(direction === 'asc') : undefined}
+                />
+              ))}
             </tr>
           </thead>
           <tbody>

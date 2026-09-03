@@ -10,7 +10,7 @@ interface ERPItemSummary {
   stock_uom?: string;
   is_stock_item?: number | boolean;
   is_fixed_asset?: number | boolean;
-  disabled?: number | boolean;
+  disabled?: number | boolean | string;
   brand?: string;
   creation?: string;
 }
@@ -34,6 +34,9 @@ const stripHtml = (value?: string | null): string => (value ?? '')
 
 export const itemSummaryToItem = (row: ERPItemSummary): Item => {
   const description = stripHtml(row.description) || '등록된 규격 정보 없음';
+  const disabled = row.disabled === true
+    || row.disabled === 1
+    || row.disabled === '1';
   return {
     id: row.item_code,
     itemCode: row.item_code,
@@ -59,14 +62,33 @@ export const itemSummaryToItem = (row: ERPItemSummary): Item => {
       customizable: false,
     },
     registeredDate: row.creation?.slice(0, 10) || '-',
-    status: row.disabled ? '승인대기' : '승인',
+    status: disabled ? '승인대기' : '승인',
   };
 };
 
 export const listERPItems = async (): Promise<Item[]> => {
-  const response = await fetchWithAuth('/purchase/items?limit=500&offset=0');
-  const body = await parseJson<ERPItemListResponse>(response);
-  return (Array.isArray(body.items) ? body.items : []).map(itemSummaryToItem);
+  const pageSize = 500;
+  let offset = 0;
+  const rows: ERPItemSummary[] = [];
+
+  // ERPNext 목록 API는 페이지 단위로 응답한다. 첫 500건만 읽으면 코드
+  // 정렬상 뒤쪽에 있는 disabled 품목이 누락될 수 있으므로 마지막 페이지까지
+  // 조회한다. include_disabled=true를 명시해 승인 대기도 API 계약에 포함한다.
+  while (true) {
+    const response = await fetchWithAuth(
+      `/purchase/items?limit=${pageSize}&offset=${offset}&include_disabled=true`,
+    );
+    const body = await parseJson<ERPItemListResponse>(response);
+    const page = Array.isArray(body.items) ? body.items : [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  // 페이지를 읽는 동안 ERP에서 Item이 수정되더라도 코드 하나가 화면에
+  // 중복 표시되지 않게 마지막 값을 기준으로 합친다.
+  const uniqueRows = new Map(rows.map((row) => [row.item_code, row]));
+  return Array.from(uniqueRows.values()).map(itemSummaryToItem);
 };
 
 export const getERPItemSpecifications = async (

@@ -1,5 +1,11 @@
 import { fetchWithAuth } from '../../utils/auth';
-import type { MaterialRequest, POItem, SupplierQuotation, VendorSelectionGroup } from '../types';
+import type {
+  MaterialRequest,
+  MaterialRequestAttachment,
+  POItem,
+  SupplierQuotation,
+  VendorSelectionGroup,
+} from '../types';
 
 export type ProcurementDataMode = 'mock' | 'hybrid' | 'api';
 
@@ -12,6 +18,15 @@ export interface ProcurementCaseDTO {
   item_name?: string | null;
   summary?: Record<string, unknown>;
   workflow_snapshot?: Record<string, unknown>;
+  quotation_snapshot?: {
+    rfq_name?: string;
+    recipient_suppliers?: string[];
+    responded_suppliers?: string[];
+    recipient_count?: number;
+    responded_count?: number;
+    response_rate?: number;
+    quotations?: Array<Record<string, unknown>>;
+  };
   last_error?: string | null;
   quotation_deadline_at?: string | null;
   pending_task_count?: number;
@@ -216,16 +231,32 @@ const calculateDDay = (dueDate: string): number => {
   return Math.max(0, Math.ceil((due.getTime() - now.getTime()) / 86_400_000));
 };
 
-const attachmentsFromSummary = (summary: Record<string, unknown>): string[] => {
+const attachmentsFromSummary = (summary: Record<string, unknown>): MaterialRequestAttachment[] => {
   const attachments = Array.isArray(summary.attachments) ? summary.attachments : [];
   return attachments.map((item) => {
-    if (typeof item === 'string') return item;
+    if (typeof item === 'string') return { fileName: item };
     if (item && typeof item === 'object') {
       const row = item as Record<string, unknown>;
-      return text(row.file_name) || text(row.file_url) || '첨부파일';
+      return {
+        fileName: text(row.file_name) || text(row.file_url) || '첨부파일',
+        fileId: text(row.name) || undefined,
+        fileUrl: text(row.file_url) || undefined,
+        isPrivate: Boolean(Number(row.is_private) || row.is_private === true),
+      };
     }
-    return '첨부파일';
+    return { fileName: '첨부파일' };
   });
+};
+
+export const downloadMaterialRequestAttachment = async (fileId: string): Promise<Blob> => {
+  const response = await fetchWithAuth(
+    `/api/procurement/attachments/download?file_id=${encodeURIComponent(fileId)}`,
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body?.detail === 'string' ? body.detail : '첨부파일 다운로드에 실패했습니다.');
+  }
+  return response.blob();
 };
 
 export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialRequest => {
@@ -265,14 +296,21 @@ export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialReques
       (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object',
     )
     : [];
+  const liveQuotationRows = Array.isArray(entry.quotation_snapshot?.quotations)
+    ? entry.quotation_snapshot.quotations
+    : null;
+  const responseRows = liveQuotationRows ?? quotationRows;
   const respondedSuppliers = new Set(
-    quotationRows
+    responseRows
       .map((row) => text(row.supplier) || text(row.supplier_name) || text(row.name))
       .filter((name) => name && (rfqRecipients.size === 0 || rfqRecipients.has(name))),
   );
-  const quotationProgressPercent = rfqRecipients.size > 0
-    ? Math.min(100, Math.round((respondedSuppliers.size / rfqRecipients.size) * 100))
-    : 0;
+  const snapshotResponseRate = entry.quotation_snapshot?.response_rate;
+  const quotationProgressPercent = typeof snapshotResponseRate === 'number'
+    ? Math.min(100, Math.max(0, snapshotResponseRate))
+    : rfqRecipients.size > 0
+      ? Math.min(100, Math.round((respondedSuppliers.size / rfqRecipients.size) * 100))
+      : 0;
   const hasSelectedSupplier = Boolean(text(rawValues.selected_supplier));
   const hasCreatedPO = Boolean(
     text(rawValues.po_name) || text(entry.delivery?.po_name),
@@ -339,6 +377,7 @@ const supplierName = (row: Record<string, unknown>): string => (
 const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   const values = valuesOf(entry);
   const ranking = rows(values.quotation_ranking);
+  const liveQuotations = rows(entry.quotation_snapshot?.quotations);
   const candidates = rows(values.supplier_candidates ?? values.existing_supplier_candidates);
   const sentSupplierNames = new Set(
     (Array.isArray(values.selected_suppliers) ? values.selected_suppliers : [])
@@ -352,20 +391,26 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
     ? candidates.filter((candidate) => sentSupplierNames.has(supplierName(candidate)))
     : candidates;
   const rankingBySupplier = new Map(ranking.map((row) => [supplierName(row), row]));
+  const liveBySupplier = new Map(liveQuotations.map((row) => [supplierName(row), row]));
   const candidateNames = new Set(recipientCandidates.map(supplierName));
+  const liveNames = new Set(liveQuotations.map(supplierName));
   const source = [
     ...recipientCandidates.map((candidate) => ({
       ...candidate,
       ...(rankingBySupplier.get(supplierName(candidate)) ?? {}),
+      ...(liveBySupplier.get(supplierName(candidate)) ?? {}),
     })),
+    ...liveQuotations.filter((quotation) => !candidateNames.has(supplierName(quotation))),
     ...ranking.filter((ranked) => (
       !candidateNames.has(supplierName(ranked))
+      && !liveNames.has(supplierName(ranked))
       && (sentSupplierNames.size === 0 || sentSupplierNames.has(supplierName(ranked)))
     )),
   ];
   return source.map((row, index) => {
     const name = supplierName(row);
-    const responded = rankingBySupplier.has(name);
+    const responded = liveBySupplier.has(name) || rankingBySupplier.has(name);
+    const aiEvaluated = rankingBySupplier.has(name);
     const unitPrice = numberValue(row.rate ?? row.unit_price ?? row.net_rate ?? row.quote_unit_price);
     const totalPrice = numberValue(
       row.total_amount
@@ -386,11 +431,20 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
         row.expected_delivery_date ?? row.schedule_date ?? row.delivery_date,
       ) || undefined,
       isResponded: responded,
-      resContent: text(row.reason ?? row.ai_reason, 'AI 및 거래 이력을 바탕으로 확인된 협력사입니다.'),
+      resContent: text(
+        row.response_summary ?? row.remarks ?? row.supplier_response,
+        responded ? '견적 단가와 제시 납기 정보를 수신했습니다.' : '아직 견적을 회신하지 않았습니다.',
+      ),
       resAttachments: [],
       aiRank: numberValue(row.rank) || index + 1,
       aiScore: numberValue(row.score ?? row.ai_score),
-      aiReason: text(row.reason ?? row.ai_reason, '추천 근거를 준비 중입니다.'),
+      aiReason: aiEvaluated ? text(row.reason ?? row.ai_reason) : '',
+      aiEvaluated,
+      specMatch: typeof row.spec_match === 'boolean' ? row.spec_match : undefined,
+      fulfillsQuantity: typeof row.fulfills_qty === 'boolean' ? row.fulfills_qty : undefined,
+      aiIssues: Array.isArray(row.issues)
+        ? row.issues.map((issue) => text(issue)).filter(Boolean)
+        : [],
       isSelected: text(values.selected_supplier) === name,
       email: text(row.email ?? row.email_id) || undefined,
       phone: text(

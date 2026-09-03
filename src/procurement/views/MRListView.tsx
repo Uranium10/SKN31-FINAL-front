@@ -7,10 +7,11 @@ import { HoverMarqueeText } from '../components/HoverMarqueeText';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
 import {
-  matchesTableFilters,
   normalizeTableFilterValue,
+  matchesTableRange,
   useSessionStoredState,
   useSessionTableState,
+  type TableColumnRangeFilter,
   type TableColumnDefinition,
 } from '../hooks/useSessionTableState';
 import {
@@ -23,6 +24,7 @@ import {
   XCircle,
   RefreshCw,
   AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 
 interface MRListViewProps {
@@ -35,7 +37,7 @@ interface MRListViewProps {
   onOpenSpecModalByItemCode: (itemCode: string, requestSpecification?: string) => void;
   onApprove: (id: string) => void;
   onOpenRejectModal: (id: string, mrNo: string) => void;
-  onOpenAttachmentsModal: (files: string[]) => void;
+  onOpenAttachmentsModal: (files: MaterialRequest['attachmentFiles']) => void;
   onStartSubstituteCheck: (id: string) => void;
   onSubstituteSelectedInErp: (id: string) => void;
   onConfirmSubstituteUnused: (id: string) => void;
@@ -57,19 +59,20 @@ const MR_COLUMNS: readonly TableColumnDefinition<MRSortKey>[] = [
   { key: 'department', label: '요청부서', defaultWidth: 130, minWidth: 96 },
   { key: 'requester', label: '요청자', defaultWidth: 120, minWidth: 90 },
   { key: 'mrNo', label: 'MR번호', defaultWidth: 210, minWidth: 160 },
-  { key: 'itemCode', label: '아이템코드', defaultWidth: 170, minWidth: 130 },
+  { key: 'itemCode', label: '아이템코드', defaultWidth: 170, minWidth: 130, filterMode: 'none' },
   { key: 'category', label: '아이템그룹(카테고리)', defaultWidth: 170, minWidth: 130 },
-  { key: 'itemName', label: '아이템명', defaultWidth: 180, minWidth: 120 },
-  { key: 'specSummary', label: '규격(클릭 시 전체보기)', defaultWidth: 270, minWidth: 170 },
+  { key: 'itemName', label: '아이템명', defaultWidth: 180, minWidth: 120, filterMode: 'none' },
+  { key: 'specSummary', label: '규격(클릭 시 전체보기)', defaultWidth: 270, minWidth: 170, filterMode: 'none' },
   { key: 'attachmentCount', label: '첨부파일', defaultWidth: 105, minWidth: 88, align: 'center' },
-  { key: 'unitPrice', label: '단가', defaultWidth: 125, minWidth: 96, align: 'right' },
-  { key: 'totalPrice', label: '금액', defaultWidth: 135, minWidth: 105, align: 'right' },
-  { key: 'dueDate', label: '납기요청일', defaultWidth: 135, minWidth: 110 },
-  { key: 'revisionRound', label: '차수', defaultWidth: 82, minWidth: 68, align: 'center' },
+  { key: 'unitPrice', label: '단가', defaultWidth: 125, minWidth: 96, align: 'right', filterMode: 'number-range' },
+  { key: 'totalPrice', label: '금액', defaultWidth: 135, minWidth: 105, align: 'right', filterMode: 'number-range' },
+  { key: 'dueDate', label: '납기요청일', defaultWidth: 135, minWidth: 110, filterMode: 'date-range' },
+  { key: 'revisionRound', label: '차수', defaultWidth: 82, minWidth: 68, align: 'center', filterMode: 'number-range' },
   { key: 'workflowStatus', label: '진행여부', defaultWidth: 280, minWidth: 190 },
 ] as const;
 
 const MR_DEFAULT_COLUMN_ORDER = MR_COLUMNS.map((column) => column.key);
+type MRRangeFilters = Partial<Record<MRSortKey, TableColumnRangeFilter>>;
 
 const workflowStageLabel = (stage?: string): string => ({
   MR_REVIEW: 'MR 시작 준비',
@@ -176,6 +179,10 @@ export const MRListView: React.FC<MRListViewProps> = ({
   const [sortKey, setSortKey] = useState<MRSortKey>('dueDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const tableState = useSessionTableState('mr-list', MR_COLUMNS);
+  const [rangeFilters, setRangeFilters] = useSessionStoredState<MRRangeFilters>(
+    'biddingflow.table.mr-list.ranges',
+    {},
+  );
   const [storedColumnOrder, setStoredColumnOrder] = useSessionStoredState<MRSortKey[]>(
     'biddingflow.table.mr-list.order',
     [...MR_DEFAULT_COLUMN_ORDER],
@@ -261,7 +268,16 @@ export const MRListView: React.FC<MRListViewProps> = ({
 
   const sortedRequests = useMemo(() => (
     baseRequests
-      .filter((request) => matchesTableFilters(request, tableState.filters, mrFilterValue))
+      .filter((request) => MR_COLUMNS.every((column) => {
+        if (column.filterMode && column.filterMode !== 'values') return true;
+        const selected = tableState.filters[column.key];
+        return selected === undefined || selected.includes(mrFilterValue(request, column.key));
+      }))
+      .filter((request) => MR_COLUMNS.every((column) => (
+        column.filterMode === 'number-range' || column.filterMode === 'date-range'
+          ? matchesTableRange(sortableValue(request, column.key), rangeFilters[column.key], column.filterMode)
+          : true
+      )))
       .sort((a, b) => {
         const left = sortableValue(a, sortKey);
         const right = sortableValue(b, sortKey);
@@ -270,7 +286,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
           : String(left).localeCompare(String(right), 'ko-KR', { numeric: true });
         return sortDirection === 'asc' ? compared : -compared;
       })
-  ), [baseRequests, sortDirection, sortKey, tableState.filters]);
+  ), [baseRequests, rangeFilters, sortDirection, sortKey, tableState.filters]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRequests.length / PAGE_SIZE));
   const pageRequests = useMemo(() => {
@@ -280,7 +296,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [deptFilter, searchQuery, sortDirection, sortKey, statusFilter, tableState.filters]);
+  }, [deptFilter, rangeFilters, searchQuery, sortDirection, sortKey, statusFilter, tableState.filters]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -303,19 +319,38 @@ export const MRListView: React.FC<MRListViewProps> = ({
     '--mr-order-workflow': columnOrder.indexOf('workflowStatus'),
   }) as React.CSSProperties, [columnOrder, orderedColumns, tableState.widths]);
 
+  /** 사용자가 조정한 MR 표 표시 설정을 제품의 최초 상태로 복원합니다. */
+  const handleResetTableLayout = () => {
+    tableState.resetWidths();
+    tableState.clearFilters();
+    setRangeFilters({});
+    setStoredColumnOrder([...MR_DEFAULT_COLUMN_ORDER]);
+    setStatusFilter('전체');
+    setDeptFilter('전체');
+    setDraftQuery('');
+    setSearchQuery('');
+    setSortKey('dueDate');
+    setSortDirection('asc');
+    setCurrentPage(1);
+    setDraggedColumn(null);
+    setDropTarget(null);
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className="mr-list-view">
       {/* 4-1) 상단 검색창 & 4-0) 필터링 바 */}
       <div className="filter-toolbar">
-        {/* 4-1) 검색창 */}
-        <div className="search-box" style={{ width: '420px' }}>
-          <Search size={16} color="var(--text-muted)" />
-          <input
-            type="text"
-            placeholder="4-1) MR번호, 품목명, 요청자, 요청부서, 카테고리 등 전체 검색..."
-            value={draftQuery}
-            onChange={(e) => setDraftQuery(e.target.value)}
-          />
+        <div className="mr-list-toolbar-primary">
+          {/* 4-1) 검색창 */}
+          <div className="search-box mr-list-search-box">
+            <Search size={16} color="var(--text-muted)" />
+            <input
+              type="text"
+              placeholder="4-1) MR번호, 품목명, 요청자, 요청부서, 카테고리 등 전체 검색..."
+              value={draftQuery}
+              onChange={(e) => setDraftQuery(e.target.value)}
+            />
+          </div>
         </div>
 
         {/* 4-0) 필터링 옵션 */}
@@ -342,7 +377,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
       </div>
 
       {isApiMode && (isLoading || loadError) && (
-        <div className={`mr-api-state ${loadError ? 'is-error' : ''}`} role={loadError ? 'alert' : 'status'}>
+        <div className={`mr-api-state is-floating ${loadError ? 'is-error' : ''}`} role={loadError ? 'alert' : 'status'}>
           <div>
             {loadError ? <AlertCircle size={16} /> : <RefreshCw size={16} className="spin-icon" />}
             <span>{loadError ?? 'ERPNext와 구매 작업 저장소에서 MR을 불러오는 중입니다.'}</span>
@@ -356,7 +391,19 @@ export const MRListView: React.FC<MRListViewProps> = ({
       )}
 
       {/* 4-2) MR 목록 표 (Table) */}
-      <SmartTableContainer>
+      <div className="mr-table-region">
+        <div className="mr-table-action-row">
+          <button
+            type="button"
+            className="mr-table-reset-button"
+            aria-label="MR 표 레이아웃 초기화"
+            data-tooltip="컬럼 크기·순서·필터 초기화"
+            onClick={handleResetTableLayout}
+          >
+            <RotateCcw size={17} aria-hidden="true" />
+          </button>
+        </div>
+        <SmartTableContainer>
         <table
           className="custom-table configurable-table"
           style={{ width: `${tableState.totalWidth}px`, minWidth: '100%' }}
@@ -373,8 +420,16 @@ export const MRListView: React.FC<MRListViewProps> = ({
                   align={column.align}
                   order={columnOrder.indexOf(column.key)}
                   values={columnFilterOptions[column.key]}
-                  selectedValues={tableState.filters[column.key]}
+                  selectedValues={column.filterMode ? undefined : tableState.filters[column.key]}
                   onFilterChange={(selected) => tableState.setFilter(column.key, selected)}
+                  filterMode={column.filterMode}
+                  rangeValue={rangeFilters[column.key]}
+                  onRangeFilterChange={(range) => setRangeFilters((current) => {
+                    const next = { ...current };
+                    if (range) next[column.key] = range;
+                    else delete next[column.key];
+                    return next;
+                  })}
                   onResizeStart={(event) => tableState.beginResize(column.key, event)}
                   activeSort={sortKey === column.key ? sortDirection : undefined}
                   onSort={(direction) => { setSortKey(column.key); setSortDirection(direction); }}
@@ -668,7 +723,8 @@ export const MRListView: React.FC<MRListViewProps> = ({
             )}
           </tbody>
         </table>
-      </SmartTableContainer>
+        </SmartTableContainer>
+      </div>
 
       {sortedRequests.length > 0 && (
         <div className="pagination-bar" aria-label="MR 목록 페이지 이동">

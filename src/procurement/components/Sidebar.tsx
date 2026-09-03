@@ -170,32 +170,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </ul>
 
       {/* Process Stages Mini Indicator inside Sidebar */}
-      <div className="sidebar-section-label">MR 단계 트래킹 시스템</div>
-      <div
-        className="sidebar-process-card"
-        style={{
-          backgroundColor: 'rgba(255,255,255,0.58)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '12px',
-          fontSize: '11px',
-          color: 'var(--text-muted)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 600 }}>
-          <Layers size={13} />
-          <span>전체 프로세스 4단계</span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div>1. 내 승인 여부</div>
-          <div>2. 견적 회신 진행율 (%)</div>
-          <div>3. 협력사 최종 선정</div>
-          <div>4. PO 결재 및 생성</div>
-        </div>
-      </div>
+      {!collapsed && (
+        <>
+          <div className="sidebar-section-label">MR 단계 트래킹 시스템</div>
+          <div
+            className="sidebar-process-card"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.58)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px',
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 600 }}>
+              <Layers size={13} />
+              <span>전체 프로세스 4단계</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div>1. 내 승인 여부</div>
+              <div>2. 견적 회신 진행율 (%)</div>
+              <div>3. 협력사 최종 선정</div>
+              <div>4. PO 결재 및 생성</div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* User Info Footer */}
       <div className="sidebar-user">

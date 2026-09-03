@@ -75,6 +75,14 @@ export type MRSubstituteStage = 'not_started' | 'notified_waiting' | 'not_used_c
 
 export type WorkflowTransitionPhase = 'entering' | 'stable' | 'exiting';
 
+export interface MaterialRequestAttachment {
+  fileName: string;
+  /** ERPNext File 문서 ID. 인증된 다운로드 프록시 호출에 사용합니다. */
+  fileId?: string;
+  fileUrl?: string;
+  isPrivate?: boolean;
+}
+
 export interface PendingHumanTask {
   taskId: string;
   taskType: string;
@@ -99,7 +107,8 @@ export interface MaterialRequest {
   fullSpecText: string;
   hasAttachment: boolean;
   attachmentCount: number;
-  attachmentFiles: string[];
+  /** 목업 문자열도 허용하여 기존 시연 데이터와 실제 ERP 첨부를 함께 지원합니다. */
+  attachmentFiles: Array<string | MaterialRequestAttachment>;
   unitPrice: number;
   totalPrice: number;
   quantity?: number;
@@ -167,6 +176,14 @@ export interface SupplierQuotation {
   aiRank: number;
   aiScore: number;
   aiReason: string;
+  /** 현재 SQ 집계본에 실제 AI 견적 평가 결과가 결합됐는지 여부입니다. */
+  aiEvaluated?: boolean;
+  /** AI가 확인한 규격 일치 여부입니다. 평가 전에는 undefined입니다. */
+  specMatch?: boolean;
+  /** AI가 확인한 요청 수량 충족 여부입니다. 평가 전에는 undefined입니다. */
+  fulfillsQuantity?: boolean;
+  /** 최종 선정 전 사람이 확인해야 할 AI 지적 사항입니다. */
+  aiIssues?: string[];
   isSelected: boolean;
   email?: string;
   /** AI/ERP 공급사 탐색에서 확인한 대표 연락처입니다. 화면에서는 읽기 전용입니다. */
