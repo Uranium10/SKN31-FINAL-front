@@ -543,6 +543,42 @@ function ProcurementWorkspaceComponent({
   useEffect(() => {
     window.localStorage.setItem(stageSeenStorageKey, JSON.stringify(seenStageItemIds));
   }, [seenStageItemIds, stageSeenStorageKey]);
+
+  useEffect(() => {
+    const syncSeenStagesAcrossTabs = (event: StorageEvent) => {
+      if (event.key === stageSeenStorageKey) {
+        setSeenStageItemIds(readSeenStageItemIds(stageSeenStorageKey));
+      }
+    };
+    window.addEventListener('storage', syncSeenStagesAcrossTabs);
+    return () => window.removeEventListener('storage', syncSeenStagesAcrossTabs);
+  }, [stageSeenStorageKey]);
+
+  const handleSidebarNavigation = useCallback((tab: NavigationTab) => {
+    const stage = tab === 'mr-list'
+      ? 'mr'
+      : tab === 'vendor-select'
+        ? 'vendor'
+        : tab === 'po-manage'
+          ? 'po'
+          : null;
+
+    if (stage) {
+      // Mark on the click itself. Relying only on the currentTab effect misses
+      // a re-click of an already active tab because React keeps the same state.
+      setSeenStageItemIds((previous) => {
+        const next = {
+          ...previous,
+          [stage]: appendSeenStageItems(previous[stage], stageItemIds[stage]),
+        };
+        // Persist synchronously so opening another tab/window immediately after
+        // the click cannot race the normal persistence effect.
+        window.localStorage.setItem(stageSeenStorageKey, JSON.stringify(next));
+        return next;
+      });
+    }
+    setCurrentTab(tab);
+  }, [stageItemIds, stageSeenStorageKey]);
   const searchResults = useMemo<GlobalSearchResult[]>(() => {
     const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
     if (!query) return [];
@@ -1626,7 +1662,7 @@ function ProcurementWorkspaceComponent({
       {/* 1. 왼쪽 사이드바 */}
       <Sidebar
         currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
+        setCurrentTab={handleSidebarNavigation}
         pendingCount={pendingCount}
         stageTaskCounts={stageTaskCounts}
         flashingStages={flashingStages}
