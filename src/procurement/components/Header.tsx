@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, CheckCheck, FileText, PackageSearch, Plus, Search } from 'lucide-react';
+import { Bell, CheckCheck, FileText, PackageSearch, Plus, Search, X } from 'lucide-react';
 import type {
   GlobalSearchResult,
   NavigationTab,
@@ -14,6 +14,7 @@ interface HeaderProps {
   notifications: ProcurementNotification[];
   onSelectSearchResult: (result: GlobalSearchResult) => void;
   onSelectNotification: (notification: ProcurementNotification) => void;
+  onDismissNotification: (notification: ProcurementNotification) => void;
   onClearAllNotifications: () => void;
   onOpenNewMRModal: () => void;
 }
@@ -34,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   notifications,
   onSelectSearchResult,
   onSelectNotification,
+  onDismissNotification,
   onClearAllNotifications,
   onOpenNewMRModal,
 }) => {
@@ -153,22 +155,35 @@ export const Header: React.FC<HeaderProps> = ({
                 {notifications.length === 0 ? (
                   <div className="floating-menu-empty">새 알림이 없습니다.</div>
                 ) : notifications.map((notification) => (
-                  <button
-                    type="button"
+                  <div
                     key={notification.id}
                     className={`notification-item ${notification.unread ? 'is-unread' : ''}`}
-                    onClick={() => {
-                      onSelectNotification(notification);
-                      setNotificationsOpen(false);
-                    }}
                   >
-                    <i data-tone={notification.tone} />
-                    <span>
-                      <strong>{notification.title}</strong>
-                      <small>{notification.detail}</small>
-                      <time>{notification.time}</time>
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className="notification-item-main"
+                      onClick={() => {
+                        onSelectNotification(notification);
+                        setNotificationsOpen(false);
+                      }}
+                    >
+                      <i data-tone={notification.tone} />
+                      <span>
+                        <strong>{notification.title}</strong>
+                        <small>{notification.detail}</small>
+                        <time>{notification.time}</time>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="notification-dismiss"
+                      aria-label={`${notification.title} 알림 삭제`}
+                      title="알림 삭제"
+                      onClick={() => onDismissNotification(notification)}
+                    >
+                      <X size={14} aria-hidden="true" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

@@ -820,6 +820,12 @@ function ProcurementWorkspaceComponent({
     setSearchQuery(result.searchValue);
   };
 
+  const handleDismissNotification = (notification: ProcurementNotification) => {
+    void removeNotification(notification).catch((error) => {
+      showToast(error instanceof Error ? error.message : '알림 삭제에 실패했습니다.');
+    });
+  };
+
   const handleSelectNotification = (notification: ProcurementNotification) => {
     setCurrentTab(notification.targetTab);
     setSearchQuery(
@@ -827,9 +833,7 @@ function ProcurementWorkspaceComponent({
         ? notification.reference ?? ''
         : ''
     );
-    void removeNotification(notification).catch((error) => {
-      showToast(error instanceof Error ? error.message : '알림 삭제에 실패했습니다.');
-    });
+    handleDismissNotification(notification);
   };
 
   const handleDeleteAllNotifications = () => {
@@ -1683,6 +1687,7 @@ function ProcurementWorkspaceComponent({
           notifications={notifications}
           onSelectSearchResult={handleSelectSearchResult}
           onSelectNotification={handleSelectNotification}
+          onDismissNotification={handleDismissNotification}
           onClearAllNotifications={handleDeleteAllNotifications}
           onOpenNewMRModal={() => setNewMRModalOpen(true)}
         />
