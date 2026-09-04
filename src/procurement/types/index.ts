@@ -308,9 +308,12 @@ export interface AiLog {
 
 export interface ProcurementNotification {
   id: string;
+  caseId?: string;
+  notificationType?: string;
   title: string;
   detail: string;
   time: string;
+  createdAt?: string;
   unread: boolean;
   targetTab: NavigationTab;
   reference?: string;

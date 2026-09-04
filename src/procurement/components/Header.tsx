@@ -14,7 +14,7 @@ interface HeaderProps {
   notifications: ProcurementNotification[];
   onSelectSearchResult: (result: GlobalSearchResult) => void;
   onSelectNotification: (notification: ProcurementNotification) => void;
-  onMarkAllNotificationsRead: () => void;
+  onClearAllNotifications: () => void;
   onOpenNewMRModal: () => void;
 }
 
@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   notifications,
   onSelectSearchResult,
   onSelectNotification,
-  onMarkAllNotificationsRead,
+  onClearAllNotifications,
   onOpenNewMRModal,
 }) => {
   const [draftQuery, setDraftQuery] = useState(searchQuery);
@@ -144,8 +144,8 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>{unreadCount}개 안 읽음</span>
                 </div>
                 {notifications.length > 0 && (
-                  <button type="button" onClick={onMarkAllNotificationsRead}>
-                    <CheckCheck size={14} /> 모두 읽음
+                  <button type="button" onClick={onClearAllNotifications}>
+                    <CheckCheck size={14} /> 모두 지우기
                   </button>
                 )}
               </div>

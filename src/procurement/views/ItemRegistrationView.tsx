@@ -45,8 +45,8 @@ type ItemColumnKey =
 
 const ITEM_COLUMNS: readonly TableColumnDefinition<ItemColumnKey>[] = [
   { key: 'itemCode', label: '아이템코드', defaultWidth: 170, minWidth: 130, filterMode: 'none' },
-  { key: 'department', label: '요청부서', defaultWidth: 130, minWidth: 96 },
-  { key: 'itemName', label: '품목명', defaultWidth: 180, minWidth: 120, filterMode: 'none' },
+  { key: 'department', label: '품목 그룹', defaultWidth: 130, minWidth: 96 },
+  { key: 'itemName', label: '품목명', defaultWidth: 180, minWidth: 120 },
   { key: 'specSummary', label: '규격 (클릭 시 전체보기)', defaultWidth: 270, minWidth: 170, filterMode: 'none' },
   { key: 'maintainStock', label: 'Maintain Stock', defaultWidth: 135, minWidth: 110 },
   { key: 'isFixedAsset', label: 'Is Fixed Asset', defaultWidth: 125, minWidth: 105 },
@@ -329,7 +329,7 @@ export const ItemRegistrationView: React.FC<ItemRegistrationViewProps> = ({
                     {item.itemCode}
                   </span>
                 </td>
-                {/* 3-2) 요청부서 */}
+                {/* ERPNext Item Group */}
                 <td>{item.department}</td>
                 {/* 품목명 */}
                 <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{item.itemName}</td>

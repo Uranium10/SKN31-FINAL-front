@@ -45,14 +45,9 @@ import {
   syncDraftProcurementCases,
   type ProcurementDataMode,
 } from './api/cases';
-import {
-  deleteAllProcurementNotifications,
-  deleteProcurementNotification,
-  listProcurementNotifications,
-  subscribeProcurementEvents,
-} from './api/notifications';
 import { getERPItemSpecifications, listERPItems } from './api/items';
 import { useStageTransitionItems } from './hooks/useStageTransitionItems';
+import { useProcurementNotifications } from './hooks/useProcurementNotifications';
 import { normalizeSpecificationText } from './utils/itemSpecifications';
 
 import './ProcurementWorkspace.css';
@@ -266,8 +261,6 @@ function ProcurementWorkspaceComponent({
         fullReceiptDate: item.arrivedDate,
       }))
   );
-  const [notifications, setNotifications] = useState<ProcurementNotification[]>(initialNotifications);
-
   // Modals state
   const [activeSpecItem, setActiveSpecItem] = useState<Item | null>(null);
   const [rejectingItem, setRejectingItem] = useState<{ id: string; mrNo: string } | null>(null);
@@ -609,25 +602,6 @@ function ProcurementWorkspaceComponent({
     }
   }, [showToast]);
 
-  // webhook/SSE를 붙일 때도 이 함수에 동일한 payload를 전달하면
-  // 현재 알림 UI와 읽음 처리를 그대로 재사용할 수 있습니다.
-  const pushNotification = (
-    notification: Omit<ProcurementNotification, 'id' | 'time' | 'unread'>
-  ) => {
-    setNotifications((previous) => [{
-      ...notification,
-      id: `notice-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      time: '방금 전',
-      unread: true,
-    }, ...previous]);
-  };
-
-  const clearNotificationsForMR = (mrNo: string) => {
-    setNotifications((previous) => previous.filter((notification) => (
-      notification.reference !== mrNo && !notification.detail.includes(mrNo)
-    )));
-  };
-
   const loadMRsFromApi = useCallback(async (
     reconcile = false,
     silent = false,
@@ -666,7 +640,6 @@ function ProcurementWorkspaceComponent({
           ].includes(entry.stage))
           .map(caseToPOItem)
       );
-      if (!silent) setNotifications(await listProcurementNotifications());
     } catch (error) {
       const message = error instanceof Error ? error.message : 'MR 목록을 불러오지 못했습니다.';
       if (!silent) {
@@ -697,6 +670,26 @@ function ProcurementWorkspaceComponent({
     }
   }, []);
 
+  const handleRealtimeNotification = useCallback((event: { title: string; notification_type: string }) => {
+    showToast(event.title);
+    // SSE is only an invalidation signal. Cases and items are re-read from
+    // their authoritative APIs instead of being reconstructed from the event.
+    void loadMRsFromApi(false, true);
+    if (event.notification_type.startsWith('ITEM_')) void loadItemsFromApi();
+  }, [loadItemsFromApi, loadMRsFromApi, showToast]);
+
+  const {
+    notifications,
+    removeNotification,
+    clearAllNotifications,
+    clearNotificationsForReference: clearNotificationsForMR,
+    pushMockNotification: pushNotification,
+  } = useProcurementNotifications({
+    enabled: apiDataEnabled,
+    mockNotifications: initialNotifications,
+    onRealtimeEvent: handleRealtimeNotification,
+  });
+
   // 웹훅이 누락된 비접속 시간대의 Draft MR을 로그인 후 최초 한 번 대사합니다.
   // 이후 상태 갱신은 작업 액션 직후 재조회하며, SSE 수신기는 같은 함수를
   // 호출하도록 붙일 수 있어 화면 상태 갱신 경로가 하나로 유지됩니다.
@@ -722,40 +715,6 @@ function ProcurementWorkspaceComponent({
     if (!apiDataEnabled) return;
     void loadItemsFromApi();
   }, [loadItemsFromApi]);
-
-  useEffect(() => {
-    if (!apiDataEnabled) return undefined;
-    let disposed = false;
-    let controller: AbortController | null = null;
-
-    const connect = async () => {
-      while (!disposed) {
-        controller = new AbortController();
-        try {
-          await subscribeProcurementEvents(controller.signal, (event) => {
-            showToast(event.title);
-            void loadMRsFromApi(false);
-            if (event.notification_type.startsWith('ITEM_')) {
-              // 신규 비활성 Item, 규격 보완 요청, 자동 승인 결과를 같은 목록에
-              // 즉시 반영한다. 새로고침 전까지 승인 대기 품목이 보이지 않던
-              // 문제를 막는다.
-              void loadItemsFromApi();
-            }
-          });
-        } catch {
-          // Initial list loading already exposes connection errors. SSE retries
-          // quietly so a temporary proxy restart does not disturb the user.
-        }
-        if (!disposed) await new Promise((resolve) => window.setTimeout(resolve, 3000));
-      }
-    };
-
-    void connect();
-    return () => {
-      disposed = true;
-      controller?.abort();
-    };
-  }, [loadItemsFromApi, loadMRsFromApi, showToast]);
 
   // FastAPI BackgroundTasks에서 실행되는 AI 그래프는 시작 응답보다 늦게
   // 완료됩니다. QUEUED/RUNNING이 하나라도 있는 동안만 조용히 재조회하여
@@ -788,39 +747,21 @@ function ProcurementWorkspaceComponent({
   };
 
   const handleSelectNotification = (notification: ProcurementNotification) => {
-    // 알림은 작업 화면으로 이동하는 일회성 inbox 항목입니다. 클릭 즉시
-    // 화면에서 제거하고, API 모드에서는 PostgreSQL 행도 함께 삭제합니다.
-    setNotifications((previous) => previous.filter((item) => item.id !== notification.id));
     setCurrentTab(notification.targetTab);
     setSearchQuery(
       notification.targetTab === 'item-register' || notification.targetTab === 'mr-list'
         ? notification.reference ?? ''
         : ''
     );
-    if (apiDataEnabled) {
-      void deleteProcurementNotification(notification.id).catch(async () => {
-        // 낙관적 삭제가 서버에서 실패했으면 실제 inbox를 다시 읽어 화면과
-        // DB가 서로 다른 상태로 남지 않게 합니다.
-        try {
-          setNotifications(await listProcurementNotifications());
-        } catch {
-          // 기존 목록 조회 오류 표시는 정규 로딩 경로에서 처리합니다.
-        }
-      });
-    }
+    void removeNotification(notification).catch((error) => {
+      showToast(error instanceof Error ? error.message : '알림 삭제에 실패했습니다.');
+    });
   };
 
   const handleDeleteAllNotifications = () => {
-    setNotifications([]);
-    if (apiDataEnabled) {
-      void deleteAllProcurementNotifications().catch(async () => {
-        try {
-          setNotifications(await listProcurementNotifications());
-        } catch {
-          // 기존 목록 조회 오류 표시는 정규 로딩 경로에서 처리합니다.
-        }
-      });
-    }
+    void clearAllNotifications().catch((error) => {
+      showToast(error instanceof Error ? error.message : '알림 전체 삭제에 실패했습니다.');
+    });
   };
 
   const handleCreateMaterialRequest = (request: MaterialRequest) => {
@@ -1668,7 +1609,7 @@ function ProcurementWorkspaceComponent({
           notifications={notifications}
           onSelectSearchResult={handleSelectSearchResult}
           onSelectNotification={handleSelectNotification}
-          onMarkAllNotificationsRead={handleDeleteAllNotifications}
+          onClearAllNotifications={handleDeleteAllNotifications}
           onOpenNewMRModal={() => setNewMRModalOpen(true)}
         />
 
