@@ -140,6 +140,31 @@ function uniqueByMrNo<T extends { mrNo: string }>(entries: T[]): T[] {
   });
 }
 
+interface SeenStageItemIds {
+  mr: string[];
+  vendor: string[];
+  po: string[];
+}
+
+const emptySeenStageItemIds = (): SeenStageItemIds => ({ mr: [], vendor: [], po: [] });
+
+const readSeenStageItemIds = (storageKey: string): SeenStageItemIds => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? '{}') as Partial<SeenStageItemIds>;
+    return {
+      mr: Array.isArray(stored.mr) ? stored.mr.filter((id): id is string => typeof id === 'string') : [],
+      vendor: Array.isArray(stored.vendor) ? stored.vendor.filter((id): id is string => typeof id === 'string') : [],
+      po: Array.isArray(stored.po) ? stored.po.filter((id): id is string => typeof id === 'string') : [],
+    };
+  } catch {
+    return emptySeenStageItemIds();
+  }
+};
+
+const appendSeenStageItems = (previous: string[], current: string[]): string[] => (
+  [...new Set([...previous, ...current])].slice(-500)
+);
+
 const subtractDays = (dateValue: string, days: number) => {
   const date = new Date(`${dateValue}T00:00:00`);
   date.setDate(date.getDate() - days);
@@ -446,16 +471,25 @@ function ProcurementWorkspaceComponent({
     setCurrentTab(placeholder.destinationTab);
     setSearchQuery(placeholder.mrNo);
   };
+  // A case ID alone cannot distinguish a genuinely new task when the same MR
+  // returns to a stage. Include the pending task (or stage) in the fingerprint.
   const stageItemIds = useMemo(() => ({
-    mr: mrQueueRequests.map((request) => request.id),
-    vendor: activeVendorGroups.map((group) => group.id),
-    po: activePOItems.map((item) => item.id),
+    mr: mrQueueRequests.map((request) => (
+      `${request.id}:${request.pendingTask?.taskId ?? request.workflowStage ?? request.status}`
+    )),
+    vendor: activeVendorGroups.map((group) => (
+      `${group.id}:${group.pendingTaskId ?? group.workflowStage ?? 'vendor'}`
+    )),
+    po: activePOItems.map((item) => (
+      `${item.id}:${item.pendingTaskId ?? item.approvalStatus ?? item.deliveryStatus ?? 'po'}`
+    )),
   }), [mrQueueRequests, activeVendorGroups, activePOItems]);
-  const [seenStageItemIds, setSeenStageItemIds] = useState<{
-    mr: string[];
-    vendor: string[];
-    po: string[];
-  }>({ mr: [], vendor: [], po: [] });
+  const stageSeenStorageKey = `biddingflow.stage-seen.${
+    currentUser?.id ?? currentUser?.email ?? currentUser?.username ?? 'anonymous'
+  }`;
+  const [seenStageItemIds, setSeenStageItemIds] = useState<SeenStageItemIds>(() => (
+    readSeenStageItemIds(stageSeenStorageKey)
+  ));
   const previousStageItemIds = useRef(stageItemIds);
   const [flashingStages, setFlashingStages] = useState({
     mr: false,
@@ -468,9 +502,9 @@ function ProcurementWorkspaceComponent({
   useEffect(() => {
     const previous = previousStageItemIds.current;
     const added = {
-      mr: stageItemIds.mr.some((id) => !previous.mr.includes(id)),
-      vendor: stageItemIds.vendor.some((id) => !previous.vendor.includes(id)),
-      po: stageItemIds.po.some((id) => !previous.po.includes(id)),
+      mr: stageItemIds.mr.some((id) => !previous.mr.includes(id) && !seenStageItemIds.mr.includes(id)),
+      vendor: stageItemIds.vendor.some((id) => !previous.vendor.includes(id) && !seenStageItemIds.vendor.includes(id)),
+      po: stageItemIds.po.some((id) => !previous.po.includes(id) && !seenStageItemIds.po.includes(id)),
     };
     previousStageItemIds.current = stageItemIds;
     if (!added.mr && !added.vendor && !added.po) return undefined;
@@ -480,11 +514,11 @@ function ProcurementWorkspaceComponent({
       setFlashingStages({ mr: false, vendor: false, po: false });
     }, 760);
     return () => window.clearTimeout(timer);
-  }, [stageItemIds]);
+  }, [seenStageItemIds, stageItemIds]);
 
-  // 현재 열어본 단계의 항목은 모두 확인한 것으로 표시합니다. 다른 단계는
-  // 이미 사라진 ID만 seen 목록에서 제거하여, 나중에 같은 케이스가 해당
-  // 단계로 다시 들어오면 새 작업으로 다시 안내할 수 있게 합니다.
+  // 현재 열어본 단계의 항목은 모두 확인한 것으로 표시합니다. 기록은 초기
+  // API 로딩 때 빈 목록이 와도 지우지 않고, 작업 지문 단위로 최대 500개를
+  // 보존하여 재접속 후 같은 항목을 신규 작업으로 오인하지 않게 합니다.
   useEffect(() => {
     const activeStage = currentTab === 'mr-list'
       ? 'mr'
@@ -495,16 +529,20 @@ function ProcurementWorkspaceComponent({
           : null;
     setSeenStageItemIds((previous) => ({
       mr: activeStage === 'mr'
-        ? stageItemIds.mr
-        : previous.mr.filter((id) => stageItemIds.mr.includes(id)),
+        ? appendSeenStageItems(previous.mr, stageItemIds.mr)
+        : previous.mr,
       vendor: activeStage === 'vendor'
-        ? stageItemIds.vendor
-        : previous.vendor.filter((id) => stageItemIds.vendor.includes(id)),
+        ? appendSeenStageItems(previous.vendor, stageItemIds.vendor)
+        : previous.vendor,
       po: activeStage === 'po'
-        ? stageItemIds.po
-        : previous.po.filter((id) => stageItemIds.po.includes(id)),
+        ? appendSeenStageItems(previous.po, stageItemIds.po)
+        : previous.po,
     }));
   }, [currentTab, stageItemIds]);
+
+  useEffect(() => {
+    window.localStorage.setItem(stageSeenStorageKey, JSON.stringify(seenStageItemIds));
+  }, [seenStageItemIds, stageSeenStorageKey]);
   const searchResults = useMemo<GlobalSearchResult[]>(() => {
     const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
     if (!query) return [];
