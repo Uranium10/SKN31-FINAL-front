@@ -2730,7 +2730,7 @@ body.is-resizing-table-column {
 }
 
 .procurement-shell .search-result-item > span:nth-child(2),
-.procurement-shell .notification-item > span {
+.procurement-shell .notification-item-main > span {
   min-width: 0;
   flex: 1;
   display: grid;
@@ -2817,13 +2817,24 @@ body.is-resizing-table-column {
 
 .procurement-shell .notification-item {
   position: relative;
-  padding: 12px 14px;
-  gap: 10px;
 }
 
 .procurement-shell .notification-item.is-unread { background: rgba(60, 60, 67, 0.035); }
 
-.procurement-shell .notification-item > i {
+.procurement-shell .notification-item-main {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 44px 12px 14px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+
+.procurement-shell .notification-item-main > i {
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
@@ -2831,15 +2842,45 @@ body.is-resizing-table-column {
   background: var(--text-dim);
 }
 
-.procurement-shell .notification-item > i[data-tone='success'] { background: var(--success); }
-.procurement-shell .notification-item > i[data-tone='warning'] { background: var(--warning); }
-.procurement-shell .notification-item > i[data-tone='danger'] { background: var(--danger); }
-.procurement-shell .notification-item > i[data-tone='info'] { background: var(--info); }
-.procurement-shell .notification-item:not(.is-unread) > i { opacity: 0.3; }
+.procurement-shell .notification-item-main > i[data-tone='success'] { background: var(--success); }
+.procurement-shell .notification-item-main > i[data-tone='warning'] { background: var(--warning); }
+.procurement-shell .notification-item-main > i[data-tone='danger'] { background: var(--danger); }
+.procurement-shell .notification-item-main > i[data-tone='info'] { background: var(--info); }
+.procurement-shell .notification-item:not(.is-unread) .notification-item-main > i { opacity: 0.3; }
 
 .procurement-shell .notification-item time {
   color: var(--text-dim);
   font-size: 9.5px;
+}
+
+.procurement-shell .notification-dismiss {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.92);
+  border: 0;
+  border-radius: 8px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-50%) scale(0.9);
+  transition: opacity 120ms ease, transform 120ms ease, background-color 120ms ease;
+}
+
+.procurement-shell .notification-item:hover .notification-dismiss,
+.procurement-shell .notification-item:focus-within .notification-dismiss {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) scale(1);
+}
+
+.procurement-shell .notification-dismiss:hover {
+  color: var(--text-main);
+  background: rgba(60, 60, 67, 0.1);
 }
 
 /* New MR manual intake form. */
@@ -3202,7 +3243,8 @@ body.is-resizing-table-column {
 .procurement-shell .icon-btn:focus-visible,
 .procurement-shell .spec-clickable-btn:focus-visible,
 .procurement-shell .search-result-item:focus-visible,
-.procurement-shell .notification-item:focus-visible,
+.procurement-shell .notification-item-main:focus-visible,
+.procurement-shell .notification-dismiss:focus-visible,
 .procurement-shell .sidebar-logout:focus-visible {
   outline: 3px solid rgba(29, 29, 31, 0.16);
   outline-offset: 2px;
@@ -3890,7 +3932,8 @@ body.is-resizing-table-column {
 }
 
 .procurement-shell .search-result-item,
-.procurement-shell .notification-item,
+.procurement-shell .notification-item-main,
+.procurement-shell .notification-dismiss,
 .procurement-shell .floating-menu-head button,
 .procurement-shell .sidebar-logout {
   font-family: inherit;

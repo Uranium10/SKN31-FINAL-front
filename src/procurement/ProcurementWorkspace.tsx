@@ -45,14 +45,9 @@ import {
   syncDraftProcurementCases,
   type ProcurementDataMode,
 } from './api/cases';
-import {
-  deleteAllProcurementNotifications,
-  deleteProcurementNotification,
-  listProcurementNotifications,
-  subscribeProcurementEvents,
-} from './api/notifications';
 import { getERPItemSpecifications, listERPItems } from './api/items';
 import { useStageTransitionItems } from './hooks/useStageTransitionItems';
+import { useProcurementNotifications } from './hooks/useProcurementNotifications';
 import { normalizeSpecificationText } from './utils/itemSpecifications';
 
 import './ProcurementWorkspace.css';
@@ -144,6 +139,31 @@ function uniqueByMrNo<T extends { mrNo: string }>(entries: T[]): T[] {
     return true;
   });
 }
+
+interface SeenStageItemIds {
+  mr: string[];
+  vendor: string[];
+  po: string[];
+}
+
+const emptySeenStageItemIds = (): SeenStageItemIds => ({ mr: [], vendor: [], po: [] });
+
+const readSeenStageItemIds = (storageKey: string): SeenStageItemIds => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? '{}') as Partial<SeenStageItemIds>;
+    return {
+      mr: Array.isArray(stored.mr) ? stored.mr.filter((id): id is string => typeof id === 'string') : [],
+      vendor: Array.isArray(stored.vendor) ? stored.vendor.filter((id): id is string => typeof id === 'string') : [],
+      po: Array.isArray(stored.po) ? stored.po.filter((id): id is string => typeof id === 'string') : [],
+    };
+  } catch {
+    return emptySeenStageItemIds();
+  }
+};
+
+const appendSeenStageItems = (previous: string[], current: string[]): string[] => (
+  [...new Set([...previous, ...current])].slice(-500)
+);
 
 const subtractDays = (dateValue: string, days: number) => {
   const date = new Date(`${dateValue}T00:00:00`);
@@ -266,8 +286,6 @@ function ProcurementWorkspaceComponent({
         fullReceiptDate: item.arrivedDate,
       }))
   );
-  const [notifications, setNotifications] = useState<ProcurementNotification[]>(initialNotifications);
-
   // Modals state
   const [activeSpecItem, setActiveSpecItem] = useState<Item | null>(null);
   const [rejectingItem, setRejectingItem] = useState<{ id: string; mrNo: string } | null>(null);
@@ -453,16 +471,25 @@ function ProcurementWorkspaceComponent({
     setCurrentTab(placeholder.destinationTab);
     setSearchQuery(placeholder.mrNo);
   };
+  // A case ID alone cannot distinguish a genuinely new task when the same MR
+  // returns to a stage. Include the pending task (or stage) in the fingerprint.
   const stageItemIds = useMemo(() => ({
-    mr: mrQueueRequests.map((request) => request.id),
-    vendor: activeVendorGroups.map((group) => group.id),
-    po: activePOItems.map((item) => item.id),
+    mr: mrQueueRequests.map((request) => (
+      `${request.id}:${request.pendingTask?.taskId ?? request.workflowStage ?? request.status}`
+    )),
+    vendor: activeVendorGroups.map((group) => (
+      `${group.id}:${group.pendingTaskId ?? group.workflowStage ?? 'vendor'}`
+    )),
+    po: activePOItems.map((item) => (
+      `${item.id}:${item.pendingTaskId ?? item.approvalStatus ?? item.deliveryStatus ?? 'po'}`
+    )),
   }), [mrQueueRequests, activeVendorGroups, activePOItems]);
-  const [seenStageItemIds, setSeenStageItemIds] = useState<{
-    mr: string[];
-    vendor: string[];
-    po: string[];
-  }>({ mr: [], vendor: [], po: [] });
+  const stageSeenStorageKey = `biddingflow.stage-seen.${
+    currentUser?.id ?? currentUser?.email ?? currentUser?.username ?? 'anonymous'
+  }`;
+  const [seenStageItemIds, setSeenStageItemIds] = useState<SeenStageItemIds>(() => (
+    readSeenStageItemIds(stageSeenStorageKey)
+  ));
   const previousStageItemIds = useRef(stageItemIds);
   const [flashingStages, setFlashingStages] = useState({
     mr: false,
@@ -475,9 +502,9 @@ function ProcurementWorkspaceComponent({
   useEffect(() => {
     const previous = previousStageItemIds.current;
     const added = {
-      mr: stageItemIds.mr.some((id) => !previous.mr.includes(id)),
-      vendor: stageItemIds.vendor.some((id) => !previous.vendor.includes(id)),
-      po: stageItemIds.po.some((id) => !previous.po.includes(id)),
+      mr: stageItemIds.mr.some((id) => !previous.mr.includes(id) && !seenStageItemIds.mr.includes(id)),
+      vendor: stageItemIds.vendor.some((id) => !previous.vendor.includes(id) && !seenStageItemIds.vendor.includes(id)),
+      po: stageItemIds.po.some((id) => !previous.po.includes(id) && !seenStageItemIds.po.includes(id)),
     };
     previousStageItemIds.current = stageItemIds;
     if (!added.mr && !added.vendor && !added.po) return undefined;
@@ -487,11 +514,11 @@ function ProcurementWorkspaceComponent({
       setFlashingStages({ mr: false, vendor: false, po: false });
     }, 760);
     return () => window.clearTimeout(timer);
-  }, [stageItemIds]);
+  }, [seenStageItemIds, stageItemIds]);
 
-  // 현재 열어본 단계의 항목은 모두 확인한 것으로 표시합니다. 다른 단계는
-  // 이미 사라진 ID만 seen 목록에서 제거하여, 나중에 같은 케이스가 해당
-  // 단계로 다시 들어오면 새 작업으로 다시 안내할 수 있게 합니다.
+  // 현재 열어본 단계의 항목은 모두 확인한 것으로 표시합니다. 기록은 초기
+  // API 로딩 때 빈 목록이 와도 지우지 않고, 작업 지문 단위로 최대 500개를
+  // 보존하여 재접속 후 같은 항목을 신규 작업으로 오인하지 않게 합니다.
   useEffect(() => {
     const activeStage = currentTab === 'mr-list'
       ? 'mr'
@@ -502,16 +529,56 @@ function ProcurementWorkspaceComponent({
           : null;
     setSeenStageItemIds((previous) => ({
       mr: activeStage === 'mr'
-        ? stageItemIds.mr
-        : previous.mr.filter((id) => stageItemIds.mr.includes(id)),
+        ? appendSeenStageItems(previous.mr, stageItemIds.mr)
+        : previous.mr,
       vendor: activeStage === 'vendor'
-        ? stageItemIds.vendor
-        : previous.vendor.filter((id) => stageItemIds.vendor.includes(id)),
+        ? appendSeenStageItems(previous.vendor, stageItemIds.vendor)
+        : previous.vendor,
       po: activeStage === 'po'
-        ? stageItemIds.po
-        : previous.po.filter((id) => stageItemIds.po.includes(id)),
+        ? appendSeenStageItems(previous.po, stageItemIds.po)
+        : previous.po,
     }));
   }, [currentTab, stageItemIds]);
+
+  useEffect(() => {
+    window.localStorage.setItem(stageSeenStorageKey, JSON.stringify(seenStageItemIds));
+  }, [seenStageItemIds, stageSeenStorageKey]);
+
+  useEffect(() => {
+    const syncSeenStagesAcrossTabs = (event: StorageEvent) => {
+      if (event.key === stageSeenStorageKey) {
+        setSeenStageItemIds(readSeenStageItemIds(stageSeenStorageKey));
+      }
+    };
+    window.addEventListener('storage', syncSeenStagesAcrossTabs);
+    return () => window.removeEventListener('storage', syncSeenStagesAcrossTabs);
+  }, [stageSeenStorageKey]);
+
+  const handleSidebarNavigation = useCallback((tab: NavigationTab) => {
+    const stage = tab === 'mr-list'
+      ? 'mr'
+      : tab === 'vendor-select'
+        ? 'vendor'
+        : tab === 'po-manage'
+          ? 'po'
+          : null;
+
+    if (stage) {
+      // Mark on the click itself. Relying only on the currentTab effect misses
+      // a re-click of an already active tab because React keeps the same state.
+      setSeenStageItemIds((previous) => {
+        const next = {
+          ...previous,
+          [stage]: appendSeenStageItems(previous[stage], stageItemIds[stage]),
+        };
+        // Persist synchronously so opening another tab/window immediately after
+        // the click cannot race the normal persistence effect.
+        window.localStorage.setItem(stageSeenStorageKey, JSON.stringify(next));
+        return next;
+      });
+    }
+    setCurrentTab(tab);
+  }, [stageItemIds, stageSeenStorageKey]);
   const searchResults = useMemo<GlobalSearchResult[]>(() => {
     const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
     if (!query) return [];
@@ -609,25 +676,6 @@ function ProcurementWorkspaceComponent({
     }
   }, [showToast]);
 
-  // webhook/SSE를 붙일 때도 이 함수에 동일한 payload를 전달하면
-  // 현재 알림 UI와 읽음 처리를 그대로 재사용할 수 있습니다.
-  const pushNotification = (
-    notification: Omit<ProcurementNotification, 'id' | 'time' | 'unread'>
-  ) => {
-    setNotifications((previous) => [{
-      ...notification,
-      id: `notice-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      time: '방금 전',
-      unread: true,
-    }, ...previous]);
-  };
-
-  const clearNotificationsForMR = (mrNo: string) => {
-    setNotifications((previous) => previous.filter((notification) => (
-      notification.reference !== mrNo && !notification.detail.includes(mrNo)
-    )));
-  };
-
   const loadMRsFromApi = useCallback(async (
     reconcile = false,
     silent = false,
@@ -666,7 +714,6 @@ function ProcurementWorkspaceComponent({
           ].includes(entry.stage))
           .map(caseToPOItem)
       );
-      if (!silent) setNotifications(await listProcurementNotifications());
     } catch (error) {
       const message = error instanceof Error ? error.message : 'MR 목록을 불러오지 못했습니다.';
       if (!silent) {
@@ -697,6 +744,26 @@ function ProcurementWorkspaceComponent({
     }
   }, []);
 
+  const handleRealtimeNotification = useCallback((event: { title: string; notification_type: string }) => {
+    showToast(event.title);
+    // SSE is only an invalidation signal. Cases and items are re-read from
+    // their authoritative APIs instead of being reconstructed from the event.
+    void loadMRsFromApi(false, true);
+    if (event.notification_type.startsWith('ITEM_')) void loadItemsFromApi();
+  }, [loadItemsFromApi, loadMRsFromApi, showToast]);
+
+  const {
+    notifications,
+    removeNotification,
+    clearAllNotifications,
+    clearNotificationsForReference: clearNotificationsForMR,
+    pushMockNotification: pushNotification,
+  } = useProcurementNotifications({
+    enabled: apiDataEnabled,
+    mockNotifications: initialNotifications,
+    onRealtimeEvent: handleRealtimeNotification,
+  });
+
   // 웹훅이 누락된 비접속 시간대의 Draft MR을 로그인 후 최초 한 번 대사합니다.
   // 이후 상태 갱신은 작업 액션 직후 재조회하며, SSE 수신기는 같은 함수를
   // 호출하도록 붙일 수 있어 화면 상태 갱신 경로가 하나로 유지됩니다.
@@ -722,40 +789,6 @@ function ProcurementWorkspaceComponent({
     if (!apiDataEnabled) return;
     void loadItemsFromApi();
   }, [loadItemsFromApi]);
-
-  useEffect(() => {
-    if (!apiDataEnabled) return undefined;
-    let disposed = false;
-    let controller: AbortController | null = null;
-
-    const connect = async () => {
-      while (!disposed) {
-        controller = new AbortController();
-        try {
-          await subscribeProcurementEvents(controller.signal, (event) => {
-            showToast(event.title);
-            void loadMRsFromApi(false);
-            if (event.notification_type.startsWith('ITEM_')) {
-              // 신규 비활성 Item, 규격 보완 요청, 자동 승인 결과를 같은 목록에
-              // 즉시 반영한다. 새로고침 전까지 승인 대기 품목이 보이지 않던
-              // 문제를 막는다.
-              void loadItemsFromApi();
-            }
-          });
-        } catch {
-          // Initial list loading already exposes connection errors. SSE retries
-          // quietly so a temporary proxy restart does not disturb the user.
-        }
-        if (!disposed) await new Promise((resolve) => window.setTimeout(resolve, 3000));
-      }
-    };
-
-    void connect();
-    return () => {
-      disposed = true;
-      controller?.abort();
-    };
-  }, [loadItemsFromApi, loadMRsFromApi, showToast]);
 
   // FastAPI BackgroundTasks에서 실행되는 AI 그래프는 시작 응답보다 늦게
   // 완료됩니다. QUEUED/RUNNING이 하나라도 있는 동안만 조용히 재조회하여
@@ -787,40 +820,26 @@ function ProcurementWorkspaceComponent({
     setSearchQuery(result.searchValue);
   };
 
+  const handleDismissNotification = (notification: ProcurementNotification) => {
+    void removeNotification(notification).catch((error) => {
+      showToast(error instanceof Error ? error.message : '알림 삭제에 실패했습니다.');
+    });
+  };
+
   const handleSelectNotification = (notification: ProcurementNotification) => {
-    // 알림은 작업 화면으로 이동하는 일회성 inbox 항목입니다. 클릭 즉시
-    // 화면에서 제거하고, API 모드에서는 PostgreSQL 행도 함께 삭제합니다.
-    setNotifications((previous) => previous.filter((item) => item.id !== notification.id));
     setCurrentTab(notification.targetTab);
     setSearchQuery(
       notification.targetTab === 'item-register' || notification.targetTab === 'mr-list'
         ? notification.reference ?? ''
         : ''
     );
-    if (apiDataEnabled) {
-      void deleteProcurementNotification(notification.id).catch(async () => {
-        // 낙관적 삭제가 서버에서 실패했으면 실제 inbox를 다시 읽어 화면과
-        // DB가 서로 다른 상태로 남지 않게 합니다.
-        try {
-          setNotifications(await listProcurementNotifications());
-        } catch {
-          // 기존 목록 조회 오류 표시는 정규 로딩 경로에서 처리합니다.
-        }
-      });
-    }
+    handleDismissNotification(notification);
   };
 
   const handleDeleteAllNotifications = () => {
-    setNotifications([]);
-    if (apiDataEnabled) {
-      void deleteAllProcurementNotifications().catch(async () => {
-        try {
-          setNotifications(await listProcurementNotifications());
-        } catch {
-          // 기존 목록 조회 오류 표시는 정규 로딩 경로에서 처리합니다.
-        }
-      });
-    }
+    void clearAllNotifications().catch((error) => {
+      showToast(error instanceof Error ? error.message : '알림 전체 삭제에 실패했습니다.');
+    });
   };
 
   const handleCreateMaterialRequest = (request: MaterialRequest) => {
@@ -1647,7 +1666,7 @@ function ProcurementWorkspaceComponent({
       {/* 1. 왼쪽 사이드바 */}
       <Sidebar
         currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
+        setCurrentTab={handleSidebarNavigation}
         pendingCount={pendingCount}
         stageTaskCounts={stageTaskCounts}
         flashingStages={flashingStages}
@@ -1668,7 +1687,8 @@ function ProcurementWorkspaceComponent({
           notifications={notifications}
           onSelectSearchResult={handleSelectSearchResult}
           onSelectNotification={handleSelectNotification}
-          onMarkAllNotificationsRead={handleDeleteAllNotifications}
+          onDismissNotification={handleDismissNotification}
+          onClearAllNotifications={handleDeleteAllNotifications}
           onOpenNewMRModal={() => setNewMRModalOpen(true)}
         />
 

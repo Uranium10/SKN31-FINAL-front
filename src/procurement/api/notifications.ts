@@ -3,6 +3,7 @@ import type { ProcurementNotification } from '../types';
 
 interface NotificationDTO {
   notification_id: string;
+  case_id?: string | null;
   notification_type: string;
   title: string;
   message: string;
@@ -19,6 +20,23 @@ const formatRelativeTime = (value: string): string => {
   return new Date(value).toLocaleDateString('ko-KR');
 };
 
+const resolveNotificationTarget = (
+  notificationType: string,
+  workflowTarget: ProcurementNotification['targetTab'],
+): ProcurementNotification['targetTab'] => {
+  if (notificationType.startsWith('ITEM_')) return 'item-register';
+  if (notificationType.startsWith('PURCHASE_')) return 'po-manage';
+  if (notificationType.startsWith('QUOTATION_')) return 'vendor-select';
+  if (notificationType === 'MATERIAL_REQUEST_UPDATED'
+    || notificationType === 'SUBSTITUTE_NEW_PURCHASE_REQUESTED'
+    || notificationType === 'WORKFLOW_INPUT_REQUIRED') return workflowTarget;
+  if (notificationType === 'MATERIAL_REQUEST_CREATED'
+    || notificationType === 'WORKFLOW_FAILED'
+    || notificationType === 'SUBSTITUTE_SELECTED'
+    || notificationType === 'URGENT_MR_REJECTED') return 'mr-list';
+  return 'dashboard';
+};
+
 export const listProcurementNotifications = async (): Promise<ProcurementNotification[]> => {
   const response = await fetchWithAuth('/api/procurement/notifications?limit=50');
   const body = await response.json().catch(() => ({}));
@@ -32,30 +50,14 @@ export const listProcurementNotifications = async (): Promise<ProcurementNotific
         : 'mr-list';
     return ({
     id: item.notification_id,
+    caseId: item.case_id ?? undefined,
+    notificationType: item.notification_type,
     title: item.title,
     detail: item.message,
     time: formatRelativeTime(item.created_at),
+    createdAt: item.created_at,
     unread: !item.is_read,
-    targetTab: item.notification_type.startsWith('ITEM_')
-      ? 'item-register'
-      : item.notification_type === 'MATERIAL_REQUEST_CREATED'
-        || item.notification_type === 'WORKFLOW_FAILED'
-        || item.notification_type === 'SUBSTITUTE_SELECTED'
-        || item.notification_type === 'URGENT_MR_REJECTED'
-        ? 'mr-list'
-      : item.notification_type === 'MATERIAL_REQUEST_UPDATED'
-        ? workflowTarget
-      : item.notification_type === 'SUBSTITUTE_NEW_PURCHASE_REQUESTED'
-        ? workflowTarget
-      : item.notification_type.startsWith('PURCHASE_RECEIPT')
-        ? 'po-manage'
-      : item.notification_type === 'PURCHASE_ORDER_CANCELLED'
-        ? 'po-manage'
-      : item.notification_type.startsWith('QUOTATION_')
-          ? 'vendor-select'
-          : item.notification_type === 'WORKFLOW_INPUT_REQUIRED'
-            ? workflowTarget
-            : 'dashboard',
+    targetTab: resolveNotificationTarget(item.notification_type, workflowTarget),
     reference: typeof item.payload?.item_code === 'string'
       ? item.payload.item_code
       : typeof item.payload?.po_name === 'string'
@@ -79,7 +81,9 @@ export const deleteProcurementNotification = async (notificationId: string): Pro
     `/api/procurement/notifications/${encodeURIComponent(notificationId)}`,
     { method: 'DELETE' },
   );
-  if (!response.ok) {
+  // The workflow may have removed all notifications for its case between the
+  // click and this request. Treat that already-deleted state as success.
+  if (!response.ok && response.status !== 404) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || '알림 삭제에 실패했습니다.');
   }
@@ -104,6 +108,7 @@ export interface ProcurementEvent {
 export const subscribeProcurementEvents = async (
   signal: AbortSignal,
   onEvent: (event: ProcurementEvent) => void,
+  onConnected?: () => void,
 ): Promise<void> => {
   const response = await fetchWithAuth('/api/procurement/events', {
     headers: { Accept: 'text/event-stream' },
@@ -112,6 +117,7 @@ export const subscribeProcurementEvents = async (
   if (!response.ok || !response.body) {
     throw new Error('실시간 알림 채널에 연결하지 못했습니다.');
   }
+  onConnected?.();
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -124,8 +130,12 @@ export const subscribeProcurementEvents = async (
     while (boundary >= 0) {
       const block = buffer.slice(0, boundary);
       buffer = buffer.slice(boundary + 2);
-      const eventType = block.split('\n').find((line) => line.startsWith('event:'))?.slice(6).trim();
-      const data = block.split('\n').find((line) => line.startsWith('data:'))?.slice(5).trim();
+      const lines = block.split('\n');
+      const eventType = lines.find((line) => line.startsWith('event:'))?.slice(6).trim();
+      const data = lines
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
       if (eventType === 'notification' && data) {
         try {
           onEvent(JSON.parse(data) as ProcurementEvent);

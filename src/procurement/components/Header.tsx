@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, CheckCheck, FileText, PackageSearch, Plus, Search } from 'lucide-react';
+import { Bell, CheckCheck, FileText, PackageSearch, Plus, Search, X } from 'lucide-react';
 import type {
   GlobalSearchResult,
   NavigationTab,
@@ -14,7 +14,8 @@ interface HeaderProps {
   notifications: ProcurementNotification[];
   onSelectSearchResult: (result: GlobalSearchResult) => void;
   onSelectNotification: (notification: ProcurementNotification) => void;
-  onMarkAllNotificationsRead: () => void;
+  onDismissNotification: (notification: ProcurementNotification) => void;
+  onClearAllNotifications: () => void;
   onOpenNewMRModal: () => void;
 }
 
@@ -34,7 +35,8 @@ export const Header: React.FC<HeaderProps> = ({
   notifications,
   onSelectSearchResult,
   onSelectNotification,
-  onMarkAllNotificationsRead,
+  onDismissNotification,
+  onClearAllNotifications,
   onOpenNewMRModal,
 }) => {
   const [draftQuery, setDraftQuery] = useState(searchQuery);
@@ -144,8 +146,8 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>{unreadCount}개 안 읽음</span>
                 </div>
                 {notifications.length > 0 && (
-                  <button type="button" onClick={onMarkAllNotificationsRead}>
-                    <CheckCheck size={14} /> 모두 읽음
+                  <button type="button" onClick={onClearAllNotifications}>
+                    <CheckCheck size={14} /> 모두 지우기
                   </button>
                 )}
               </div>
@@ -153,22 +155,35 @@ export const Header: React.FC<HeaderProps> = ({
                 {notifications.length === 0 ? (
                   <div className="floating-menu-empty">새 알림이 없습니다.</div>
                 ) : notifications.map((notification) => (
-                  <button
-                    type="button"
+                  <div
                     key={notification.id}
                     className={`notification-item ${notification.unread ? 'is-unread' : ''}`}
-                    onClick={() => {
-                      onSelectNotification(notification);
-                      setNotificationsOpen(false);
-                    }}
                   >
-                    <i data-tone={notification.tone} />
-                    <span>
-                      <strong>{notification.title}</strong>
-                      <small>{notification.detail}</small>
-                      <time>{notification.time}</time>
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className="notification-item-main"
+                      onClick={() => {
+                        onSelectNotification(notification);
+                        setNotificationsOpen(false);
+                      }}
+                    >
+                      <i data-tone={notification.tone} />
+                      <span>
+                        <strong>{notification.title}</strong>
+                        <small>{notification.detail}</small>
+                        <time>{notification.time}</time>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="notification-dismiss"
+                      aria-label={`${notification.title} 알림 삭제`}
+                      title="알림 삭제"
+                      onClick={() => onDismissNotification(notification)}
+                    >
+                      <X size={14} aria-hidden="true" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
