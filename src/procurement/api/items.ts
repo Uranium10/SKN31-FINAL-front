@@ -108,3 +108,26 @@ export const getERPItemSpecifications = async (
 
 /** 기존 호출부 호환 이름. */
 export const fetchItemWithSpecifications = getERPItemSpecifications;
+
+interface ERPItemGroupRequiredSpecsResponse {
+  item_group: string;
+  required_specs: string[];
+}
+
+/**
+ * 규격 모달이 자유 텍스트로 파싱된 "요청 규격" 항목 중 실제 필수
+ * 항목에만 빨간색 필수 태그를 붙일 수 있도록, item_group의 AI 정의
+ * 필수 규격 라벨 목록을 조회한다. ERPNext Item 폼 Client Script가
+ * description placeholder를 채울 때 쓰는 라벨과 동일한 소스다.
+ */
+export const getItemGroupRequiredSpecLabels = async (
+  itemGroup: string,
+): Promise<string[]> => {
+  if (!itemGroup || itemGroup === 'ERPNext' || itemGroup === '미지정' || itemGroup === '-') return [];
+  const response = await fetchWithAuth(
+    `/api/procurement/item-groups/${encodeURIComponent(itemGroup)}/required-specs`,
+  );
+  const body = await parseJson<ERPItemGroupRequiredSpecsResponse>(response);
+  return Array.isArray(body.required_specs) ? body.required_specs : [];
+};
+

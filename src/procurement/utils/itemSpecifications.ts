@@ -217,6 +217,84 @@ export const countParsedSpecificationItems = (sections: ParsedSpecificationSecti
   sections.reduce((count, section) => count + section.items.length, 0)
 );
 
+const normalizeLabelForMatch = (value: string): string => value
+  .replace(/[()（）:：]/g, '')
+  .replace(/\s+/g, '')
+  .toLocaleLowerCase('ko-KR');
+
+/** 라벨 하나가 다른 라벨과 (부분 포함까지 포함해) 같은 규격을 가리키는지 비교합니다. */
+const labelsMatch = (a: string, b: string): boolean => {
+  const normalizedA = normalizeLabelForMatch(a);
+  const normalizedB = normalizeLabelForMatch(b);
+  if (!normalizedA || !normalizedB) return false;
+  return normalizedA === normalizedB
+    || normalizedA.includes(normalizedB)
+    || normalizedB.includes(normalizedA);
+};
+
+/**
+ * MR/Item 자유 텍스트에서 파싱된 "요청 규격" 항목들을 화면에 바로 쓸 수 있는
+ * ItemSpecificationField 목록으로 변환합니다. 항목별 label을 item_group의
+ * 실제 필수 규격 목록과 매칭해 그 항목에만 required(빨간 "필수" 태그)를
+ * 붙이고, 나머지 파싱 항목은 태그 없이 그대로 보여줍니다. 예전처럼 전체
+ * 텍스트를 하나의 required 필드로 감싸고 화면단에서 다시 쪼개던 방식과
+ * 달리, 여기서 이미 각 항목을 독립된 필드로 만들어 두어 "상세 규격" 같은
+ * 별도 섹션 없이도 정확한 필수 여부를 보여줄 수 있습니다.
+ */
+export const buildRequestSpecificationFields = (
+  rawText: string,
+  requiredLabels: string[] = [],
+  options: { keyPrefix?: string; group?: string } = {},
+): ItemSpecificationField[] => {
+  const group = options.group ?? '요청 규격';
+  const keyPrefix = options.keyPrefix ?? 'mr_request_specification';
+  const trimmed = rawText.trim();
+  if (!trimmed) return [];
+
+  const sections = parseSpecificationText(trimmed);
+  const fields: ItemSpecificationField[] = [];
+
+  sections.forEach((section) => {
+    section.items.forEach((item) => {
+      const explicitLabels = [section.title, item.label].filter(
+        (label, index, labels): label is string => Boolean(label) && labels.indexOf(label) === index,
+      );
+      const label = explicitLabels.length > 0
+        ? explicitLabels.join(' · ')
+        : `요청 규격 ${fields.length + 1}`;
+      const matchCandidate = item.label ?? section.title;
+      const required = Boolean(
+        matchCandidate && requiredLabels.some((requiredLabel) => labelsMatch(matchCandidate, requiredLabel)),
+      );
+
+      fields.push({
+        key: `${keyPrefix}_${fields.length}`,
+        label,
+        value: item.value,
+        group,
+        order: fields.length,
+        required,
+        source: 'erpnext',
+      });
+    });
+  });
+
+  // 파서가 구조를 못 찾은 경우에도(예: 순수 문장형 설명) 원문은 그대로 보여줍니다.
+  if (fields.length === 0) {
+    fields.push({
+      key: `${keyPrefix}_0`,
+      label: '요청 규격',
+      value: trimmed,
+      group,
+      order: 0,
+      required: requiredLabels.length === 0,
+      source: 'erpnext',
+    });
+  }
+
+  return fields;
+};
+
 export const summarizeSpecificationText = (value: string, limit = 4): string => {
   const parts = parseSpecificationText(value)
     .flatMap((section) => section.items)
