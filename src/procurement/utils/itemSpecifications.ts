@@ -50,23 +50,66 @@ export const normalizeSpecificationText = (value: string): string => decodeHtmlE
 
 const cleanSpecificationToken = (value: string): string => value
   .replace(/^\s*[-–—•·]+\s*/, '')
-  .replace(/^규격\s*[:：]\s*/i, '')
   .replace(/\s+/g, ' ')
   .trim();
 
 const parseSpecificationToken = (value: string): ParsedSpecificationItem | null => {
   const cleaned = cleanSpecificationToken(value);
-  if (!cleaned) return null;
-
-  // 짧은 "항목: 값" 표현만 레이블로 분리합니다. URL·시각·긴 문장은 그대로 둡니다.
-  const labelled = cleaned.match(/^([^:：]{1,24})\s*[:：]\s*(.+)$/);
-  if (labelled && !/^https?$/i.test(labelled[1])) {
-    return { label: labelled[1].trim(), value: labelled[2].trim() };
-  }
-  return { value: cleaned };
+  return cleaned ? { value: cleaned } : null;
 };
 
-const splitSpecificationChunk = (value: string): ParsedSpecificationItem[] => {
+// 라벨 문자로는 한글 + 괄호만 인정하고, 공백(과 줄바꿈)은 절대 넘지 않습니다.
+// 실제 규격 라벨(재질/규격/두께/용도/규격(치수) 등)은 모두 공백 없는 한 단어이므로,
+// 공백을 넘어가도록 허용하면 "...화학 플랜트 ... 밀봉용 두께:" 처럼 라벨 바로 앞
+// 단어가 이전 값(용도)의 마지막 단어라도 함께 라벨로 삼켜버리는 문제가 생깁니다.
+// 영문자·숫자가 섞인 구간도 구분자 없이 이어붙은 이전 값의 꼬리(예: "...10K
+// (JIS/KS)재질")이거나 시각·비율 표현("12:00", "10:1")일 가능성이 높으므로
+// 애초에 라벨 후보 구간에 넣지 않습니다.
+const LABEL_ALLOWED_CHAR = /[\uac00-\ud7a3()]/;
+const LABEL_MAX_LEN = 14;
+
+/** 콜론 바로 앞에서 역방향으로 허용 문자(한글/괄호)만 따라가며 라벨 후보 구간을 찾는다. */
+const findLabelWindowStart = (value: string, colonIndex: number): number => {
+  let start = colonIndex;
+  let count = 0;
+  while (start > 0 && count < LABEL_MAX_LEN && LABEL_ALLOWED_CHAR.test(value[start - 1])) {
+    start -= 1;
+    count += 1;
+  }
+  return start;
+};
+
+/**
+ * "10K (JIS/KS)재질:" 처럼 구분자 없이 이전 값의 괄호 꼬리(")")가 라벨 후보에
+ * 섞여 들어온 경우를 걸러낸다. 왼쪽부터 괄호 깊이를 세다가 음수(짝이 안 맞는
+ * ")")가 나오면 그 지점까지를 라벨에서 잘라낸다 - "규격(치수)"처럼 괄호가 짝을
+ * 이루는 진짜 라벨은 그대로 남겨둔다.
+ */
+const stripUnbalancedLeadingParen = (rawLabel: string): string => {
+  let depth = 0;
+  let cut = 0;
+  for (let i = 0; i < rawLabel.length; i += 1) {
+    if (rawLabel[i] === '(') depth += 1;
+    else if (rawLabel[i] === ')') {
+      depth -= 1;
+      if (depth < 0) {
+        cut = i + 1;
+        depth = 0;
+      }
+    }
+  }
+  return rawLabel.slice(cut);
+};
+
+/** 라벨 후보가 실제 "항목명"으로 쓸만한지 검증합니다. (라벨엔 공백이 올 수 없지만 방어적으로 재확인) */
+const isValidLabelCandidate = (label: string): boolean => {
+  if (!label || label.length > LABEL_MAX_LEN) return false;
+  if (!/[\uac00-\ud7a3]/.test(label)) return false; // 한글이 하나도 없으면 라벨로 보지 않음
+  if (label.split(/\s+/).length > 3) return false; // 라벨은 보통 짧은 명사(구)
+  return true;
+};
+
+const splitPlainList = (value: string): ParsedSpecificationItem[] => {
   // 괄호 안의 "피치 8mm / 길이 720mm / 폭 20mm" 형식만 목록 구분자로 승격합니다.
   const expandedParentheses = value.replace(/\(([^()]*)\)/g, (whole, inner: string) => (
     inner.includes('/') ? `, ${inner.replace(/\s*\/\s*/g, ', ')}` : whole
@@ -76,6 +119,52 @@ const splitSpecificationChunk = (value: string): ParsedSpecificationItem[] => {
     .split(/\n|;|,(?!\d{3}\b)/)
     .map(parseSpecificationToken)
     .filter((item): item is ParsedSpecificationItem => item !== null);
+};
+
+/**
+ * "라벨: 값" 패턴을 구분자(줄바꿈/쉼표)가 아니라 콜론(:)을 기준으로 찾아 나눠
+ * 분리합니다. ERPNext description에 자주 섞이는, 이전 값과 다음 라벨 사이에
+ * 줄바꿈이나 구분자가 전혀 없는 경우(예: "...10K (JIS/KS)재질: Outer Ring...")도
+ * 올바르게 처리하기 위해, 이전의 "콤마로만 나누고 첫 콜론만 보는" 방식을 대체합니다.
+ * 추가 필수규격 외의 임의의 "라벨: 값" 쌍도 이 함수 하나로 그대로 감지됩니다.
+ */
+const splitByColonLabels = (value: string): ParsedSpecificationItem[] => {
+  const matches: { label: string; labelStart: number; valueStart: number }[] = [];
+  for (let i = 0; i < value.length; i += 1) {
+    if (value[i] !== ':' && value[i] !== '：') continue;
+
+    const windowStart = findLabelWindowStart(value, i);
+    const rawLabel = stripUnbalancedLeadingParen(value.slice(windowStart, i));
+    const label = rawLabel.trim();
+    if (!isValidLabelCandidate(label)) continue;
+
+    matches.push({
+      label,
+      labelStart: i - label.length,
+      valueStart: i + 1,
+    });
+  }
+
+  if (matches.length === 0) {
+    return splitPlainList(value);
+  }
+
+  const items: ParsedSpecificationItem[] = [];
+
+  const preamble = value.slice(0, matches[0].labelStart).trim();
+  if (preamble) {
+    items.push(...splitPlainList(preamble));
+  }
+
+  matches.forEach((current, index) => {
+    const end = matches[index + 1]?.labelStart ?? value.length;
+    const rawValue = value.slice(current.valueStart, end).trim().replace(/[,;]\s*$/, '');
+    if (rawValue) {
+      items.push({ label: current.label, value: rawValue });
+    }
+  });
+
+  return items;
 };
 
 /**
@@ -93,20 +182,20 @@ export const parseSpecificationText = (rawValue: string): ParsedSpecificationSec
   const sections: ParsedSpecificationSection[] = [];
 
   if (headings.length === 0) {
-    const items = splitSpecificationChunk(value);
+    const items = splitByColonLabels(value);
     return items.length ? [{ items }] : [];
   }
 
   const prefix = value.slice(0, headings[0].index).trim();
   if (prefix) {
-    const items = splitSpecificationChunk(prefix);
+    const items = splitByColonLabels(prefix);
     if (items.length) sections.push({ items });
   }
 
   headings.forEach((heading, index) => {
     const start = (heading.index ?? 0) + heading[0].length;
     const end = headings[index + 1]?.index ?? value.length;
-    const items = splitSpecificationChunk(value.slice(start, end));
+    const items = splitByColonLabels(value.slice(start, end));
     if (items.length) sections.push({ title: heading[1].trim(), items });
   });
 
