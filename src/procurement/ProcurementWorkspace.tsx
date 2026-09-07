@@ -45,10 +45,10 @@ import {
   syncDraftProcurementCases,
   type ProcurementDataMode,
 } from './api/cases';
-import { getERPItemSpecifications, listERPItems } from './api/items';
+import { getERPItemSpecifications, getItemGroupRequiredSpecLabels, listERPItems } from './api/items';
 import { useStageTransitionItems } from './hooks/useStageTransitionItems';
 import { useProcurementNotifications } from './hooks/useProcurementNotifications';
-import { normalizeSpecificationText } from './utils/itemSpecifications';
+import { buildRequestSpecificationFields } from './utils/itemSpecifications';
 
 import './ProcurementWorkspace.css';
 import { Paperclip, X } from 'lucide-react';
@@ -1219,22 +1219,28 @@ function ProcurementWorkspaceComponent({
       resolvedRequestSpecification
       && resolvedRequestSpecification !== '규격 정보 없음',
     );
-    const fallbackForModal: Item = hasResolvedRequestSpecification ? {
+
+    // "요청 규격"(자유 텍스트 파싱)과 "상세 규격"(항상 비어 있는 Item
+    // 구조화 필드)이 별도 섹션으로 중복 노출되던 것을 하나로 합친다.
+    // 파싱된 항목 각각에 대해 item_group의 실제 필수 규격 목록과 매칭한
+    // required만 표시하고, 나머지는 태그 없이 보여준다.
+    const isMeaningfulSpecText = (value?: string | null): boolean => Boolean(
+      value && value !== '규격 정보 없음' && value !== '등록된 규격 정보 없음',
+    );
+
+    const buildFieldsForItemGroup = async (rawText: string, itemGroup: string) => {
+      const requiredLabels = await getItemGroupRequiredSpecLabels(itemGroup).catch(() => []);
+      return buildRequestSpecificationFields(rawText, requiredLabels);
+    };
+
+    const fallbackSpecText = hasResolvedRequestSpecification
+      ? resolvedRequestSpecification!
+      : (isMeaningfulSpecText(fallback.specSummary) ? fallback.specSummary : '');
+    const fallbackForModal: Item = fallbackSpecText ? {
       ...fallback,
-      specSummary: resolvedRequestSpecification!,
-      specifications: [
-        {
-          key: 'mr_request_specification',
-          label: 'MR 요청 규격',
-          value: resolvedRequestSpecification!,
-          group: '요청 규격',
-          order: 0,
-          required: true,
-          source: 'erpnext',
-        },
-        ...(fallback.specifications ?? []),
-      ],
-    } : fallback;
+      specSummary: fallbackSpecText,
+      specifications: await buildFieldsForItemGroup(fallbackSpecText, fallback.department),
+    } : { ...fallback, specifications: [] };
 
     if (apiDataEnabled) {
       try {
@@ -1246,40 +1252,15 @@ function ProcurementWorkspaceComponent({
         // MR 목록/대시보드에서 연 모달은 클릭한 행의 규격을 우선합니다.
         // 같은 품목코드가 여러 MR에 쓰여도 다른 MR의 규격을 잘못 보여주지 않습니다.
         const requestSpecification = resolvedRequestSpecification;
-        const hasRequestSpecification = Boolean(
-          requestSpecification && requestSpecification !== '규격 정보 없음',
-        );
-        const normalizedRequestSpecification = hasRequestSpecification
-          ? normalizeSpecificationText(requestSpecification!)
-          : '';
-        const itemSpecificationFields = detailed.specifications ?? [];
-        const hasSameItemDescription = itemSpecificationFields.some((field) => (
-          typeof field.value === 'string'
-          && normalizeSpecificationText(field.value) === normalizedRequestSpecification
-        ));
+        const specText = isMeaningfulSpecText(requestSpecification)
+          ? requestSpecification!
+          : (isMeaningfulSpecText(detailed.specSummary) ? detailed.specSummary : '');
 
-        // MR 행에서 연 모달은 Item 마스터보다 해당 MR의 요청 규격을 우선합니다.
-        // 동일한 Item 설명은 중복 노출하지 않고, 다른 커스텀 규격은 아래에 유지합니다.
-        const modalItem: Item = hasRequestSpecification ? {
+        const modalItem: Item = {
           ...detailed,
-          specSummary: requestSpecification!,
-          specifications: [
-            {
-              key: 'mr_request_specification',
-              label: 'MR 요청 규격',
-              value: requestSpecification!,
-              group: '요청 규격',
-              order: 0,
-              required: true,
-              source: 'erpnext',
-            },
-            ...itemSpecificationFields.filter((field) => (
-              !hasSameItemDescription
-              || typeof field.value !== 'string'
-              || normalizeSpecificationText(field.value) !== normalizedRequestSpecification
-            )),
-          ],
-        } : detailed;
+          specSummary: specText || detailed.specSummary,
+          specifications: specText ? await buildFieldsForItemGroup(specText, detailed.department) : [],
+        };
         setActiveSpecItem(modalItem);
       } catch (error) {
         showToast(error instanceof Error ? error.message : '아이템 규격을 불러오지 못했습니다.');
