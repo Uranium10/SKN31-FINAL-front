@@ -265,6 +265,9 @@ export interface POItem {
   referenceUnitPrice?: number;
   dueDate: string;
   supplierApprovalStatus: 'approved' | 'rejected' | 'pending';
+  prStatus?: string;
+  prRejectionReason?: string;
+  prSupplierEmail?: string;
   rejectReason?: string;
   poCreated: boolean;
   processingStatus?: 'ready' | 'created' | 'creation_failed' | 'email_failed';

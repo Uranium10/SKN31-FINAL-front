@@ -94,6 +94,10 @@ const LEGACY_CASE_STATE: Record<string, Pick<ProcurementCaseDTO, 'status' | 'sta
   awaiting_final_selection: { status: 'WAITING_INPUT', stage: 'SUPPLIER_SELECTION' },
   supplier_selected: { status: 'WAITING_INPUT', stage: 'ORDER_START' },
   awaiting_po_approval: { status: 'WAITING_INPUT', stage: 'PRE_PO_APPROVAL' },
+  awaiting_pr_request: { status: 'WAITING_INPUT', stage: 'PR_REQUEST' },
+  creating_pr: { status: 'RUNNING', stage: 'PR_SENDING' },
+  awaiting_supplier_pr_response: { status: 'WAITING_INPUT', stage: 'PR_RESPONSE_WAITING' },
+  supplier_pr_rejected: { status: 'WAITING_INPUT', stage: 'PR_REJECTED' },
   creating_po: { status: 'RUNNING', stage: 'PO_CREATION' },
   po_sent: { status: 'RUNNING', stage: 'DELIVERY' },
   human_review: { status: 'FAILED', stage: 'HUMAN_REVIEW' },
@@ -472,7 +476,8 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
   const selected = text(values.selected_supplier);
   const rfqSent = [
     'QUOTATION_COLLECTION', 'SUPPLIER_SELECTION', 'ORDER_START',
-    'PRE_PO_APPROVAL', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
+    'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED',
+    'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
   ].includes(entry.stage);
   const deadline = entry.quotation_deadline_at
     ? new Date(entry.quotation_deadline_at)
@@ -488,7 +493,7 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     pendingTaskId: entry.pending_task?.task_id,
     pendingTask: pendingTask(entry),
     workflowStage: entry.stage,
-    orderStarted: ['PRE_PO_APPROVAL', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED'].includes(entry.stage),
+    orderStarted: ['PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED'].includes(entry.stage),
     mrNo: entry.mr_name,
     itemName: request.itemName,
     itemCode: request.itemCode,
@@ -531,6 +536,11 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
   const quotationTotalAmount = selectedQuotation?.quoteTotalPrice ?? 0;
   const projectedInvoiceTotal = numberValue(delivery?.invoice_total);
   const approvalStatus = entry.stage === 'PRE_PO_APPROVAL' ? 'pending' : 'approved';
+  const prStatus = text(values.pr_status) || (
+    entry.stage === 'PR_RESPONSE_WAITING' ? 'SENT'
+      : entry.stage === 'PR_REJECTED' ? 'REJECTED'
+        : undefined
+  );
   const fullReceipt = delivery?.delivery_status === 'FULL';
   const scorecard = delivery?.scorecard;
   const scorecardScores = scorecard && ['quality', 'leadTime', 'price', 'service', 'communication']
@@ -563,6 +573,9 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     referenceUnitPrice: directUnitPrice || undefined,
     dueDate: request.dueDate,
     supplierApprovalStatus: 'approved',
+    prStatus,
+    prRejectionReason: text(values.pr_rejection_reason) || undefined,
+    prSupplierEmail: text(values.pr_supplier_email) || undefined,
     approvalStatus,
     poCreated: Boolean(poName),
     poNo: poName || undefined,

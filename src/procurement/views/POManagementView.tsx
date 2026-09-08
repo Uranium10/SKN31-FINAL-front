@@ -45,6 +45,7 @@ interface POManagementViewProps {
   onDismissMovePlaceholder?: (id: string) => void;
   onNavigateMovePlaceholder?: (placeholder: StageMovePlaceholder) => void;
   onCreatePO: (poId: string) => void;
+  onRequestPR: (poId: string) => void;
   onReturnToMR: (poId: string) => void;
   onMarkArrived: (poId: string) => void;
   onSubmitScorecard: (poId: string, scores: SupplierScores) => void;
@@ -64,6 +65,10 @@ const getScoreAverage = (scores: SupplierScores) => (
 );
 
 const getOverallProgress = (item: POItem) => {
+  if (item.pendingTask?.taskType === 'pr_request') return { label: 'PR 요청 대기', className: 'badge-yellow' };
+  if (item.prStatus === 'SENT') return { label: 'PR 요청 · 수주접수 대기', className: 'badge-gray' };
+  if (item.prStatus === 'ACCEPTED') return { label: '수주접수 · PO 생성 중', className: 'badge-green' };
+  if (item.prStatus === 'REJECTED') return { label: '수주 거절', className: 'badge-red' };
   if (!item.poCreated) return { label: 'PO 최종 승인 대기', className: 'badge-yellow' };
   if (item.deliveryStatus === 'PARTIAL') return { label: '부분 입고 진행 중', className: 'badge-yellow' };
   if (!item.arrived) return { label: '입고 대기', className: 'badge-gray' };
@@ -99,6 +104,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onDismissMovePlaceholder = () => undefined,
   onNavigateMovePlaceholder = () => undefined,
   onCreatePO,
+  onRequestPR,
   onReturnToMR,
   onMarkArrived,
   onSubmitScorecard,
@@ -322,7 +328,25 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         </span>
                       );
                     })()}
-                    {!item.poCreated && (item.approvalStatus ?? 'pending') === 'pending' && (
+                    {!item.poCreated && item.pendingTask?.taskType === 'pr_request' && (
+                      <button className="btn-sm btn-primary" onClick={() => onRequestPR(item.id)}>
+                        <ShoppingCart size={14} />
+                        <span>PR 요청</span>
+                      </button>
+                    )}
+                    {!item.poCreated && item.prStatus === 'SENT' && (
+                      <span className="badge badge-gray"><Clock size={12} /> PR 요청 · 수주접수 대기</span>
+                    )}
+                    {!item.poCreated && item.prStatus === 'ACCEPTED' && (
+                      <span className="badge badge-green"><CheckCircle2 size={12} /> 수주접수 · PO 생성 중</span>
+                    )}
+                    {!item.poCreated && item.prStatus === 'REJECTED' && (
+                      <button className="btn-sm btn-reject" onClick={() => setSelectedRejectReason(item)}>
+                        <AlertTriangle size={14} />
+                        <span>수주 거절 사유</span>
+                      </button>
+                    )}
+                    {!item.poCreated && item.pendingTask?.taskType === 'po_approval' && (
                       <button className="btn-sm btn-primary" onClick={() => setApprovalModalItem(item)}>
                         <ShoppingCart size={14} />
                         <span>PO 발송 최종 승인</span>
@@ -468,7 +492,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   lineHeight: '1.5'
                 }}
               >
-                {selectedRejectReason.rejectReason || '사유가 작성되지 않았습니다.'}
+                {selectedRejectReason.prRejectionReason || selectedRejectReason.rejectReason || '사유가 작성되지 않았습니다.'}
               </div>
             </div>
             <div className="modal-footer">

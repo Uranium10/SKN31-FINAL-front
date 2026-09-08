@@ -710,7 +710,8 @@ function ProcurementWorkspaceComponent({
       setPoItems(
         visibleCases
           .filter((entry) => [
-            'PRE_PO_APPROVAL', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
+            'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED',
+            'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
           ].includes(entry.stage))
           .map(caseToPOItem)
       );
@@ -1528,6 +1529,27 @@ function ProcurementWorkspaceComponent({
     });
   };
 
+  const handleRequestPR = async (poId: string) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+    if (!targetPO.pendingTaskId || targetPO.pendingTask?.taskType !== 'pr_request') {
+      showToast('현재 처리 가능한 PR 요청 작업이 없습니다. 목록을 새로고침해 주세요.');
+      return;
+    }
+    try {
+      await answerProcurementTask(
+        targetPO.pendingTaskId,
+        { decision: 'request_pr' },
+        targetPO.pendingTask.version,
+      );
+      clearNotificationsForMR(targetPO.mrNo);
+      showToast(`${targetPO.selectedSupplier}에 PR 요청 메일을 발송했습니다.`);
+      await loadMRsFromApi(false);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'PR 요청에 실패했습니다.');
+    }
+  };
+
   const handleReturnToMR = (poId: string) => {
     const rejectedPO = poItems.find((item) => item.id === poId);
     if (!rejectedPO) return;
@@ -1766,6 +1788,7 @@ function ProcurementWorkspaceComponent({
                 onDismissMovePlaceholder={dismissStageMovePlaceholder}
                 onNavigateMovePlaceholder={navigateStageMovePlaceholder}
                 onCreatePO={handleCreatePO}
+                onRequestPR={handleRequestPR}
                 onReturnToMR={handleReturnToMR}
                 onMarkArrived={handleMarkPOArrived}
                 onSubmitScorecard={handleSubmitScorecard}
