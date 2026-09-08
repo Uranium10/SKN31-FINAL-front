@@ -159,11 +159,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       });
       setSelectingSupplierId(null);
       setShowQuotationModal(false);
-      alert('최종 협력사 선정이 완료되었습니다!\n표의 \'PO발송\' 버튼을 눌러 PR을 ERPNext로 전송해 주세요.');
+      alert('최종 협력사 선정이 완료되었습니다!\n표의 \'발주 진행\' 버튼을 눌러 PO 관리 창으로 이동해 주세요.');
     }, 500);
   };
 
-  // 6. 진행상태 → PO발송 버튼 클릭 처리
+  // 6. 진행상태 → 발주 진행 버튼 클릭 처리
   const handleSendPOClick = (group: VendorSelectionGroup) => {
     onSendPO(group.id);
   };
@@ -232,7 +232,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               <th style={{ width: '200px' }}>마감시간 (마감연장)</th>
               <th style={{ width: '170px', textAlign: 'center' }}>견적 회신율 (%)</th>
               <th style={{ width: '160px' }}>진행상태</th>
-              <th style={{ width: '140px' }}>PO발송</th>
+              <th style={{ width: '140px' }}>발주 시작</th>
             </tr>
           </thead>
           <tbody>
@@ -415,7 +415,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     )}
                   </td>
 
-                  {/* 7. PO발송 (업체 선정이 완료된 건만 발송 가능) */}
+                  {/* 7. 발주 진행 (업체 선정이 완료된 건만 진행 가능) */}
                   <td>
                     {hasSelection ? (
                       <button
@@ -423,10 +423,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         className="btn-sm btn-primary"
                         onClick={() => handleSendPOClick(group)}
                         style={{ fontSize: '11px', padding: '5px 10px' }}
-                        title="선정된 업체로 PR을 ERPNext에 전송하고 PO 관리 단계로 넘깁니다."
+                        title="선정된 업체로 발주를 진행하여 PO 관리 창으로 이동합니다."
                       >
                         <Send size={12} />
-                        <span>PO발송</span>
+                        <span>발주 진행</span>
                       </button>
                     ) : (
                       <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontStyle: 'italic' }}>

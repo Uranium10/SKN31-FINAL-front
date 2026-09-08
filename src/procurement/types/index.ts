@@ -141,18 +141,28 @@ export interface POItem {
   id: string;
   prNo: string;
   mrNo: string;
+  caseId?: string;
+  rfqName?: string;
   itemName: string;
   itemCode: string;
   department: string;
   selectedSupplier: string;
+  supplierEmail?: string;
   totalAmount: number;
-  dueDate: string;
-  supplierApprovalStatus: 'approved' | 'rejected' | 'pending';
+  dueDate: string; // 약정 납기일 (YYYY-MM-DD)
+  actualDeliveryDate?: string; // 실제 수령일 (기본 '-')
+  paymentStatus?: '매입송장 대기' | '결제 완료' | '대금지급 대기'; // 대금결제
+  supplierApprovalStatus: 'pending' | 'pr_requested' | 'accepted' | 'rejected' | 'approved';
+  backendStatus?: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'PO_CREATED' | 'PO_FAILED' | 'CANCELLED';
+  token?: string;
+  expiresAt?: string;
   rejectReason?: string;
   poCreated: boolean;
   poNo?: string;
   createdDate?: string;
-  // PO 발주 후 도착 확인 및 Supplier Scorecard 평가
+  officialPoSent?: boolean; // 공식 PO 이메일 발송 여부
+  officialPoNo?: string; // ERPNext Submit 완료된 공식 PO 번호
+  // PO 발주 후 입고 확인 및 Supplier Scorecard 평가
   arrived?: boolean;
   arrivedDate?: string;
   scorecardScores?: SupplierScores;

@@ -30,6 +30,8 @@ import {
   initialNotifications,
 } from './mock/data';
 
+import { fetchPrRequests, submitSupplierPRResponse } from './api/prApi';
+
 import './ProcurementWorkspace.css';
 import { Paperclip, X } from 'lucide-react';
 
@@ -77,7 +79,7 @@ const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
   },
   'po-manage': {
     title: 'PO 관리',
-    detail: 'PR 승인 결과를 확인하고 승인된 건의 PO 생성을 진행합니다.',
+    detail: '협력사 선정 건의 PR 요청, 공급사의 수주접수 확인 및 ERPNext 찐 PO 생성을 관리합니다.',
   },
 };
 
@@ -264,6 +266,41 @@ function ProcurementWorkspaceComponent({
       title: context.title,
       detail: context.detail,
     });
+
+    if (currentTab === 'po-manage') {
+      fetchPrRequests().then((backendItems) => {
+        if (!backendItems || backendItems.length === 0) return;
+        setPoItems((prev) => {
+          const updated = [...prev];
+          backendItems.forEach((bItem) => {
+            const index = updated.findIndex((item) => item.mrNo === bItem.mr_name || item.id === bItem.pr_id);
+            const statusMap: Record<string, 'pending' | 'pr_requested' | 'accepted' | 'rejected'> = {
+              DRAFT: 'pending',
+              SENT: 'pr_requested',
+              ACCEPTED: 'accepted',
+              PO_CREATED: 'accepted',
+              REJECTED: 'rejected',
+            };
+            const supplierApprovalStatus = statusMap[bItem.status] || 'pending';
+            const poCreated = bItem.status === 'PO_CREATED' || Boolean(bItem.po_name);
+
+            if (index >= 0) {
+              updated[index] = {
+                ...updated[index],
+                backendStatus: bItem.status,
+                supplierApprovalStatus,
+                poCreated,
+                poNo: bItem.po_name || updated[index].poNo,
+                token: bItem.token || updated[index].token,
+                expiresAt: bItem.expires_at || updated[index].expiresAt,
+                rejectReason: bItem.rejection_reason || updated[index].rejectReason,
+              };
+            }
+          });
+          return updated;
+        });
+      });
+    }
   }, [currentTab, onAssistantContextChange]);
 
   const showToast = (msg: string) => {
@@ -625,10 +662,11 @@ function ProcurementWorkspaceComponent({
         : request
     )));
 
-    showToast('PO발송이 완료되어 PR이 ERPNext로 자동 전송되었습니다.');
+    showToast('협력사 발주 진행이 완료되어 PO 관리 창으로 이동했습니다. [PR 요청] 버튼을 눌러 공급사에 요청을 전달해 주세요.');
+    setCurrentTab('po-manage');
     pushNotification({
-      title: '협력사 선정과 PR 전송이 완료되었습니다',
-      detail: `${selectedGroup.mrNo} · 협력사 승인 대기`,
+      title: '협력사 발주 진행이 완료되었습니다',
+      detail: `${selectedGroup.mrNo} · PO 관리에서 PR 요청 필요`,
       targetTab: 'po-manage',
       reference: selectedGroup.mrNo,
       tone: 'success',
@@ -708,7 +746,7 @@ function ProcurementWorkspaceComponent({
       ? { ...request, processStage: { ...request.processStage, poCreated: true } }
       : request
     ));
-    showToast('PO 생성 및 결재 권자 승인이 최종 승인되었습니다.');
+    showToast('찐 PO 생성 및 발송이 완료되었습니다.');
     pushNotification({
       title: 'PO 생성과 발송이 완료되었습니다',
       detail: `${targetPO.mrNo} · ${targetPO.selectedSupplier}`,
@@ -716,6 +754,133 @@ function ProcurementWorkspaceComponent({
       reference: targetPO.mrNo,
       tone: 'success',
     });
+  };
+
+  const handleRequestPR = (poId: string) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    setPoItems((previous) =>
+      previous.map((item) =>
+        item.id === poId ? { ...item, supplierApprovalStatus: 'pr_requested' as const } : item
+      )
+    );
+
+    setRequests((previous) =>
+      previous.map((request) =>
+        request.mrNo === targetPO.mrNo
+          ? {
+              ...request,
+              processStage: { ...request.processStage, prSupplierApproved: '대기' as const },
+            }
+          : request
+      )
+    );
+
+    showToast(`공급사(${targetPO.selectedSupplier}) 이메일로 PO 내용과 수주접수 링크가 발송되었습니다.`);
+    pushNotification({
+      title: '공급사 PR 요청 메일 발송 완료',
+      detail: `${targetPO.mrNo} · ${targetPO.selectedSupplier} 수주접수 대기 중`,
+      targetTab: 'po-manage',
+      reference: targetPO.mrNo,
+      tone: 'info',
+    });
+  };
+
+  const handleSupplierAcceptOrder = async (
+    poId: string,
+    decision: 'accept' | 'reject' = 'accept',
+    reason?: string
+  ) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    const token = targetPO.token || targetPO.id || 'mock-token-sample';
+    const apiResult = await submitSupplierPRResponse(token, decision, reason);
+
+    if (decision === 'accept') {
+      const newPoNo = apiResult.po_name || targetPO.poNo || `PO-2025-${Math.floor(1000 + Math.random() * 9000)}`;
+      const createdDate = new Date().toLocaleString('ko-KR', { hour12: false });
+
+      setPoItems((previous) =>
+        previous.map((item) =>
+          item.id === poId
+            ? {
+                ...item,
+                supplierApprovalStatus: 'accepted' as const,
+                backendStatus: 'PO_CREATED' as const,
+                poCreated: true,
+                poNo: newPoNo,
+                createdDate,
+              }
+            : item
+        )
+      );
+
+      setRequests((previous) =>
+        previous.map((request) =>
+          request.mrNo === targetPO.mrNo
+            ? {
+                ...request,
+                processStage: {
+                  ...request.processStage,
+                  prSupplierApproved: '승인' as const,
+                  poCreated: true,
+                },
+              }
+            : request
+        )
+      );
+
+      showToast(
+        `공급사(${targetPO.selectedSupplier}) 수주 접수 완료 ➔ ERPNext PO 생성·Submit 및 공식 PO 이메일 발송 완료 [입고 대기]`
+      );
+      pushNotification({
+        title: '수주 접수 ➔ ERPNext PO Submit 및 공식 PO 발송 완료',
+        detail: `${targetPO.mrNo} · ${targetPO.selectedSupplier} · ${newPoNo}`,
+        targetTab: 'po-manage',
+        reference: targetPO.mrNo,
+        tone: 'success',
+      });
+    } else {
+      setPoItems((previous) =>
+        previous.map((item) =>
+          item.id === poId
+            ? {
+                ...item,
+                supplierApprovalStatus: 'rejected' as const,
+                backendStatus: 'REJECTED' as const,
+                rejectReason: reason || '공급사 수주 거절',
+                poCreated: false,
+              }
+            : item
+        )
+      );
+
+      setRequests((previous) =>
+        previous.map((request) =>
+          request.mrNo === targetPO.mrNo
+            ? {
+                ...request,
+                processStage: {
+                  ...request.processStage,
+                  prSupplierApproved: '거절' as const,
+                  poCreated: false,
+                },
+              }
+            : request
+        )
+      );
+
+      showToast(`공급사(${targetPO.selectedSupplier})가 수주를 거절하였습니다.`);
+      pushNotification({
+        title: '공급사 수주 거절 접수',
+        detail: `${targetPO.mrNo} · ${targetPO.selectedSupplier}`,
+        targetTab: 'po-manage',
+        reference: targetPO.mrNo,
+        tone: 'danger',
+      });
+    }
   };
 
   const handleReturnToMR = (poId: string) => {
@@ -884,6 +1049,8 @@ function ProcurementWorkspaceComponent({
             {currentTab === 'po-manage' && (
               <POManagementView
                 poItems={activePOItems}
+                onRequestPR={handleRequestPR}
+                onSupplierAcceptOrder={handleSupplierAcceptOrder}
                 onCreatePO={handleCreatePO}
                 onReturnToMR={handleReturnToMR}
                 onMarkArrived={handleMarkPOArrived}
