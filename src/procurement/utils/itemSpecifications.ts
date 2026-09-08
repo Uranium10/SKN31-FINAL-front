@@ -109,17 +109,19 @@ const isValidLabelCandidate = (label: string): boolean => {
   return true;
 };
 
-const splitPlainList = (value: string): ParsedSpecificationItem[] => {
-  // 괄호 안의 "피치 8mm / 길이 720mm / 폭 20mm" 형식만 목록 구분자로 승격합니다.
-  const expandedParentheses = value.replace(/\(([^()]*)\)/g, (whole, inner: string) => (
-    inner.includes('/') ? `, ${inner.replace(/\s*\/\s*/g, ', ')}` : whole
-  ));
-
-  return expandedParentheses
-    .split(/\n|;|,(?!\d{3}\b)/)
+/**
+ * 콜론 라벨을 하나도 못 찾은 구간(또는 첫 라벨 이전 서두)을 위한 마지막
+ * 수단입니다. 쉼표(,)·슬래시(/)·괄호는 더 이상 항목 구분자로 쓰지 않고,
+ * 원문에 실제로 존재하는 줄바꿈만 구분자로 인정합니다 - 값 안에 "SUS304,
+ * SUS316"이나 "피치 8mm / 길이 720mm"처럼 쉼표·슬래시가 있어도 그대로 한
+ * 항목으로 유지됩니다.
+ */
+const splitPlainList = (value: string): ParsedSpecificationItem[] => (
+  value
+    .split(/\n/)
     .map(parseSpecificationToken)
-    .filter((item): item is ParsedSpecificationItem => item !== null);
-};
+    .filter((item): item is ParsedSpecificationItem => item !== null)
+);
 
 /**
  * "라벨: 값" 패턴을 구분자(줄바꿈/쉼표)가 아니라 콜론(:)을 기준으로 찾아 나눠
