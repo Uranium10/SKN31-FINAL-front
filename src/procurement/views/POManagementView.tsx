@@ -67,11 +67,11 @@ const getScoreAverage = (scores: SupplierScores) => (
 const getOverallProgress = (item: POItem) => {
   if (item.pendingTask?.taskType === 'pr_request') return { label: 'PR 요청 대기', className: 'badge-yellow' };
   if (item.prStatus === 'SENT') return { label: 'PR 요청 · 수주접수 대기', className: 'badge-gray' };
-  if (item.prStatus === 'ACCEPTED') return { label: '수주접수 · PO 생성 중', className: 'badge-green' };
+  if (item.prStatus === 'ACCEPTED' && !item.poCreated) return { label: '수주접수 · PO 생성 중', className: 'badge-green' };
   if (item.prStatus === 'REJECTED') return { label: '수주 거절', className: 'badge-red' };
   if (!item.poCreated) return { label: 'PO 최종 승인 대기', className: 'badge-yellow' };
   if (item.deliveryStatus === 'PARTIAL') return { label: '부분 입고 진행 중', className: 'badge-yellow' };
-  if (!item.arrived) return { label: '입고 대기', className: 'badge-gray' };
+  if (!item.arrived) return { label: `PO 생성 완료 · ${item.poNo}`, className: 'badge-blue' };
   if (item.paymentStatus === 'PARTIALLY_PAID') return { label: '부분 결제 진행 중', className: 'badge-yellow' };
   if (item.paymentStatus !== 'PAID') return { label: '물품 도착', className: 'badge-green' };
   if (!item.scorecardCompleted) return { label: '협력사 평가 대기', className: 'badge-yellow' };
