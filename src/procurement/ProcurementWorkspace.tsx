@@ -1736,60 +1736,6 @@ function ProcurementWorkspaceComponent({
     }
   };
 
-  const handleReturnToMR = (poId: string) => {
-    const rejectedPO = poItems.find((item) => item.id === poId);
-    if (!rejectedPO) return;
-
-    setRequests((previous) => previous.map((request) => {
-      if (request.mrNo !== rejectedPO.mrNo) return request;
-
-      const isNewReturn = !request.returnedFromSupplier;
-      const nextRound = isNewReturn
-        ? (request.revisionRound ?? 0) + 1
-        : (request.revisionRound ?? 1);
-
-      return {
-        ...request,
-        status: '승인대기',
-        rejectReason: undefined,
-        revisionRound: nextRound,
-        returnedFromSupplier: true,
-        returnReason: rejectedPO.rejectReason ?? '협력사가 PR 승인을 거절하여 MR 재검토가 필요합니다.',
-        reviewHistory: isNewReturn
-          ? [
-              ...(request.reviewHistory ?? []),
-              {
-                id: `${request.id}-supplier-return-${Date.now()}`,
-                round: nextRound,
-                type: 'supplier_return' as const,
-                reason: rejectedPO.rejectReason ?? '협력사가 PR 승인을 거절하여 MR 재검토가 필요합니다.',
-                source: rejectedPO.selectedSupplier,
-                occurredAt: new Date().toLocaleString('ko-KR', { hour12: false }),
-              },
-            ]
-          : request.reviewHistory,
-        processStage: {
-          approval: '진행중',
-          quotationProgressPercent: 0,
-          prSupplierApproved: '거절',
-          poCreated: false,
-        },
-      };
-    }));
-
-    clearNotificationsForMR(rejectedPO.mrNo);
-    setCurrentTab('mr-list');
-    setSearchQuery(rejectedPO.mrNo);
-    showToast(`${rejectedPO.mrNo} 건이 MR 재검토로 이동되었습니다.`);
-    pushNotification({
-      title: '협력사 거절로 MR 재검토가 필요합니다',
-      detail: `${rejectedPO.mrNo} · ${rejectedPO.selectedSupplier}`,
-      targetTab: 'mr-list',
-      reference: rejectedPO.mrNo,
-      tone: 'danger',
-    });
-  };
-
   // 협력사 PR 거절 시, PO 관리에서 빠져 협력사 선정 화면(선정 전 상태)으로 되돌리는 처리
   const handleReturnToVendorSelection = async (poId: string) => {
     const rejectedPO = poItems.find((item) => item.id === poId);
@@ -1867,6 +1813,34 @@ function ProcurementWorkspaceComponent({
       reference: rejectedPO.mrNo,
       tone: 'danger',
     });
+  };
+
+  // 협력사 PR 거절 건을 재선정/재검토 없이 그대로 취소 — ERP에서 MR을
+  // 실제로 취소(Draft는 Discard, Submit됨은 Cancel)하고 BiddingFlow의
+  // 진행 화면(협력사 선정/PO 관리)에서도 빠지게 한다.
+  const handleCancelMR = async (poId: string) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    const reason = targetPO.prRejectionReason || targetPO.rejectReason || '협력사 PR 거절로 인한 MR 취소';
+
+    if (apiDataEnabled) {
+      try {
+        await rejectProcurementCase(targetPO.id, `공급사 PR 거절로 MR 취소: ${reason}`);
+        clearNotificationsForMR(targetPO.mrNo);
+        showToast(`${targetPO.mrNo} 건이 ERP에서 취소 처리되었습니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'MR 취소 처리에 실패했습니다.');
+      }
+      return;
+    }
+
+    setPoItems((previous) => previous.filter((item) => item.mrNo !== targetPO.mrNo));
+    setVendorGroups((previous) => previous.filter((group) => group.mrNo !== targetPO.mrNo));
+    setRequests((previous) => previous.filter((request) => request.mrNo !== targetPO.mrNo));
+    clearNotificationsForMR(targetPO.mrNo);
+    showToast(`${targetPO.mrNo} 건이 취소되었습니다.`);
   };
 
   // 발주 물품 도착 확인 처리
@@ -2055,8 +2029,8 @@ function ProcurementWorkspaceComponent({
                 onCreatePO={handleCreatePO}
                 onRequestPR={handleRequestPR}
                 onSupplierAcceptOrder={handleSupplierAcceptOrder}
-                onReturnToMR={handleReturnToMR}
                 onReturnToVendorSelection={handleReturnToVendorSelection}
+                onCancelMR={handleCancelMR}
                 onMarkArrived={handleMarkPOArrived}
                 onSubmitScorecard={handleSubmitScorecard}
                 isApiMode={apiDataEnabled}

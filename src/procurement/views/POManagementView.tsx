@@ -49,8 +49,8 @@ interface POManagementViewProps {
   onCreatePO: (poId: string) => void;
   onRequestPR: (poId: string) => void;
   onSupplierAcceptOrder: (poId: string, decision?: 'accept' | 'reject', reason?: string) => void;
-  onReturnToMR: (poId: string) => void;
   onReturnToVendorSelection: (poId: string) => void;
+  onCancelMR: (poId: string) => void;
   onMarkArrived: (poId: string) => void;
   onSubmitScorecard: (poId: string, scores: SupplierScores) => void;
   isApiMode?: boolean;
@@ -121,8 +121,8 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onCreatePO,
   onRequestPR,
   onSupplierAcceptOrder,
-  onReturnToMR,
   onReturnToVendorSelection,
+  onCancelMR,
   onMarkArrived,
   onSubmitScorecard,
   isApiMode = false,
@@ -691,13 +691,14 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               </button>
               <button
                 type="button"
-                className="btn-primary"
+                className="btn-reject"
                 onClick={() => {
-                  onReturnToMR(selectedRejectReason.id);
+                  if (!window.confirm(`${selectedRejectReason.mrNo} 건을 취소하시겠습니까?\nERP에서 MR이 취소(Cancel/Discard) 처리되며 되돌릴 수 없습니다.`)) return;
+                  onCancelMR(selectedRejectReason.id);
                   setSelectedRejectReason(null);
                 }}
               >
-                MR 재검토로 보내기
+                MR 취소
               </button>
             </div>
           </div>
