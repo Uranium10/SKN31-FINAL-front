@@ -1,0 +1,133 @@
+import { fetchWithAuth } from '../../utils/auth';
+import type { ERPItemSpecificationResponse, Item } from '../types';
+import { mapERPItemSpecificationResponse } from '../utils/itemSpecifications';
+
+interface ERPItemSummary {
+  item_code: string;
+  item_name?: string;
+  item_group?: string;
+  description?: string | null;
+  stock_uom?: string;
+  is_stock_item?: number | boolean;
+  is_fixed_asset?: number | boolean;
+  disabled?: number | boolean | string;
+  brand?: string;
+  creation?: string;
+}
+
+interface ERPItemListResponse {
+  items: ERPItemSummary[];
+}
+
+const parseJson = async <T>(response: Response): Promise<T> => {
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(typeof body?.detail === 'string' ? body.detail : 'ERPNext 아이템 조회에 실패했습니다.');
+  }
+  return body as T;
+};
+
+const stripHtml = (value?: string | null): string => (value ?? '')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+export const itemSummaryToItem = (row: ERPItemSummary): Item => {
+  const description = stripHtml(row.description) || '등록된 규격 정보 없음';
+  const disabled = row.disabled === true
+    || row.disabled === 1
+    || row.disabled === '1';
+  return {
+    id: row.item_code,
+    itemCode: row.item_code,
+    department: row.item_group || 'ERPNext',
+    itemName: row.item_name || row.item_code,
+    specSummary: description.length > 70 ? `${description.slice(0, 70)}…` : description,
+    specifications: [],
+    fullSpec: {
+      dimensions: description,
+      material: '-',
+      operatingTemp: '-',
+      pressureRating: '-',
+      manufacturer: row.brand || '-',
+      notes: `${row.item_group || '미분류'} · ${row.stock_uom || '단위 미지정'}`,
+    },
+    maintainStock: Boolean(row.is_stock_item),
+    isFixedAsset: Boolean(row.is_fixed_asset),
+    attributes: {
+      heatResistant: false,
+      highPressure: false,
+      isoCertified: false,
+      waterproof: false,
+      customizable: false,
+    },
+    registeredDate: row.creation?.slice(0, 10) || '-',
+    status: disabled ? '승인대기' : '승인',
+  };
+};
+
+export const listERPItems = async (): Promise<Item[]> => {
+  const pageSize = 500;
+  let offset = 0;
+  const rows: ERPItemSummary[] = [];
+
+  // ERPNext 목록 API는 페이지 단위로 응답한다. 첫 500건만 읽으면 코드
+  // 정렬상 뒤쪽에 있는 disabled 품목이 누락될 수 있으므로 마지막 페이지까지
+  // 조회한다. include_disabled=true를 명시해 승인 대기도 API 계약에 포함한다.
+  while (true) {
+    const response = await fetchWithAuth(
+      `/purchase/items?limit=${pageSize}&offset=${offset}&include_disabled=true`,
+    );
+    const body = await parseJson<ERPItemListResponse>(response);
+    const page = Array.isArray(body.items) ? body.items : [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  // 페이지를 읽는 동안 ERP에서 Item이 수정되더라도 코드 하나가 화면에
+  // 중복 표시되지 않게 마지막 값을 기준으로 합친다.
+  const uniqueRows = new Map(rows.map((row) => [row.item_code, row]));
+  return Array.from(uniqueRows.values()).map(itemSummaryToItem);
+};
+
+export const getERPItemSpecifications = async (
+  item: Item,
+): Promise<Item> => {
+  const response = await fetchWithAuth(
+    `/purchase/items/${encodeURIComponent(item.itemCode)}/specifications`,
+  );
+  const body = await parseJson<ERPItemSpecificationResponse>(response);
+  return mapERPItemSpecificationResponse(body, {
+    ...item,
+    department: body.department || body.item_group || item.department,
+    specSummary: stripHtml(body.description) || item.specSummary,
+    registeredDate: body.registered_date?.slice(0, 10) || item.registeredDate,
+  });
+};
+
+/** 기존 호출부 호환 이름. */
+export const fetchItemWithSpecifications = getERPItemSpecifications;
+
+interface ERPItemGroupRequiredSpecsResponse {
+  item_group: string;
+  required_specs: string[];
+}
+
+/**
+ * 규격 모달이 자유 텍스트로 파싱된 "요청 규격" 항목 중 실제 필수
+ * 항목에만 빨간색 필수 태그를 붙일 수 있도록, item_group의 AI 정의
+ * 필수 규격 라벨 목록을 조회한다. ERPNext Item 폼 Client Script가
+ * description placeholder를 채울 때 쓰는 라벨과 동일한 소스다.
+ */
+export const getItemGroupRequiredSpecLabels = async (
+  itemGroup: string,
+): Promise<string[]> => {
+  if (!itemGroup || itemGroup === 'ERPNext' || itemGroup === '미지정' || itemGroup === '-') return [];
+  const response = await fetchWithAuth(
+    `/api/procurement/item-groups/${encodeURIComponent(itemGroup)}/required-specs`,
+  );
+  const body = await parseJson<ERPItemGroupRequiredSpecsResponse>(response);
+  return Array.isArray(body.required_specs) ? body.required_specs : [];
+};
+
