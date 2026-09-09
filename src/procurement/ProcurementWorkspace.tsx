@@ -72,6 +72,7 @@ interface AssistantCommand {
   id: number;
   type: 'navigate';
   value: NavigationTab;
+  searchQuery?: string;
 }
 
 interface ProcurementWorkspaceProps {
@@ -79,6 +80,7 @@ interface ProcurementWorkspaceProps {
   onLogout: () => void | Promise<void>;
   assistantCommand?: AssistantCommand | null;
   onAssistantContextChange?: (context: {
+    currentTab: NavigationTab;
     eyebrow: string;
     title: string;
     detail: string;
@@ -631,13 +633,20 @@ function ProcurementWorkspaceComponent({
 
   useEffect(() => {
     if (assistantCommand?.type === 'navigate') {
+      // Assistant commands are presentation-only: switch the existing tab and
+      // optionally reuse its normal search box. Business actions still require
+      // the same buttons and confirmation paths as manual navigation.
       setCurrentTab(assistantCommand.value);
+      if (assistantCommand.searchQuery !== undefined) {
+        setSearchQuery(assistantCommand.searchQuery);
+      }
     }
   }, [assistantCommand]);
 
   useEffect(() => {
     const context = tabContext[currentTab];
     onAssistantContextChange?.({
+      currentTab,
       eyebrow: 'PURCHASE OPERATIONS',
       title: context.title,
       detail: context.detail,
