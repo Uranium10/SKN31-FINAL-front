@@ -1791,9 +1791,34 @@ function ProcurementWorkspaceComponent({
   };
 
   // 협력사 PR 거절 시, PO 관리에서 빠져 협력사 선정 화면(선정 전 상태)으로 되돌리는 처리
-  const handleReturnToVendorSelection = (poId: string) => {
+  const handleReturnToVendorSelection = async (poId: string) => {
     const rejectedPO = poItems.find((item) => item.id === poId);
     if (!rejectedPO) return;
+
+    if (apiDataEnabled) {
+      if (!rejectedPO.pendingTaskId || rejectedPO.pendingTask?.taskType !== 'pr_rejection_review') {
+        showToast('현재 처리 가능한 PR 거절 검토 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        // 백엔드에는 "기존 견적만 유지한 채 재선정" 결정이 없어 재비딩(rebid)으로
+        // 보낸다 — 견적은 초기화되지만 케이스가 협력사 선정 화면에 뜨는 stage로
+        // 실제로 돌아가는 유일한 방법이다.
+        await answerProcurementTask(
+          rejectedPO.pendingTaskId,
+          { decision: 'rebid' },
+          rejectedPO.pendingTask.version,
+        );
+        clearNotificationsForMR(rejectedPO.mrNo);
+        setCurrentTab('vendor-select');
+        setSearchQuery(rejectedPO.mrNo);
+        showToast(`${rejectedPO.mrNo} 건이 재비딩을 위해 협력사 선정 화면으로 이동되었습니다. 기존 견적은 초기화되었습니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '협력사 재선정 처리에 실패했습니다.');
+      }
+      return;
+    }
 
     const reason = rejectedPO.prRejectionReason || rejectedPO.rejectReason || '협력사가 PR 승인을 거절했습니다.';
     const returnedAt = new Date().toLocaleString('ko-KR', { hour12: false });
