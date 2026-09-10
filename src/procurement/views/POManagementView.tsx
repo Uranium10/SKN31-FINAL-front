@@ -24,6 +24,7 @@ import {
   XCircle,
   ShoppingCart,
   CircleDollarSign,
+  Send,
 } from 'lucide-react';
 
 type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'amount' | 'promisedDate' | 'receivedDate' | 'payment' | 'status';
@@ -47,6 +48,7 @@ interface POManagementViewProps {
   onDismissMovePlaceholder?: (id: string) => void;
   onNavigateMovePlaceholder?: (placeholder: StageMovePlaceholder) => void;
   onCreatePO: (poId: string) => void;
+  onStartOrder: (poId: string) => void;
   onRequestPR: (poId: string) => void;
   onSupplierAcceptOrder: (poId: string, decision?: 'accept' | 'reject', reason?: string) => void;
   onReturnToVendorSelection: (poId: string) => void;
@@ -69,6 +71,9 @@ const getScoreAverage = (scores: SupplierScores) => (
 );
 
 const getOverallProgress = (item: POItem) => {
+  if (item.pendingTask?.taskType === 'order_start') {
+    return { label: '긴급발주 · 발주 시작 대기', className: 'badge-yellow' };
+  }
   if (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') {
     return { label: 'PR 요청 대기', className: 'badge-yellow' };
   }
@@ -119,6 +124,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onDismissMovePlaceholder = () => undefined,
   onNavigateMovePlaceholder = () => undefined,
   onCreatePO,
+  onStartOrder,
   onRequestPR,
   onSupplierAcceptOrder,
   onReturnToVendorSelection,
@@ -373,6 +379,12 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         </span>
                       );
                     })()}
+                    {!item.poCreated && item.pendingTask?.taskType === 'order_start' && (
+                      <button className="btn-sm btn-primary" onClick={() => onStartOrder(item.id)}>
+                        <Send size={14} />
+                        <span>발주 시작</span>
+                      </button>
+                    )}
                     {!item.poCreated && (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') && (
                       <button className="btn-sm btn-primary" onClick={() => handleRequestPRClick(item)}>
                         <ShoppingCart size={14} />

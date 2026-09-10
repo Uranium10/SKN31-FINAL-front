@@ -368,6 +368,14 @@ const valuesOf = (entry: ProcurementCaseDTO): Record<string, unknown> => {
   return values && typeof values === 'object' ? values as Record<string, unknown> : {};
 };
 
+// 긴급발주(납기 7일 이내)로 비딩을 생략하고 이전 PO 공급사를 그대로 쓰는
+// 케이스는 RFQ/견적 데이터가 전혀 없어 협력사 선정 화면(quotations 기반
+// UI)에서는 항상 "견적 대기중"으로 잘못 보인다. ORDER_START 단계에서 이
+// 플래그가 켜져 있으면 협력사 선정 화면 대신 PO 관리 화면으로 보낸다.
+export const isDirectPurchaseOrderStart = (entry: ProcurementCaseDTO): boolean => (
+  entry.stage === 'ORDER_START' && valuesOf(entry).direct_purchase === true
+);
+
 const rows = (value: unknown): Array<Record<string, unknown>> => (
   Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')

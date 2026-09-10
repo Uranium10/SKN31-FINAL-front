@@ -39,6 +39,7 @@ import {
   caseToVendorSelectionGroup,
   downloadMaterialRequestAttachment,
   extendQuotationDeadline,
+  isDirectPurchaseOrderStart,
   listProcurementCases,
   rejectProcurementCase,
   startProcurementCase,
@@ -749,7 +750,7 @@ function ProcurementWorkspaceComponent({
           .filter((entry) => [
             'SUPPLIER_RECOMMENDATION', 'RFQ_TARGET_SELECTION', 'RFQ_SENDING',
             'QUOTATION_COLLECTION', 'SUPPLIER_SELECTION', 'ORDER_START',
-          ].includes(entry.stage))
+          ].includes(entry.stage) && !isDirectPurchaseOrderStart(entry))
           .map(caseToVendorSelectionGroup)
       );
       setPoItems(
@@ -757,7 +758,7 @@ function ProcurementWorkspaceComponent({
           .filter((entry) => [
             'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED',
             'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
-          ].includes(entry.stage))
+          ].includes(entry.stage) || isDirectPurchaseOrderStart(entry))
           .map(caseToPOItem)
       );
     } catch (error) {
@@ -1586,6 +1587,32 @@ function ProcurementWorkspaceComponent({
     });
   };
 
+  // 긴급발주(비딩 생략) 건은 협력사 선정 화면을 거치지 않고 PO 관리
+  // 화면에서 바로 발주 시작(order_start) 확인을 받는다.
+  const handleStartOrder = async (poId: string) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    if (apiDataEnabled) {
+      if (!targetPO.pendingTaskId || targetPO.pendingTask?.taskType !== 'order_start') {
+        showToast('현재 처리 가능한 발주 시작 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        await answerProcurementTask(
+          targetPO.pendingTaskId,
+          { decision: 'start_order' },
+          targetPO.pendingTask.version,
+        );
+        clearNotificationsForMR(targetPO.mrNo);
+        showToast(`${targetPO.mrNo} 발주를 시작했습니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '발주 시작에 실패했습니다.');
+      }
+    }
+  };
+
   const handleRequestPR = async (poId: string) => {
     const targetPO = poItems.find((item) => item.id === poId);
     if (!targetPO) return;
@@ -2027,6 +2054,7 @@ function ProcurementWorkspaceComponent({
                 onDismissMovePlaceholder={dismissStageMovePlaceholder}
                 onNavigateMovePlaceholder={navigateStageMovePlaceholder}
                 onCreatePO={handleCreatePO}
+                onStartOrder={handleStartOrder}
                 onRequestPR={handleRequestPR}
                 onSupplierAcceptOrder={handleSupplierAcceptOrder}
                 onReturnToVendorSelection={handleReturnToVendorSelection}
