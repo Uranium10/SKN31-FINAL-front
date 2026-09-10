@@ -338,7 +338,8 @@ export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialReques
     quantity,
     dueDate,
     dDay,
-    isUrgent: dDay <= 3,
+    // 백엔드 decide_bidding.py의 URGENT_LEAD_TIME_DAYS(7일)과 동일한 기준.
+    isUrgent: dDay <= 7,
     status: isRejected ? '반려' : isAwaitingMRApproval ? '승인대기' : '승인',
     rejectReason: isRejected
       ? text(rawValues.cancellation_reason) || entry.last_error || undefined
