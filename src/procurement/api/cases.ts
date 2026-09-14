@@ -535,6 +535,15 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
   const deadlineTime = hasDeadline
     ? deadline.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
     : '18:00';
+  // ⚠️ 예전에는 실제 견적 마감시각(quotation_deadline_at)과 무관하게
+  // "납기요청일 D-day - 3"으로 대충 계산해서, 마감시각이 오늘이어도
+  // 납기요청일이 열흘 뒤면 D-7처럼 완전히 틀린 값이 떴다. 실제 마감
+  // 시각(deadline)을 "지금"과 직접 비교해서 계산해야 한다 - 마감이
+  // 이미 지났으면 0 이하(음수 포함)가 나와야 연장 버튼 숨김/재비딩
+  // 분기(deadlineDDay <= 0)가 정확히 동작한다.
+  const deadlineDDay = hasDeadline
+    ? Math.ceil((deadline.getTime() - Date.now()) / 86_400_000)
+    : Math.max(0, request.dDay - 3);
   return {
     id: entry.case_id,
     backendCaseId: entry.case_id,
@@ -551,7 +560,7 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     targetDueDate: request.dueDate,
     deadlineDate,
     deadlineTime,
-    deadlineDDay: Math.max(0, request.dDay - 3),
+    deadlineDDay,
     rfqSent,
     prSent: false,
     quotations,

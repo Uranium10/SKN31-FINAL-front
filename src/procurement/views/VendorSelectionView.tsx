@@ -219,6 +219,17 @@ const formatExpectedDelivery = (quotation: SupplierQuotation): string => {
   return quotation.leadTimeDays > 0 ? `${quotation.leadTimeDays}일 소요` : '미기재';
 };
 
+// 'YYYY-MM-DD' 날짜 문자열을 오늘 기준 D-day 텍스트로 바꾼다. 이미 지난
+// 날짜는 음수 대신 '지남'으로 보여준다(예: 'D-3일' / '오늘 마감' / '지남').
+const formatDDayLabel = (dateStr: string): string => {
+  const due = new Date(`${dateStr}T23:59:59`);
+  if (Number.isNaN(due.getTime())) return '';
+  const days = Math.ceil((due.getTime() - Date.now()) / 86_400_000);
+  if (days > 0) return `D-${days}일`;
+  if (days === 0) return '오늘 마감';
+  return `${Math.abs(days)}일 지남`;
+};
+
 const safeExternalUrl = (value?: string): string | null => {
   if (!value) return null;
   try {
@@ -248,7 +259,28 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 }) => {
   // 모달 상태
   const [selectedGroup, setSelectedGroup] = useState<VendorSelectionGroup | null>(null);
-  
+
+  // RFQ 미발송 + 납기요청일 초과 건을 '확인 후 MR 취소'할 때 버튼 로딩 표시용.
+  const [isCancellingOverdue, setIsCancellingOverdue] = useState<string | null>(null);
+  // 오늘 날짜(YYYY-MM-DD) - targetDueDate와 사전식 비교로 납기 초과 여부를 판단.
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const handleConfirmOverdueCancel = async (group: VendorSelectionGroup) => {
+    const confirmed = window.confirm(
+      `${group.mrNo} 건: 납기요청일(${group.targetDueDate})이 지났고 RFQ도 보내지 않았습니다. 이 MR을 취소할까요?`,
+    );
+    if (!confirmed) return;
+    setIsCancellingOverdue(group.id);
+    try {
+      await onCancelMR(
+        group.id,
+        `납기요청일(${group.targetDueDate}) 초과 및 RFQ 미발송으로 자동 취소`,
+      );
+    } finally {
+      setIsCancellingOverdue((current) => (current === group.id ? null : current));
+    }
+  };
+
   // 1. MR 번호 클릭 시 상세 모달
   const [showMRModal, setShowMRModal] = useState<boolean>(false);
   const [activeMR, setActiveMR] = useState<MaterialRequest | null>(null);
@@ -280,6 +312,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const [extendingGroup, setExtendingGroup] = useState<VendorSelectionGroup | null>(null);
   const [extDate, setExtDate] = useState<string>('2025-01-25');
   const [extTime, setExtTime] = useState<string>('18:00');
+  const [extValidationMessage, setExtValidationMessage] = useState<string | null>(null);
 
   // 5. 선정 철회/변경 모달
   const [changingGroup, setChangingGroup] = useState<VendorSelectionGroup | null>(null);
@@ -497,8 +530,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     rejectedSupplierKeys.has(candidate.supplierId) || rejectedSupplierKeys.has(candidate.supplierName)
   );
 
+  // ⚠️ '거절됨'은 정보 표시용 배지일 뿐, 선택 자체를 막지는 않는다(재비딩
+  // 때는 과거에 거절했던 협력사에게도 RFQ를 다시 보낼 수 있어야 함).
   const selectedRfqCandidateCount = rfqCandidateRows.filter(
-    (candidate) => rfqSelectedSuppliers[candidate.supplierId] && !isRejectedSupplier(candidate),
+    (candidate) => rfqSelectedSuppliers[candidate.supplierId],
   ).length;
 
   // 1. MR 번호 클릭 처리 (MR 목록 내용 다 확인 가능하도록 설정)
@@ -607,9 +642,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
   const handleSelectAllRfqSuppliers = () => {
     setRfqSelectedSuppliers(Object.fromEntries(
-      rfqCandidateRows
-        .filter((candidate) => !isRejectedSupplier(candidate))
-        .map((candidate) => [candidate.supplierId, true]),
+      rfqCandidateRows.map((candidate) => [candidate.supplierId, true]),
     ));
     setRfqValidationMessage(null);
   };
@@ -625,7 +658,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     if (!selectedGroup) return;
 
     const selectedSupplierIds = rfqCandidateRows
-      .filter((candidate) => rfqSelectedSuppliers[candidate.supplierId] && !isRejectedSupplier(candidate))
+      .filter((candidate) => rfqSelectedSuppliers[candidate.supplierId])
       .map((candidate) => candidate.supplierId);
     const checkedCount = selectedSupplierIds.length;
     if (checkedCount === 0) {
@@ -642,6 +675,16 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       ));
       setRfqValidationMessage(
         `선택한 협력사 ${missingEmailIds.length}곳의 이메일을 입력해야 RFQ를 발송할 수 있습니다.`,
+      );
+      return;
+    }
+
+    // 마감일이 요청부서가 원한 납기요청일보다 늦으면 안 됨 - 달력의
+    // max 속성으로 대부분 막히지만, 직접 타이핑 등으로 우회될 수 있어
+    // 제출 시점에 한 번 더 확인한다.
+    if (rfqDeadlineDate && rfqDeadlineDate > selectedGroup.targetDueDate) {
+      setRfqValidationMessage(
+        `견적 마감일은 납기요청일(${selectedGroup.targetDueDate})보다 늦을 수 없습니다.`,
       );
       return;
     }
@@ -739,11 +782,22 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setExtendingGroup(group);
     setExtDate(group.deadlineDate || '2025-01-25');
     setExtTime(group.deadlineTime || '18:00');
+    setExtValidationMessage(null);
   };
 
   const handleConfirmExtension = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!extendingGroup) return;
+    // 연장한 마감일도 RFQ 최초 발송 때와 마찬가지로 납기요청일보다
+    // 늦어질 수 없다 - 달력 max 속성으로 대부분 막히지만 제출 시점에
+    // 한 번 더 확인한다.
+    if (extDate > extendingGroup.targetDueDate) {
+      setExtValidationMessage(
+        `견적 마감일은 납기요청일(${extendingGroup.targetDueDate})보다 늦을 수 없습니다.`,
+      );
+      return;
+    }
+    setExtValidationMessage(null);
     const extended = await onExtendDeadline(extendingGroup.id, extDate, extTime);
     if (!extended) return;
     setExtendingGroup(null);
@@ -885,6 +939,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               const selectedQuotation = group.quotations.find((q) => q.supplierId === group.selectedSupplierId);
               const hasSelection = Boolean(group.selectedSupplierId);
               const rfqActive = Boolean(group.rfqSent);
+              // RFQ를 아직 안 보낸 상태에서 요청부서가 원한 납기요청일까지
+              // 지나버리면 더 이상 의미가 없는 건이므로 자동취소 대상으로
+              // 안내한다(오늘 날짜 문자열과 그냥 비교 - targetDueDate가
+              // 'YYYY-MM-DD' 형식이라 사전식 비교로 충분함).
+              const isPastTargetDueDate = group.targetDueDate < todayIso;
+              const isOverdueUnsentRfq = !rfqActive && isPastTargetDueDate;
               const canConfigureRFQ = !group.workflowStage
                 || group.workflowStage === 'RFQ_TARGET_SELECTION';
               const canReviewQuotations = !group.workflowStage
@@ -1131,6 +1191,26 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           </button>
                         )}
                       </div>
+                    ) : isOverdueUnsentRfq ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', width: 'fit-content' }}>
+                          <AlertTriangle size={11} /> 납기 초과 · RFQ 미발송
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-sm btn-reject"
+                          disabled={isCancellingOverdue === group.id}
+                          onClick={() => handleConfirmOverdueCancel(group)}
+                          style={{ fontSize: '10px', padding: '3px 8px', width: 'fit-content' }}
+                          title={`납기요청일(${group.targetDueDate})이 지났고 RFQ도 보내지 않아 자동 취소 대상입니다. 확인을 누르면 이 MR을 취소합니다.`}
+                        >
+                          {isCancellingOverdue === group.id ? '취소 처리 중...' : '확인 · MR 취소'}
+                        </button>
+                      </div>
+                    ) : !rfqActive ? (
+                      <span className="badge badge-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                        <Clock size={11} /> RFQ 미발송
+                      </span>
                     ) : (
                       <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
                         <Clock size={11} /> 견적 요청상태
@@ -1230,7 +1310,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 <div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>납기요청일</div>
                   <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--danger)' }}>
-                    📅 {selectedGroup.targetDueDate} (D-{selectedGroup.deadlineDDay}일)
+                    📅 {selectedGroup.targetDueDate} ({formatDDayLabel(selectedGroup.targetDueDate)})
                   </div>
                 </div>
                 <div>
@@ -1394,27 +1474,25 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       {rfqCandidateRows
                         .map((q) => {
                           const rank = q.rank;
+                          // '거절됨'은 정보 표시용일 뿐 선택을 막지는 않는다 -
+                          // 재비딩 때는 과거에 거절했던 협력사에게도 RFQ를
+                          // 다시 보낼 수 있어야 한다.
                           const isRejected = isRejectedSupplier(q);
-                          const isChecked = !isRejected && Boolean(rfqSelectedSuppliers[q.supplierId]);
+                          const isChecked = Boolean(rfqSelectedSuppliers[q.supplierId]);
                           const sourceUrl = safeExternalUrl(q.sourceUrl);
 
                           return (
                             <tr
                               key={q.supplierId}
-                              style={{
-                                backgroundColor: isChecked ? 'rgba(60,60,67,0.02)' : 'transparent',
-                                opacity: isRejected ? 0.55 : 1,
-                              }}
+                              style={{ backgroundColor: isChecked ? 'rgba(60,60,67,0.02)' : 'transparent' }}
                             >
                               {/* 체크박스 */}
                               <td style={{ textAlign: 'center' }}>
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
-                                  disabled={isRejected}
                                   onChange={() => handleToggleRfqSupplier(q.supplierId)}
-                                  style={{ width: '16px', height: '16px', cursor: isRejected ? 'not-allowed' : 'pointer' }}
-                                  title={isRejected ? '이 MR에서 과거 라운드에 수주 접수를 거절한 협력사입니다.' : undefined}
+                                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 />
                               </td>
                               {/* 순위 */}
@@ -1694,7 +1772,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         type="date"
                         className="form-input"
                         value={rfqDeadlineDate}
-                        onChange={(e) => setRfqDeadlineDate(e.target.value)}
+                        max={selectedGroup.targetDueDate}
+                        onChange={(e) => {
+                          setRfqDeadlineDate(e.target.value);
+                          setRfqValidationMessage(null);
+                        }}
+                        title={`납기요청일(${selectedGroup.targetDueDate})보다 늦게는 지정할 수 없습니다.`}
                         required
                       />
                     </div>
@@ -1708,6 +1791,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         required
                       />
                     </div>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    마감일시는 납기요청일({selectedGroup.targetDueDate})보다 늦을 수 없습니다.
                   </div>
                 </div>
               </div>
@@ -1980,7 +2066,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       type="date"
                       className="form-input"
                       value={extDate}
-                      onChange={(e) => setExtDate(e.target.value)}
+                      max={extendingGroup.targetDueDate}
+                      onChange={(e) => {
+                        setExtDate(e.target.value);
+                        setExtValidationMessage(null);
+                      }}
+                      title={`납기요청일(${extendingGroup.targetDueDate})보다 늦게는 지정할 수 없습니다.`}
                       required
                     />
                   </div>
@@ -1999,6 +2090,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     />
                   </div>
                 </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  마감일시는 납기요청일({extendingGroup.targetDueDate})보다 늦을 수 없습니다.
+                </div>
+                {extValidationMessage && (
+                  <div className="form-validation-message" role="alert">
+                    <AlertTriangle size={14} /> {extValidationMessage}
+                  </div>
+                )}
               </div>
 
               <div className="modal-footer">
