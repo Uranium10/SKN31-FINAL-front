@@ -35,12 +35,13 @@ import {
   Award
 } from 'lucide-react';
 
-type VendorColumnKey = 'mr' | 'dueDate' | 'suppliers' | 'deadline' | 'response' | 'status' | 'order';
+type VendorColumnKey = 'mr' | 'dueDate' | 'suppliers' | 'round' | 'deadline' | 'response' | 'status' | 'order';
 
 const VENDOR_COLUMNS: readonly TableColumnDefinition<VendorColumnKey>[] = [
   { key: 'mr', label: 'MR 번호', defaultWidth: 205, minWidth: 150 },
   { key: 'dueDate', label: '납기요청일', defaultWidth: 180, minWidth: 135, filterMode: 'date-range' },
   { key: 'suppliers', label: 'RFQ 협력사', defaultWidth: 230, minWidth: 170, filterMode: 'none' },
+  { key: 'round', label: '차수', defaultWidth: 110, minWidth: 90, align: 'center', filterMode: 'none' },
   { key: 'deadline', label: '마감시간 (마감연장)', defaultWidth: 225, minWidth: 175, filterMode: 'date-range' },
   { key: 'response', label: '견적 회신율 (%)', defaultWidth: 185, minWidth: 145, align: 'center' },
   { key: 'status', label: '진행상태', defaultWidth: 175, minWidth: 135 },
@@ -54,12 +55,20 @@ const responsePercent = (group: VendorSelectionGroup): number => {
   return group.quotations.length > 0 ? Math.round((responded / group.quotations.length) * 100) : 0;
 };
 
+// "차수"는 재비딩으로 이미 마감된 지난 RFQ 라운드의 개수다 - 첫 RFQ를
+// 보내고 아직 한 번도 재비딩하지 않았으면 0차, 한 번 재비딩하면(지난
+// RFQ 1건이 마감 처리됨) 1차, 두 번이면 2차인 식이다. 지금 한창 진행
+// 중인(아직 마감 안 된) RFQ는 여기 포함하지 않는다 - 그 정보는 이미
+// '견적 회신율' 쪽에서 보여주고 있다.
+const closedRoundCount = (group: VendorSelectionGroup): number => group.rfqRounds?.length ?? 0;
+
 const vendorFilterValue = (group: VendorSelectionGroup, key: VendorColumnKey): string | number => {
   const selected = group.quotations.find((quotation) => quotation.supplierId === group.selectedSupplierId);
   switch (key) {
     case 'mr': return `${group.mrNo} · ${group.itemName}`;
     case 'dueDate': return `${group.targetDueDate} · ${group.department}`;
     case 'suppliers': return `${group.quotations.length}개사`;
+    case 'round': return `${closedRoundCount(group)}차`;
     case 'deadline': return !group.rfqSent ? 'RFQ 발송 전' : selected ? '마감 완료' : `${group.deadlineDate} ${group.deadlineTime}`;
     case 'response': return responsePercent(group) >= 50 ? '50% 이상' : '50% 미만';
     case 'status': return selected ? '업체 선정완료' : '견적 요청상태';
@@ -78,6 +87,7 @@ const vendorRangeValue = (group: VendorSelectionGroup, key: VendorColumnKey): st
 const vendorSortValue = (group: VendorSelectionGroup, key: VendorColumnKey): string | number => {
   if (key === 'response') return responsePercent(group);
   if (key === 'suppliers') return group.quotations.length;
+  if (key === 'round') return closedRoundCount(group);
   return vendorFilterValue(group, key);
 };
 
@@ -339,23 +349,16 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     Record<string, RfqRoundSnapshot | 'loading' | 'error'>
   >({});
 
-  // rfqRounds(마감된 지난 라운드, 오래된 순) + 지금 진행 중인 라운드(있으면)를
-  // 합쳐 1차부터 순서대로 보여준다.
-  const roundsForGroup = (group: VendorSelectionGroup): Array<{ round: number; rfqName: string; deadline?: string }> => {
-    const closed = (group.rfqRounds ?? []).map((entry) => ({
+  // "차수"는 재비딩으로 이미 마감된 지난 라운드만 센다(오래된 순) - 지금
+  // 한창 진행 중인 RFQ는 아직 "차수"에 포함되지 않고, 그 정보는 이미
+  // '견적 회신율' 쪽에서 따로 보여주고 있어서 이 팝업에는 넣지 않는다.
+  const roundsForGroup = (group: VendorSelectionGroup): Array<{ round: number; rfqName: string; deadline?: string }> => (
+    (group.rfqRounds ?? []).map((entry) => ({
       round: entry.round,
       rfqName: entry.rfqName,
       deadline: entry.deadline,
-    }));
-    if (group.rfqName) {
-      closed.push({
-        round: closed.length + 1,
-        rfqName: group.rfqName,
-        deadline: `${group.deadlineDate} ${group.deadlineTime}`.trim(),
-      });
-    }
-    return closed;
-  };
+    }))
+  );
 
   const handleOpenRoundsModal = (group: VendorSelectionGroup) => {
     const list = roundsForGroup(group);
@@ -1027,7 +1030,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       <StageMovePlaceholderRow
                         key={placeholder.id}
                         placeholder={placeholder}
-                        colSpan={7}
+                        colSpan={8}
                         onNavigate={onNavigateMovePlaceholder}
                         onDismiss={onDismissMovePlaceholder}
                       />
@@ -1109,32 +1112,36 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     </button>
                   </td>
 
-                  {/* 4. 마감시간 (마감연장도 가능한) - RFQ 발송 전에는 흐리게 비활성화 */}
-                  <td>
+                  {/* 3.5. 차수 - 재비딩으로 이미 마감된 지난 RFQ 라운드 개수.
+                      아직 한 번도 재비딩하지 않았으면 0차(클릭 불가) */}
+                  <td style={{ textAlign: 'center' }}>
                     {(() => {
-                      const totalRounds = (group.rfqRounds?.length ?? 0) + (group.rfqName ? 1 : 0);
+                      const rounds = closedRoundCount(group);
                       return (
                         <button
                           type="button"
                           className="badge badge-purple"
-                          disabled={totalRounds === 0}
+                          disabled={rounds === 0}
                           onClick={() => handleOpenRoundsModal(group)}
                           style={{
                             fontSize: '11px',
                             fontWeight: 700,
-                            marginBottom: '6px',
                             border: 'none',
-                            cursor: totalRounds === 0 ? 'not-allowed' : 'pointer',
-                            opacity: totalRounds === 0 ? 0.4 : 1,
+                            cursor: rounds === 0 ? 'not-allowed' : 'pointer',
+                            opacity: rounds === 0 ? 0.4 : 1,
                           }}
-                          title={totalRounds === 0
-                            ? 'RFQ를 아직 보내지 않아 차수 기록이 없습니다.'
-                            : `지금까지 ${totalRounds}차 RFQ를 보냈습니다. 클릭하면 차수별로 받았던 견적을 볼 수 있습니다.`}
+                          title={rounds === 0
+                            ? '아직 재비딩한 적이 없어 지난 차수 기록이 없습니다.'
+                            : `재비딩으로 마감된 지난 라운드가 ${rounds}건 있습니다. 클릭하면 차수별로 받았던 견적을 볼 수 있습니다.`}
                         >
-                          {totalRounds}차
+                          {rounds}차
                         </button>
                       );
                     })()}
+                  </td>
+
+                  {/* 4. 마감시간 (마감연장도 가능한) - RFQ 발송 전에는 흐리게 비활성화 */}
+                  <td>
                     <div
                       style={{
                         display: 'flex',
@@ -1356,7 +1363,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 <StageMovePlaceholderRow
                   key={placeholder.id}
                   placeholder={placeholder}
-                  colSpan={7}
+                  colSpan={8}
                   onNavigate={onNavigateMovePlaceholder}
                   onDismiss={onDismissMovePlaceholder}
                 />
@@ -1364,7 +1371,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
             {visibleVendorGroups.length === 0 && movePlaceholders.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+                <td colSpan={8} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
                   현재 협력사 선정 대기 건이 없습니다.
                 </td>
               </tr>
@@ -1428,7 +1435,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         fontSize: '12px',
                       }}
                     >
-                      {round.round}차{index === list.length - 1 ? ' (현재)' : ''}
+                      {round.round}차
                     </button>
                   ))}
                   <button
