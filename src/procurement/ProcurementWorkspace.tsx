@@ -39,6 +39,7 @@ import {
   caseToVendorSelectionGroup,
   downloadMaterialRequestAttachment,
   extendQuotationDeadline,
+  isDirectPurchaseOrderStart,
   listProcurementCases,
   rejectProcurementCase,
   searchSuppliers,
@@ -50,6 +51,8 @@ import { getERPItemSpecifications, getItemGroupRequiredSpecLabels, listERPItems 
 import { useStageTransitionItems } from './hooks/useStageTransitionItems';
 import { useProcurementNotifications } from './hooks/useProcurementNotifications';
 import { buildRequestSpecificationFields } from './utils/itemSpecifications';
+
+import { fetchPrRequests, submitSupplierPRResponse } from './api/prApi';
 
 import './ProcurementWorkspace.css';
 import { Paperclip, X } from 'lucide-react';
@@ -71,6 +74,7 @@ interface AssistantCommand {
   id: number;
   type: 'navigate';
   value: NavigationTab;
+  searchQuery?: string;
 }
 
 interface ProcurementWorkspaceProps {
@@ -78,6 +82,7 @@ interface ProcurementWorkspaceProps {
   onLogout: () => void | Promise<void>;
   assistantCommand?: AssistantCommand | null;
   onAssistantContextChange?: (context: {
+    currentTab: NavigationTab;
     eyebrow: string;
     title: string;
     detail: string;
@@ -128,7 +133,7 @@ const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
   },
   'po-manage': {
     title: 'PO 관리',
-    detail: 'PO 발송 전 최종 승인과 Purchase Receipt 입고 현황을 관리합니다.',
+    detail: '협력사 PR 요청과 수주접수 확인부터 PO 발송 전 최종 승인, Purchase Receipt 입고 현황까지 관리합니다.',
   },
 };
 
@@ -280,7 +285,6 @@ function ProcurementWorkspaceComponent({
       .filter((item) => item.supplierApprovalStatus !== 'rejected')
       .map((item) => ({
         ...item,
-        supplierApprovalStatus: 'approved' as const,
         approvalStatus: item.poCreated ? 'approved' as const : 'pending' as const,
         promisedDeliveryDate: item.dueDate,
         deliveryStatus: item.arrived ? 'FULL' as const : 'NOT_RECEIVED' as const,
@@ -631,17 +635,59 @@ function ProcurementWorkspaceComponent({
 
   useEffect(() => {
     if (assistantCommand?.type === 'navigate') {
+      // Assistant commands are presentation-only: switch the existing tab and
+      // optionally reuse its normal search box. Business actions still require
+      // the same buttons and confirmation paths as manual navigation.
       setCurrentTab(assistantCommand.value);
+      if (assistantCommand.searchQuery !== undefined) {
+        setSearchQuery(assistantCommand.searchQuery);
+      }
     }
   }, [assistantCommand]);
 
   useEffect(() => {
     const context = tabContext[currentTab];
     onAssistantContextChange?.({
+      currentTab,
       eyebrow: 'PURCHASE OPERATIONS',
       title: context.title,
       detail: context.detail,
     });
+
+    if (currentTab === 'po-manage') {
+      fetchPrRequests().then((backendItems) => {
+        if (!backendItems || backendItems.length === 0) return;
+        setPoItems((prev) => {
+          const updated = [...prev];
+          backendItems.forEach((bItem) => {
+            const index = updated.findIndex((item) => item.mrNo === bItem.mr_name || item.id === bItem.pr_id);
+            const statusMap: Record<string, 'pending' | 'pr_requested' | 'accepted' | 'rejected'> = {
+              DRAFT: 'pending',
+              SENT: 'pr_requested',
+              ACCEPTED: 'accepted',
+              PO_CREATED: 'accepted',
+              REJECTED: 'rejected',
+            };
+            const supplierApprovalStatus = statusMap[bItem.status] || 'pending';
+            const poCreated = bItem.status === 'PO_CREATED' || Boolean(bItem.po_name);
+
+            if (index >= 0) {
+              updated[index] = {
+                ...updated[index],
+                backendStatus: bItem.status,
+                supplierApprovalStatus,
+                poCreated,
+                poNo: bItem.po_name || updated[index].poNo,
+                token: bItem.token || updated[index].token,
+                expiresAt: bItem.expires_at || updated[index].expiresAt,
+                rejectReason: bItem.rejection_reason || updated[index].rejectReason,
+              };
+            }
+          });
+          return updated;
+        });
+      });
+    }
   }, [currentTab, onAssistantContextChange]);
 
   const showToast = useCallback((msg: string) => {
@@ -705,14 +751,15 @@ function ProcurementWorkspaceComponent({
           .filter((entry) => [
             'SUPPLIER_RECOMMENDATION', 'RFQ_TARGET_SELECTION', 'RFQ_SENDING',
             'QUOTATION_COLLECTION', 'SUPPLIER_SELECTION', 'ORDER_START',
-          ].includes(entry.stage))
+          ].includes(entry.stage) && !isDirectPurchaseOrderStart(entry))
           .map(caseToVendorSelectionGroup)
       );
       setPoItems(
         visibleCases
           .filter((entry) => [
-            'PRE_PO_APPROVAL', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
-          ].includes(entry.stage))
+            'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED',
+            'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
+          ].includes(entry.stage) || isDirectPurchaseOrderStart(entry))
           .map(caseToPOItem)
       );
     } catch (error) {
@@ -1411,7 +1458,7 @@ function ProcurementWorkspaceComponent({
         selectedSupplier: selectedSupplier.supplierName,
         totalAmount: selectedSupplier.quoteTotalPrice,
         dueDate: selectedGroup.targetDueDate,
-        supplierApprovalStatus: 'approved',
+        supplierApprovalStatus: 'pending',
         approvalStatus: 'pending',
         poCreated: false,
         promisedDeliveryDate: selectedGroup.targetDueDate,
@@ -1423,7 +1470,19 @@ function ProcurementWorkspaceComponent({
     });
 
     clearNotificationsForMR(selectedGroup.mrNo);
-    showToast('발주를 시작했습니다. PO 관리에서 발송 전 최종 승인을 진행해주세요.');
+    setRequests((previous) => previous.map((request) => (
+      request.mrNo === selectedGroup.mrNo
+        ? {
+            ...request,
+            returnedFromSupplier: false,
+            returnReason: undefined,
+            processStage: { ...request.processStage, prSupplierApproved: '대기' },
+          }
+        : request
+    )));
+
+    showToast('협력사 발주 진행이 완료되어 PO 관리 창으로 이동했습니다. [PR 요청] 버튼을 눌러 공급사에 요청을 전달해 주세요.');
+    setCurrentTab('po-manage');
     pushNotification({
       title: 'PO 발송 전 최종 승인이 필요합니다',
       detail: `${selectedGroup.mrNo} · ${selectedSupplier.supplierName}`,
@@ -1539,58 +1598,287 @@ function ProcurementWorkspaceComponent({
     });
   };
 
-  const handleReturnToMR = (poId: string) => {
+  // 긴급발주(비딩 생략) 건은 협력사 선정 화면을 거치지 않고 PO 관리
+  // 화면에서 바로 발주 시작(order_start) 확인을 받는다.
+  const handleStartOrder = async (poId: string) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    if (apiDataEnabled) {
+      if (!targetPO.pendingTaskId || targetPO.pendingTask?.taskType !== 'order_start') {
+        showToast('현재 처리 가능한 발주 시작 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        await answerProcurementTask(
+          targetPO.pendingTaskId,
+          { decision: 'start_order' },
+          targetPO.pendingTask.version,
+        );
+        clearNotificationsForMR(targetPO.mrNo);
+        showToast(`${targetPO.mrNo} 발주를 시작했습니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '발주 시작에 실패했습니다.');
+      }
+    }
+  };
+
+  const handleRequestPR = async (poId: string) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    if (apiDataEnabled) {
+      if (!targetPO.pendingTaskId || targetPO.pendingTask?.taskType !== 'pr_request') {
+        showToast('현재 처리 가능한 PR 요청 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        await answerProcurementTask(
+          targetPO.pendingTaskId,
+          { decision: 'request_pr' },
+          targetPO.pendingTask.version,
+        );
+        clearNotificationsForMR(targetPO.mrNo);
+        showToast(`${targetPO.selectedSupplier}에 PR 요청 메일을 발송했습니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'PR 요청에 실패했습니다.');
+      }
+      return;
+    }
+
+    setPoItems((previous) =>
+      previous.map((item) =>
+        item.id === poId ? { ...item, supplierApprovalStatus: 'pr_requested' as const, prStatus: 'SENT' } : item
+      )
+    );
+
+    setRequests((previous) =>
+      previous.map((request) =>
+        request.mrNo === targetPO.mrNo
+          ? {
+              ...request,
+              processStage: { ...request.processStage, prSupplierApproved: '대기' as const },
+            }
+          : request
+      )
+    );
+
+    showToast(`공급사(${targetPO.selectedSupplier}) 이메일로 PO 내용과 수주접수 링크가 발송되었습니다.`);
+    pushNotification({
+      title: '공급사 PR 요청 메일 발송 완료',
+      detail: `${targetPO.mrNo} · ${targetPO.selectedSupplier} 수주접수 대기 중`,
+      targetTab: 'po-manage',
+      reference: targetPO.mrNo,
+      tone: 'info',
+    });
+  };
+
+  const handleSupplierAcceptOrder = async (
+    poId: string,
+    decision: 'accept' | 'reject' = 'accept',
+    reason?: string
+  ) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    const token = targetPO.token || targetPO.id || 'mock-token-sample';
+    const apiResult = await submitSupplierPRResponse(token, decision, reason);
+
+    if (decision === 'accept') {
+      const newPoNo = apiResult.po_name || targetPO.poNo || `PO-2025-${Math.floor(1000 + Math.random() * 9000)}`;
+      const createdDate = new Date().toLocaleString('ko-KR', { hour12: false });
+
+      setPoItems((previous) =>
+        previous.map((item) =>
+          item.id === poId
+            ? {
+                ...item,
+                supplierApprovalStatus: 'accepted' as const,
+                backendStatus: 'PO_CREATED' as const,
+                prStatus: 'ACCEPTED',
+                poCreated: true,
+                poNo: newPoNo,
+                createdDate,
+              }
+            : item
+        )
+      );
+
+      setRequests((previous) =>
+        previous.map((request) =>
+          request.mrNo === targetPO.mrNo
+            ? {
+                ...request,
+                processStage: {
+                  ...request.processStage,
+                  prSupplierApproved: '승인' as const,
+                  poCreated: true,
+                },
+              }
+            : request
+        )
+      );
+
+      showToast(
+        `공급사(${targetPO.selectedSupplier}) 수주 접수 완료 ➔ ERPNext PO 생성·Submit 및 공식 PO 이메일 발송 완료 [입고 대기]`
+      );
+      pushNotification({
+        title: '수주 접수 ➔ ERPNext PO Submit 및 공식 PO 발송 완료',
+        detail: `${targetPO.mrNo} · ${targetPO.selectedSupplier} · ${newPoNo}`,
+        targetTab: 'po-manage',
+        reference: targetPO.mrNo,
+        tone: 'success',
+      });
+    } else {
+      setPoItems((previous) =>
+        previous.map((item) =>
+          item.id === poId
+            ? {
+                ...item,
+                supplierApprovalStatus: 'rejected' as const,
+                backendStatus: 'REJECTED' as const,
+                prStatus: 'REJECTED',
+                prRejectionReason: reason || '공급사 수주 거절',
+                rejectReason: reason || '공급사 수주 거절',
+                poCreated: false,
+              }
+            : item
+        )
+      );
+
+      setRequests((previous) =>
+        previous.map((request) =>
+          request.mrNo === targetPO.mrNo
+            ? {
+                ...request,
+                processStage: {
+                  ...request.processStage,
+                  prSupplierApproved: '거절' as const,
+                  poCreated: false,
+                },
+              }
+            : request
+        )
+      );
+
+      showToast(`공급사(${targetPO.selectedSupplier})가 수주를 거절하였습니다.`);
+      pushNotification({
+        title: '공급사 수주 거절 접수',
+        detail: `${targetPO.mrNo} · ${targetPO.selectedSupplier}`,
+        targetTab: 'po-manage',
+        reference: targetPO.mrNo,
+        tone: 'danger',
+      });
+    }
+  };
+
+  // 협력사 PR 거절 시, PO 관리에서 빠져 협력사 선정 화면(선정 전 상태)으로 되돌리는 처리
+  const handleReturnToVendorSelection = async (poId: string) => {
     const rejectedPO = poItems.find((item) => item.id === poId);
     if (!rejectedPO) return;
 
-    setRequests((previous) => previous.map((request) => {
-      if (request.mrNo !== rejectedPO.mrNo) return request;
+    if (apiDataEnabled) {
+      if (!rejectedPO.pendingTaskId || rejectedPO.pendingTask?.taskType !== 'pr_rejection_review') {
+        showToast('현재 처리 가능한 PR 거절 검토 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        // 백엔드에는 "기존 견적만 유지한 채 재선정" 결정이 없어 재비딩(rebid)으로
+        // 보낸다 — 견적은 초기화되지만 케이스가 협력사 선정 화면에 뜨는 stage로
+        // 실제로 돌아가는 유일한 방법이다.
+        await answerProcurementTask(
+          rejectedPO.pendingTaskId,
+          { decision: 'rebid' },
+          rejectedPO.pendingTask.version,
+        );
+        clearNotificationsForMR(rejectedPO.mrNo);
+        setCurrentTab('vendor-select');
+        setSearchQuery(rejectedPO.mrNo);
+        showToast(`${rejectedPO.mrNo} 건이 재비딩을 위해 협력사 선정 화면으로 이동되었습니다. 기존 견적은 초기화되었습니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '협력사 재선정 처리에 실패했습니다.');
+      }
+      return;
+    }
 
-      const isNewReturn = !request.returnedFromSupplier;
-      const nextRound = isNewReturn
-        ? (request.revisionRound ?? 0) + 1
-        : (request.revisionRound ?? 1);
+    const reason = rejectedPO.prRejectionReason || rejectedPO.rejectReason || '협력사가 PR 승인을 거절했습니다.';
+    const returnedAt = new Date().toLocaleString('ko-KR', { hour12: false });
+
+    setVendorGroups((previous) => previous.map((group) => {
+      if (group.mrNo !== rejectedPO.mrNo) return group;
+      const rejectedSupplierId = group.selectedSupplierId;
 
       return {
-        ...request,
-        status: '승인대기',
-        rejectReason: undefined,
-        revisionRound: nextRound,
-        returnedFromSupplier: true,
-        returnReason: rejectedPO.rejectReason ?? '협력사가 PR 승인을 거절하여 MR 재검토가 필요합니다.',
-        reviewHistory: isNewReturn
-          ? [
-              ...(request.reviewHistory ?? []),
-              {
-                id: `${request.id}-supplier-return-${Date.now()}`,
-                round: nextRound,
-                type: 'supplier_return' as const,
-                reason: rejectedPO.rejectReason ?? '협력사가 PR 승인을 거절하여 MR 재검토가 필요합니다.',
-                source: rejectedPO.selectedSupplier,
-                occurredAt: new Date().toLocaleString('ko-KR', { hour12: false }),
-              },
-            ]
-          : request.reviewHistory,
-        processStage: {
-          approval: '진행중',
-          quotationProgressPercent: 0,
-          prSupplierApproved: '거절',
-          poCreated: false,
-        },
+        ...group,
+        selectedSupplierId: undefined,
+        supplierApprovalStatus: undefined,
+        prSent: false,
+        orderStarted: false,
+        prNo: undefined,
+        quotations: group.quotations.map((quotation) => ({ ...quotation, isSelected: false })),
+        selectionHistory: (group.selectionHistory ?? []).map((entry) => (
+          entry.status === 'pending' && entry.supplierId === rejectedSupplierId
+            ? { ...entry, status: 'rejected' as const, withdrawnAt: returnedAt, withdrawalReason: reason }
+            : entry
+        )),
       };
     }));
 
+    setPoItems((previous) => previous.filter((item) => (
+      item.mrNo !== rejectedPO.mrNo || item.poCreated
+    )));
+
+    setRequests((previous) => previous.map((request) => (
+      request.mrNo === rejectedPO.mrNo
+        ? {
+            ...request,
+            processStage: { ...request.processStage, prSupplierApproved: '대기' as const },
+          }
+        : request
+    )));
+
     clearNotificationsForMR(rejectedPO.mrNo);
-    setCurrentTab('mr-list');
+    setCurrentTab('vendor-select');
     setSearchQuery(rejectedPO.mrNo);
-    showToast(`${rejectedPO.mrNo} 건이 MR 재검토로 이동되었습니다.`);
+    showToast(`${rejectedPO.mrNo} 건이 협력사 재선정을 위해 협력사 선정 화면으로 이동되었습니다.`);
     pushNotification({
-      title: '협력사 거절로 MR 재검토가 필요합니다',
+      title: '협력사 PR 거절로 재선정이 필요합니다',
       detail: `${rejectedPO.mrNo} · ${rejectedPO.selectedSupplier}`,
-      targetTab: 'mr-list',
+      targetTab: 'vendor-select',
       reference: rejectedPO.mrNo,
       tone: 'danger',
     });
+  };
+
+  // 협력사 PR 거절 건을 재선정/재검토 없이 그대로 취소 — ERP에서 MR을
+  // 실제로 취소(Draft는 Discard, Submit됨은 Cancel)하고 BiddingFlow의
+  // 진행 화면(협력사 선정/PO 관리)에서도 빠지게 한다.
+  const handleCancelMR = async (poId: string) => {
+    const targetPO = poItems.find((item) => item.id === poId);
+    if (!targetPO) return;
+
+    const reason = targetPO.prRejectionReason || targetPO.rejectReason || '협력사 PR 거절로 인한 MR 취소';
+
+    if (apiDataEnabled) {
+      try {
+        await rejectProcurementCase(targetPO.id, `공급사 PR 거절로 MR 취소: ${reason}`);
+        clearNotificationsForMR(targetPO.mrNo);
+        showToast(`${targetPO.mrNo} 건이 ERP에서 취소 처리되었습니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'MR 취소 처리에 실패했습니다.');
+      }
+      return;
+    }
+
+    setPoItems((previous) => previous.filter((item) => item.mrNo !== targetPO.mrNo));
+    setVendorGroups((previous) => previous.filter((group) => group.mrNo !== targetPO.mrNo));
+    setRequests((previous) => previous.filter((request) => request.mrNo !== targetPO.mrNo));
+    clearNotificationsForMR(targetPO.mrNo);
+    showToast(`${targetPO.mrNo} 건이 취소되었습니다.`);
   };
 
   // 발주 물품 도착 확인 처리
@@ -1778,7 +2066,11 @@ function ProcurementWorkspaceComponent({
                 onDismissMovePlaceholder={dismissStageMovePlaceholder}
                 onNavigateMovePlaceholder={navigateStageMovePlaceholder}
                 onCreatePO={handleCreatePO}
-                onReturnToMR={handleReturnToMR}
+                onStartOrder={handleStartOrder}
+                onRequestPR={handleRequestPR}
+                onSupplierAcceptOrder={handleSupplierAcceptOrder}
+                onReturnToVendorSelection={handleReturnToVendorSelection}
+                onCancelMR={handleCancelMR}
                 onMarkArrived={handleMarkPOArrived}
                 onSubmitScorecard={handleSubmitScorecard}
                 isApiMode={apiDataEnabled}

@@ -94,6 +94,10 @@ const LEGACY_CASE_STATE: Record<string, Pick<ProcurementCaseDTO, 'status' | 'sta
   awaiting_final_selection: { status: 'WAITING_INPUT', stage: 'SUPPLIER_SELECTION' },
   supplier_selected: { status: 'WAITING_INPUT', stage: 'ORDER_START' },
   awaiting_po_approval: { status: 'WAITING_INPUT', stage: 'PRE_PO_APPROVAL' },
+  awaiting_pr_request: { status: 'WAITING_INPUT', stage: 'PR_REQUEST' },
+  creating_pr: { status: 'RUNNING', stage: 'PR_SENDING' },
+  awaiting_supplier_pr_response: { status: 'WAITING_INPUT', stage: 'PR_RESPONSE_WAITING' },
+  supplier_pr_rejected: { status: 'WAITING_INPUT', stage: 'PR_REJECTED' },
   creating_po: { status: 'RUNNING', stage: 'PO_CREATION' },
   po_sent: { status: 'RUNNING', stage: 'DELIVERY' },
   human_review: { status: 'FAILED', stage: 'HUMAN_REVIEW' },
@@ -366,7 +370,8 @@ export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialReques
     quantity,
     dueDate,
     dDay,
-    isUrgent: dDay <= 3,
+    // 백엔드 decide_bidding.py의 URGENT_LEAD_TIME_DAYS(7일)과 동일한 기준.
+    isUrgent: dDay <= 7,
     status: isRejected ? '반려' : isAwaitingMRApproval ? '승인대기' : '승인',
     rejectReason: isRejected
       ? text(rawValues.cancellation_reason) || entry.last_error || undefined
@@ -395,6 +400,14 @@ const valuesOf = (entry: ProcurementCaseDTO): Record<string, unknown> => {
   const values = entry.workflow_snapshot?.values;
   return values && typeof values === 'object' ? values as Record<string, unknown> : {};
 };
+
+// 긴급발주(납기 7일 이내)로 비딩을 생략하고 이전 PO 공급사를 그대로 쓰는
+// 케이스는 RFQ/견적 데이터가 전혀 없어 협력사 선정 화면(quotations 기반
+// UI)에서는 항상 "견적 대기중"으로 잘못 보인다. ORDER_START 단계에서 이
+// 플래그가 켜져 있으면 협력사 선정 화면 대신 PO 관리 화면으로 보낸다.
+export const isDirectPurchaseOrderStart = (entry: ProcurementCaseDTO): boolean => (
+  entry.stage === 'ORDER_START' && valuesOf(entry).direct_purchase === true
+);
 
 const rows = (value: unknown): Array<Record<string, unknown>> => (
   Array.isArray(value)
@@ -504,7 +517,8 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
   const selected = text(values.selected_supplier);
   const rfqSent = [
     'QUOTATION_COLLECTION', 'SUPPLIER_SELECTION', 'ORDER_START',
-    'PRE_PO_APPROVAL', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
+    'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED',
+    'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
   ].includes(entry.stage);
   const deadline = entry.quotation_deadline_at
     ? new Date(entry.quotation_deadline_at)
@@ -520,7 +534,7 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     pendingTaskId: entry.pending_task?.task_id,
     pendingTask: pendingTask(entry),
     workflowStage: entry.stage,
-    orderStarted: ['PRE_PO_APPROVAL', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED'].includes(entry.stage),
+    orderStarted: ['PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED'].includes(entry.stage),
     mrNo: entry.mr_name,
     itemName: request.itemName,
     itemCode: request.itemCode,
@@ -563,6 +577,11 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
   const quotationTotalAmount = selectedQuotation?.quoteTotalPrice ?? 0;
   const projectedInvoiceTotal = numberValue(delivery?.invoice_total);
   const approvalStatus = entry.stage === 'PRE_PO_APPROVAL' ? 'pending' : 'approved';
+  const prStatus = text(values.pr_status) || (
+    entry.stage === 'PR_RESPONSE_WAITING' ? 'SENT'
+      : entry.stage === 'PR_REJECTED' ? 'REJECTED'
+        : undefined
+  );
   const fullReceipt = delivery?.delivery_status === 'FULL';
   const scorecard = delivery?.scorecard;
   const scorecardScores = scorecard && ['quality', 'leadTime', 'price', 'service', 'communication']
@@ -595,6 +614,9 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     referenceUnitPrice: directUnitPrice || undefined,
     dueDate: request.dueDate,
     supplierApprovalStatus: 'approved',
+    prStatus,
+    prRejectionReason: text(values.pr_rejection_reason) || undefined,
+    prSupplierEmail: text(values.pr_supplier_email) || undefined,
     approvalStatus,
     poCreated: Boolean(poName),
     poNo: poName || undefined,

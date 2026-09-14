@@ -12,7 +12,6 @@ import {
   type TableColumnDefinition,
 } from '../hooks/useSessionTableState';
 import {
-  ShoppingCart,
   CheckCircle2,
   Clock,
   FileText,
@@ -21,7 +20,11 @@ import {
   PackageCheck,
   ClipboardList,
   Star,
-  CircleDollarSign
+  Mail,
+  XCircle,
+  ShoppingCart,
+  CircleDollarSign,
+  Send,
 } from 'lucide-react';
 
 type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'amount' | 'promisedDate' | 'receivedDate' | 'payment' | 'status';
@@ -45,7 +48,11 @@ interface POManagementViewProps {
   onDismissMovePlaceholder?: (id: string) => void;
   onNavigateMovePlaceholder?: (placeholder: StageMovePlaceholder) => void;
   onCreatePO: (poId: string) => void;
-  onReturnToMR: (poId: string) => void;
+  onStartOrder: (poId: string) => void;
+  onRequestPR: (poId: string) => void;
+  onSupplierAcceptOrder: (poId: string, decision?: 'accept' | 'reject', reason?: string) => void;
+  onReturnToVendorSelection: (poId: string) => void;
+  onCancelMR: (poId: string) => void;
   onMarkArrived: (poId: string) => void;
   onSubmitScorecard: (poId: string, scores: SupplierScores) => void;
   isApiMode?: boolean;
@@ -64,9 +71,27 @@ const getScoreAverage = (scores: SupplierScores) => (
 );
 
 const getOverallProgress = (item: POItem) => {
+  if (item.pendingTask?.taskType === 'order_start') {
+    return { label: '긴급발주 · 발주 시작 대기', className: 'badge-yellow' };
+  }
+  if (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') {
+    return { label: 'PR 요청 대기', className: 'badge-yellow' };
+  }
+  if (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') {
+    return { label: 'PR 요청 · 수주접수 대기', className: 'badge-gray' };
+  }
+  if (
+    (item.prStatus === 'ACCEPTED' || item.supplierApprovalStatus === 'accepted' || item.supplierApprovalStatus === 'approved')
+    && !item.poCreated
+  ) {
+    return { label: '수주접수 · PO 생성 중', className: 'badge-green' };
+  }
+  if (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') {
+    return { label: '수주 거절', className: 'badge-red' };
+  }
   if (!item.poCreated) return { label: 'PO 최종 승인 대기', className: 'badge-yellow' };
   if (item.deliveryStatus === 'PARTIAL') return { label: '부분 입고 진행 중', className: 'badge-yellow' };
-  if (!item.arrived) return { label: '입고 대기', className: 'badge-gray' };
+  if (!item.arrived) return { label: `PO 생성 완료 · ${item.poNo}`, className: 'badge-blue' };
   if (item.paymentStatus === 'PARTIALLY_PAID') return { label: '부분 결제 진행 중', className: 'badge-yellow' };
   if (item.paymentStatus !== 'PAID') return { label: '물품 도착', className: 'badge-green' };
   if (!item.scorecardCompleted) return { label: '협력사 평가 대기', className: 'badge-yellow' };
@@ -99,16 +124,23 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onDismissMovePlaceholder = () => undefined,
   onNavigateMovePlaceholder = () => undefined,
   onCreatePO,
-  onReturnToMR,
+  onStartOrder,
+  onRequestPR,
+  onSupplierAcceptOrder,
+  onReturnToVendorSelection,
+  onCancelMR,
   onMarkArrived,
   onSubmitScorecard,
   isApiMode = false,
 }) => {
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
   const [selectedRejectReason, setSelectedRejectReason] = useState<POItem | null>(null);
+  const [emailModalItem, setEmailModalItem] = useState<POItem | null>(null);
   const [approvalModalItem, setApprovalModalItem] = useState<POItem | null>(null);
   const [scorecardItem, setScorecardItem] = useState<POItem | null>(null);
   const [draftScores, setDraftScores] = useState<Partial<SupplierScores>>({});
+  const [showRejectInput, setShowRejectInput] = useState<boolean>(false);
+  const [rejectReasonText, setRejectReasonText] = useState<string>('');
   const tableState = useSessionTableState('po-management', PO_COLUMNS);
   const [rangeFilters, setRangeFilters] = useSessionStoredState<PORangeFilters>(
     'biddingflow.table.po-management.ranges',
@@ -157,26 +189,51 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
     setDraftScores({});
   };
 
+  const handleRequestPRClick = (item: POItem) => {
+    onRequestPR(item.id);
+    if (!isApiMode) {
+      setEmailModalItem(item);
+    }
+  };
+
+  const handleSupplierAcceptClick = (item: POItem) => {
+    onSupplierAcceptOrder(item.id, 'accept');
+    setEmailModalItem(null);
+    setShowRejectInput(false);
+  };
+
+  const handleSupplierRejectSubmit = (item: POItem) => {
+    if (!rejectReasonText.trim() || rejectReasonText.trim().length < 2) {
+      alert('거절 사유를 2자 이상 입력해 주세요.');
+      return;
+    }
+    onSupplierAcceptOrder(item.id, 'reject', rejectReasonText.trim());
+    setEmailModalItem(null);
+    setShowRejectInput(false);
+    setRejectReasonText('');
+  };
+
   const isDraftComplete = SCORECARD_CRITERIA.every((criterion) => draftScores[criterion.key]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Top Banner Guide (Matching Screenshot 1 exactly) */}
       <div
         style={{
-          backgroundColor: 'var(--success-bg)',
-          border: '1px solid rgba(36, 138, 61, 0.14)',
-          borderRadius: 'var(--radius-md)',
-          padding: '12px 18px',
+          backgroundColor: '#e6f4ea',
+          border: '1px solid #ceead6',
+          borderRadius: '8px',
+          padding: '14px 20px',
           fontSize: '13px',
-          color: 'var(--success)',
+          color: '#137333',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px'
+          gap: '12px',
         }}
       >
-        <PackageCheck size={18} color="var(--success)" />
+        <PackageCheck size={20} color="#137333" />
         <span>
-          PO 발송 전 최종 승인부터 입고·대금결제·협력사 평가까지 관리합니다. ERPNext의 <strong>Purchase Receipt, Purchase Invoice, Payment Entry</strong>를 기준으로 진행상태를 자동 갱신합니다.
+          <strong>PO 발송 전 최종 승인부터 입고·대금결제·협력사 평가까지 관리합니다.</strong> ERPNext의 <strong>Purchase Receipt, Purchase Invoice, Payment Entry</strong>를 기준으로 진행상태를 자동 갱신합니다.
         </span>
       </div>
 
@@ -322,7 +379,39 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         </span>
                       );
                     })()}
-                    {!item.poCreated && (item.approvalStatus ?? 'pending') === 'pending' && (
+                    {!item.poCreated && item.pendingTask?.taskType === 'order_start' && (
+                      <button className="btn-sm btn-primary" onClick={() => onStartOrder(item.id)}>
+                        <Send size={14} />
+                        <span>발주 시작</span>
+                      </button>
+                    )}
+                    {!item.poCreated && (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') && (
+                      <button className="btn-sm btn-primary" onClick={() => handleRequestPRClick(item)}>
+                        <ShoppingCart size={14} />
+                        <span>PR 요청</span>
+                      </button>
+                    )}
+                    {!item.poCreated && (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') && (
+                      <>
+                        <span className="badge badge-gray"><Clock size={12} /> PR 요청 · 수주접수 대기</span>
+                        {!isApiMode && (
+                          <button className="btn-sm btn-outline" onClick={() => setEmailModalItem(item)}>
+                            <Mail size={12} />
+                            <span>이메일/수주접수</span>
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {!item.poCreated && (item.prStatus === 'ACCEPTED' || item.supplierApprovalStatus === 'accepted' || item.supplierApprovalStatus === 'approved') && (
+                      <span className="badge badge-green"><CheckCircle2 size={12} /> 수주접수 · PO 생성 중</span>
+                    )}
+                    {!item.poCreated && (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') && (
+                      <button className="btn-sm btn-reject" onClick={() => setSelectedRejectReason(item)}>
+                        <AlertTriangle size={14} />
+                        <span>수주 거절 사유</span>
+                      </button>
+                    )}
+                    {!item.poCreated && item.pendingTask?.taskType === 'po_approval' && (
                       <button className="btn-sm btn-primary" onClick={() => setApprovalModalItem(item)}>
                         <ShoppingCart size={14} />
                         <span>PO 발송 최종 승인</span>
@@ -384,6 +473,133 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         </table>
       </SmartTableContainer>
 
+      {/* ========================================================================= */}
+      {/* 공급사 발송 메일 및 수주접수 미리보기 Modal */}
+      {/* ========================================================================= */}
+      {emailModalItem && (
+        <div className="modal-overlay" onClick={() => setEmailModalItem(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '720px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Mail size={22} color="var(--primary)" />
+                <div>
+                  <h3 style={{ margin: 0 }}>공급사 발송 이메일 (PO 예정 내용 확인 및 수주접수)</h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    공급사({emailModalItem.selectedSupplier}) 이메일에서 수주접수 클릭 시 BiddingFlow 상태가 수주접수로 변경되고 ERPNext PO가 생성/Submit 됩니다.
+                  </span>
+                </div>
+              </div>
+              <button type="button" className="icon-btn" onClick={() => setEmailModalItem(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* 메일 헤더 메타정보 */}
+              <div style={{ backgroundColor: 'var(--bg-input)', borderRadius: '8px', padding: '14px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div><strong>수신자 (To):</strong> {emailModalItem.selectedSupplier} 영업담당자 &lt;sales@{emailModalItem.selectedSupplier.replaceAll(' ', '').toLowerCase()}.com&gt;</div>
+                <div><strong>발신자 (From):</strong> 구매팀 &lt;procurement@company.com&gt;</div>
+                <div><strong>제목 (Subject):</strong> <span style={{ color: 'var(--primary)', fontWeight: 700 }}>[PO 예정 안내] {emailModalItem.itemName} - 발주 예정 내용 확인 및 수주접수 요청</span></div>
+              </div>
+
+              {/* 메일 본문 카드 (Email Body Card) */}
+              <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', backgroundColor: 'var(--bg-card)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.6, color: 'var(--text-main)' }}>
+                  안녕하세요, <strong>{emailModalItem.selectedSupplier}</strong> 귀중.<br />
+                  귀사와 협의 완료된 구매 요청 건에 대한 PO 예정 내역을 전달드립니다.<br />
+                  아래 내용을 확인하신 후 <strong>[수주 접수]</strong> 버튼을 클릭하여 수주 확정을 진행해 주시기 바랍니다.
+                </p>
+
+                {/* PO 상세 내역 */}
+                <div style={{ backgroundColor: 'var(--bg-input)', padding: '14px', borderRadius: '6px', fontSize: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div><strong>MR 번호:</strong> {emailModalItem.mrNo}</div>
+                  <div><strong>PR 번호:</strong> {emailModalItem.prNo}</div>
+                  <div><strong>CASE ID:</strong> {emailModalItem.caseId || 'CASE-2026-001'}</div>
+                  <div><strong>RFQ 번호:</strong> {emailModalItem.rfqName || 'RFQ-2026-0891'}</div>
+                  <div><strong>품목명:</strong> {emailModalItem.itemName}</div>
+                  <div><strong>아이템코드:</strong> {emailModalItem.itemCode}</div>
+                  <div><strong>요청 부서:</strong> {emailModalItem.department}</div>
+                  <div><strong>약정 납기일:</strong> <span style={{ color: 'var(--danger)', fontWeight: 700 }}>📅 {emailModalItem.dueDate}</span></div>
+                  <div><strong>응답 기한:</strong> {emailModalItem.expiresAt || '발송 후 72시간 내'}</div>
+                  <div style={{ gridColumn: 'span 2', marginTop: '4px', paddingTop: '8px', borderTop: '1px dashed var(--border-color)', fontSize: '14px' }}>
+                    <strong>최종 발주 공급가액:</strong> <span style={{ color: 'var(--primary)', fontWeight: 700, fontFamily: 'monospace', fontSize: '16px' }}>₩{emailModalItem.totalAmount.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* 메일 내부 수주접수 액션 영역 */}
+                <div style={{ border: '2px dashed var(--primary)', borderRadius: '8px', padding: '16px', backgroundColor: 'var(--primary-soft)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--primary-hover)' }}>
+                    [공급사 수주접수 확정 링크]
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    수주 접수 클릭 시: BiddingFlow 상태가 <strong>'수주 접수'</strong>로 변경 ➔ ERPNext PO 자동 생성 & Submit ➔ 공식 PO 이메일 발송
+                  </div>
+
+                  {!showRejectInput ? (
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => handleSupplierAcceptClick(emailModalItem)}
+                        style={{ padding: '10px 24px', fontSize: '14px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--success)', borderColor: 'var(--success)' }}
+                      >
+                        <CheckCircle2 size={18} />
+                        수주 접수 (Order Accept)
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-outline"
+                        onClick={() => setShowRejectInput(true)}
+                        style={{ padding: '10px 16px', fontSize: '13px', color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                      >
+                        <XCircle size={16} />
+                        수주 거절 (Reject)
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '480px', marginTop: '6px' }}>
+                      <textarea
+                        className="form-input"
+                        rows={3}
+                        placeholder="수주 거절 사유를 2자 이상 입력해 주세요..."
+                        value={rejectReasonText}
+                        onChange={(e) => setRejectReasonText(e.target.value)}
+                        style={{ fontSize: '13px' }}
+                        autoFocus
+                      />
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          onClick={() => setShowRejectInput(false)}
+                          style={{ fontSize: '12px' }}
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-reject"
+                          onClick={() => handleSupplierRejectSubmit(emailModalItem)}
+                          style={{ fontSize: '12px', padding: '6px 14px' }}
+                        >
+                          거절 확정 제출
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn-outline" onClick={() => setEmailModalItem(null)}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MR/PR 상세 확인 Modal */}
       {selectedMRDetail && (
         <div className="modal-overlay" onClick={() => setSelectedMRDetail(null)}>
@@ -393,7 +609,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 <FileText size={20} color="var(--primary)" />
                 <h3>MR 및 발주 상세 내역 ({selectedMRDetail.mrNo})</h3>
               </div>
-              <button className="icon-btn" onClick={() => setSelectedMRDetail(null)}>
+              <button type="button" className="icon-btn" onClick={() => setSelectedMRDetail(null)}>
                 <X size={18} />
               </button>
             </div>
@@ -403,7 +619,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   {selectedMRDetail.itemName} ({selectedMRDetail.itemCode})
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  요청부서: {selectedMRDetail.department} | 희망 납기일: {selectedMRDetail.dueDate}
+                  요청부서: {selectedMRDetail.department} | 약정 납기일: {selectedMRDetail.dueDate}
                 </div>
               </div>
               {selectedMRDetail.poCreated && (
@@ -426,13 +642,13 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               )}
               <div style={{ backgroundColor: 'var(--bg-input)', padding: '14px', borderRadius: '8px' }}>
                 <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '4px' }}>선정 공급사 및 발주 금액</div>
-                <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--success)' }}>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--primary)' }}>
                   {selectedMRDetail.selectedSupplier} · Total ₩{selectedMRDetail.totalAmount.toLocaleString()}
                 </div>
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn-primary" onClick={() => setSelectedMRDetail(null)}>
+              <button type="button" className="btn-primary" onClick={() => setSelectedMRDetail(null)}>
                 확인 완료
               </button>
             </div>
@@ -440,16 +656,16 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         </div>
       )}
 
-      {/* PR 거절 사유 확인 Modal */}
+      {/* PR / 수주 거절 사유 확인 Modal */}
       {selectedRejectReason && (
         <div className="modal-overlay" onClick={() => setSelectedRejectReason(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '480px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <AlertTriangle size={20} color="var(--danger)" />
-                <h3>협력사 PR 거절 사유 확인 ({selectedRejectReason.mrNo})</h3>
+                <h3>공급사 수주 거절 사유 확인 ({selectedRejectReason.mrNo})</h3>
               </div>
-              <button className="icon-btn" onClick={() => setSelectedRejectReason(null)}>
+              <button type="button" className="icon-btn" onClick={() => setSelectedRejectReason(null)}>
                 <X size={18} />
               </button>
             </div>
@@ -468,21 +684,33 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   lineHeight: '1.5'
                 }}
               >
-                {selectedRejectReason.rejectReason || '사유가 작성되지 않았습니다.'}
+                {selectedRejectReason.prRejectionReason || selectedRejectReason.rejectReason || '사유가 작성되지 않았습니다.'}
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn-outline" onClick={() => setSelectedRejectReason(null)}>
+              <button type="button" className="btn-outline" onClick={() => setSelectedRejectReason(null)}>
                 닫기
               </button>
               <button
-                className="btn-primary"
+                type="button"
+                className="btn-outline"
                 onClick={() => {
-                  onReturnToMR(selectedRejectReason.id);
+                  onReturnToVendorSelection(selectedRejectReason.id);
                   setSelectedRejectReason(null);
                 }}
               >
-                MR 재검토로 보내기
+                협력사 재선정으로 보내기
+              </button>
+              <button
+                type="button"
+                className="btn-reject"
+                onClick={() => {
+                  if (!window.confirm(`${selectedRejectReason.mrNo} 건을 취소하시겠습니까?\nERP에서 MR이 취소(Cancel/Discard) 처리되며 되돌릴 수 없습니다.`)) return;
+                  onCancelMR(selectedRejectReason.id);
+                  setSelectedRejectReason(null);
+                }}
+              >
+                MR 취소
               </button>
             </div>
           </div>
@@ -549,13 +777,13 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 <ClipboardList size={20} color="var(--primary)" />
                 <h3>Supplier Scorecard ({scorecardItem.selectedSupplier})</h3>
               </div>
-              <button className="icon-btn" onClick={closeScorecard}>
+              <button type="button" className="icon-btn" onClick={closeScorecard}>
                 <X size={18} />
               </button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {scorecardItem.poNo} · {scorecardItem.mrNo} · {scorecardItem.itemName} 건에 대해 아래 5개 항목을 5점 만점으로 평가해 주세요.
+                {scorecardItem.poNo || scorecardItem.mrNo} · {scorecardItem.itemName} 건에 대해 아래 5개 항목을 5점 만점으로 평가해 주세요.
               </p>
               {SCORECARD_CRITERIA.map((criterion) => (
                 <div key={criterion.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -585,10 +813,11 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               ))}
             </div>
             <div className="modal-footer">
-              <button className="btn-outline" onClick={closeScorecard}>
+              <button type="button" className="btn-outline" onClick={closeScorecard}>
                 취소
               </button>
               <button
+                type="button"
                 className="btn-primary"
                 disabled={!isDraftComplete}
                 onClick={() => {

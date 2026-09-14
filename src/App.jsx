@@ -12,6 +12,7 @@ import {
 import WaveTransition from './components/common/WaveTransition';
 import LoginPage from './components/auth/LoginPage';
 import AssistantDock from './components/assistant/AssistantDock';
+import { sendAssistantMessage } from './components/assistant/assistantApi';
 import ProcurementWorkspace from './procurement/ProcurementWorkspace';
 
 const initialHelpSessions = [
@@ -29,31 +30,10 @@ const initialHelpSessions = [
 ];
 
 const defaultWorkspaceContext = {
+  currentTab: 'dashboard',
   eyebrow: 'PURCHASE OPERATIONS',
   title: '구매 대시보드',
   detail: '승인 대기, 견적 회신, 협력사 승인과 PO 생성 현황을 확인합니다.',
-};
-
-const getNavigationIntent = (message) => {
-  const normalized = message.toLowerCase();
-
-  if (/(아이템|품목\s*등록)/i.test(normalized)) {
-    return { value: 'item-register', label: '아이템 등록' };
-  }
-  if (/(협력사|공급사|견적|quotation)/i.test(normalized)) {
-    return { value: 'vendor-select', label: '협력사 선정' };
-  }
-  if (/(\bpo\b|발주|구매주문)/i.test(normalized)) {
-    return { value: 'po-manage', label: 'PO 관리' };
-  }
-  if (/(\bmr\b|승인|반려|구매\s*요청)/i.test(normalized)) {
-    return { value: 'mr-list', label: 'MR 목록' };
-  }
-  if (/(대시보드|전체\s*현황|처리\s*현황)/i.test(normalized)) {
-    return { value: 'dashboard', label: '대시보드' };
-  }
-
-  return null;
 };
 
 export function App() {
@@ -65,6 +45,8 @@ export function App() {
   const [error, setError] = useState('');
   const [isWiping, setIsWiping] = useState(false);
 
+  // Conversation display state stays in the browser. Procurement facts are
+  // fetched afresh by the authenticated backend for every assistant turn.
   const [sessions, setSessions] = useState(initialHelpSessions);
   const [activeSessionId, setActiveSessionId] = useState(initialHelpSessions[0].id);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -168,13 +150,33 @@ export function App() {
     setInput('');
   };
 
-  const handleSendMessage = (customText = null) => {
+  const handleAssistantAction = useCallback((action) => {
+    // Treat model-assisted output as untrusted at the UI boundary too. Only
+    // known BiddingFlow tabs can become navigation commands.
+    const allowedTargets = new Set([
+      'dashboard', 'item-register', 'mr-list', 'vendor-select', 'po-manage',
+    ]);
+    if (!action || !allowedTargets.has(action.target)) return;
+    setAssistantCommand({
+      id: Date.now(),
+      type: 'navigate',
+      value: action.target,
+      searchQuery: action.search_query || action.highlight_reference || '',
+    });
+  }, []);
+
+  const handleSendMessage = async (customText = null) => {
     const messageText = (customText || input).trim();
     if (!messageText || sending) return;
 
+    // Capture the target session before awaiting the API so a new chat opened
+    // in the meantime does not receive the previous request's answer.
     const targetSessionId = activeSessionId;
     const userMessage = { sender: 'user', text: messageText };
-    const navigationIntent = getNavigationIntent(messageText);
+    const conversation = (currentSession?.messages || []).slice(-8).map((message) => ({
+      role: message.sender === 'user' ? 'user' : 'assistant',
+      content: message.text,
+    }));
 
     setInput('');
     setSending(true);
@@ -190,28 +192,42 @@ export function App() {
         : session
     )));
 
-    let responseText;
-    if (navigationIntent) {
-      setAssistantCommand({
-        id: Date.now(),
-        type: 'navigate',
-        value: navigationIntent.value,
+    try {
+      // The backend decides whether this is feature guidance, help search, or
+      // a permission-scoped MR lookup. The frontend only renders its contract.
+      const response = await sendAssistantMessage({
+        message: messageText,
+        context: {
+          current_tab: assistantContext.currentTab || 'dashboard',
+          title: assistantContext.title,
+          detail: assistantContext.detail,
+        },
+        conversation,
       });
-      responseText = `${navigationIntent.label} 화면으로 이동했습니다. 화면에서 확인할 항목이나 처리 방법을 이어서 물어보셔도 됩니다.`;
-    } else if (/(현재\s*화면|화면\s*설명|무엇을\s*할)/i.test(messageText)) {
-      responseText = `${assistantContext.title} 화면입니다. ${assistantContext.detail}`;
-    } else {
-      responseText = '이 코파일럿은 구매 화면 안내와 메뉴 이동을 지원합니다. MR 승인, 아이템 등록, 협력사 선정 또는 PO 관리처럼 확인할 업무를 말씀해 주세요.';
-    }
-
-    window.setTimeout(() => {
       setSessions((previous) => previous.map((session) => (
         session.id === targetSessionId
-          ? { ...session, messages: [...session.messages, { sender: 'agent', text: responseText }] }
+          ? {
+              ...session,
+              messages: [...session.messages, {
+                sender: 'agent',
+                text: response.answer,
+                response,
+              }],
+            }
           : session
       )));
+    } catch (assistantError) {
+      const responseText = assistantError instanceof Error
+        ? assistantError.message
+        : '업무 안내 응답을 불러오지 못했습니다.';
+      setSessions((previous) => previous.map((session) => (
+        session.id === targetSessionId
+          ? { ...session, messages: [...session.messages, { sender: 'agent', text: responseText, isError: true }] }
+          : session
+      )));
+    } finally {
       setSending(false);
-    }, 350);
+    }
   };
 
   if (authState === 'checking') {
@@ -255,6 +271,7 @@ export function App() {
             setInput={setInput}
             onSend={handleSendMessage}
             onNewSession={handleCreateNewSession}
+            onAction={handleAssistantAction}
             context={assistantContext}
           />
         </>
