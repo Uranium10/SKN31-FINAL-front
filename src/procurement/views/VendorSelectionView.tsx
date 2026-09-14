@@ -89,6 +89,11 @@ interface VendorSelectionViewProps {
   onSelectSupplier: (groupId: string, supplierId: string) => Promise<boolean> | boolean;
   onSendPO: (groupId: string) => void;
   onWithdrawSupplierSelection: (groupId: string, reason: string) => void;
+  /** 견적 마감이 지났는데 아직 업체를 선정하지 않은 상태에서 'MR 취소'를 선택했을 때. */
+  onCancelMR: (groupId: string, reason: string) => Promise<boolean> | boolean;
+  /** 같은 상태에서 '재비딩'을 선택했을 때 - 지금까지 들어온 견적은 버리고
+   * 새 마감일로 RFQ를 다시 보낼 수 있도록 RFQ 대상 선택 단계로 되돌린다. */
+  onRebidQuotations: (groupId: string) => Promise<boolean> | boolean;
   onOpenSpecModalByItemCode: (itemCode: string) => void;
   onExtendDeadline: (groupId: string, newDate: string, newTime: string) => Promise<boolean> | boolean;
   onSendRFQ: (
@@ -233,6 +238,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onSelectSupplier,
   onSendPO,
   onWithdrawSupplierSelection,
+  onCancelMR,
+  onRebidQuotations,
   onExtendDeadline,
   onSendRFQ,
   onCheckQuotations,
@@ -277,6 +284,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // 5. 선정 철회/변경 모달
   const [changingGroup, setChangingGroup] = useState<VendorSelectionGroup | null>(null);
   const [changeReason, setChangeReason] = useState('');
+
+  // 6. 마감 지남 + 미선정 상태에서 'MR 취소' 모달 (재비딩은 확인창 하나로 바로 실행)
+  const [cancellingGroup, setCancellingGroup] = useState<VendorSelectionGroup | null>(null);
+  const [cancelMrReason, setCancelMrReason] = useState('');
+  const [isRebidding, setIsRebidding] = useState<string | null>(null);
   const [selectingSupplierId, setSelectingSupplierId] = useState<string | null>(null);
   const [resultModal, setResultModal] = useState<{
     title: string;
@@ -466,8 +478,27 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     return [...ranked, ...manual];
   }, [rfqManualSuppliers, rfqSupplierEmails, selectedGroup]);
 
+  // 이 MR(선택된 그룹) 안에서 과거 라운드에 수주 접수를 거절한 협력사 -
+  // id와 name 둘 다로 대조한다(직접 입력한 협력사는 RFQ 후보 쪽에서
+  // 원본 이름 문자열을 그대로 supplierId로 쓰기 때문).
+  const rejectedSupplierKeys = useMemo<Set<string>>(() => {
+    const entries = selectedGroup?.selectionHistory ?? [];
+    const keys = new Set<string>();
+    entries
+      .filter((entry) => entry.status === 'rejected')
+      .forEach((entry) => {
+        if (entry.supplierId) keys.add(entry.supplierId);
+        if (entry.supplierName) keys.add(entry.supplierName);
+      });
+    return keys;
+  }, [selectedGroup]);
+
+  const isRejectedSupplier = (candidate: RfqCandidateRow): boolean => (
+    rejectedSupplierKeys.has(candidate.supplierId) || rejectedSupplierKeys.has(candidate.supplierName)
+  );
+
   const selectedRfqCandidateCount = rfqCandidateRows.filter(
-    (candidate) => rfqSelectedSuppliers[candidate.supplierId],
+    (candidate) => rfqSelectedSuppliers[candidate.supplierId] && !isRejectedSupplier(candidate),
   ).length;
 
   // 1. MR 번호 클릭 처리 (MR 목록 내용 다 확인 가능하도록 설정)
@@ -576,7 +607,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
   const handleSelectAllRfqSuppliers = () => {
     setRfqSelectedSuppliers(Object.fromEntries(
-      rfqCandidateRows.map((candidate) => [candidate.supplierId, true]),
+      rfqCandidateRows
+        .filter((candidate) => !isRejectedSupplier(candidate))
+        .map((candidate) => [candidate.supplierId, true]),
     ));
     setRfqValidationMessage(null);
   };
@@ -592,7 +625,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     if (!selectedGroup) return;
 
     const selectedSupplierIds = rfqCandidateRows
-      .filter((candidate) => rfqSelectedSuppliers[candidate.supplierId])
+      .filter((candidate) => rfqSelectedSuppliers[candidate.supplierId] && !isRejectedSupplier(candidate))
       .map((candidate) => candidate.supplierId);
     const checkedCount = selectedSupplierIds.length;
     if (checkedCount === 0) {
@@ -731,6 +764,32 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setChangingGroup(null);
     setChangeReason('');
     setShowQuotationModal(true);
+  };
+
+  // 6. 마감 지남 + 미선정 상태 - 'MR 취소' 처리
+  const handleConfirmCancelMR = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!cancellingGroup || !cancelMrReason.trim()) return;
+    const ok = await onCancelMR(cancellingGroup.id, cancelMrReason.trim());
+    if (ok) {
+      setCancellingGroup(null);
+      setCancelMrReason('');
+    }
+  };
+
+  // 6. 마감 지남 + 미선정 상태 - '재비딩' 처리 (지금까지 받은 견적은 버리고
+  // 새 마감일로 RFQ 대상 선택 화면으로 되돌아간다)
+  const handleRebid = async (group: VendorSelectionGroup) => {
+    const confirmed = window.confirm(
+      `${group.mrNo} 건: 지금까지 들어온 견적을 모두 버리고 새 마감일로 RFQ를 다시 보냅니다. 계속할까요?`,
+    );
+    if (!confirmed) return;
+    setIsRebidding(group.id);
+    try {
+      await onRebidQuotations(group.id);
+    } finally {
+      setIsRebidding((current) => (current === group.id ? null : current));
+    }
   };
 
   const selectedApprovalQuotation = selectedGroup?.quotations.find(
@@ -939,6 +998,50 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         <span className="badge badge-gray" style={{ fontSize: '11px' }}>
                           <CheckCircle2 size={11} /> 마감 완료
                         </span>
+                      ) : group.deadlineDDay <= 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                          <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column' }}>
+                            <span>{group.deadlineDate} {group.deadlineTime}</span>
+                            <span className="badge badge-red" style={{ fontSize: '11px', fontWeight: 600, width: 'fit-content' }}>
+                              마감 지남
+                            </span>
+                          </div>
+                          {group.workflowStage === 'QUOTATION_COLLECTION' && (
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                              {respondedCount === 0 ? (
+                                <button
+                                  type="button"
+                                  className="btn-sm btn-reject"
+                                  onClick={() => { setCancellingGroup(group); setCancelMrReason(''); }}
+                                  style={{ fontSize: '10px', padding: '3px 8px' }}
+                                  title="제출된 견적이 없어 이 MR을 취소합니다."
+                                >
+                                  MR 취소
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn-sm btn-primary"
+                                  onClick={() => handleOpenQuotationModal(group)}
+                                  style={{ fontSize: '10px', padding: '3px 8px' }}
+                                  title="지금까지 들어온 견적으로 업체 선정을 진행합니다."
+                                >
+                                  이대로 선정 진행
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="btn-sm btn-outline"
+                                disabled={isRebidding === group.id}
+                                onClick={() => handleRebid(group)}
+                                style={{ fontSize: '10px', padding: '3px 8px' }}
+                                title="지금까지 들어온 견적을 버리고 새 마감일로 RFQ를 다시 보냅니다."
+                              >
+                                {isRebidding === group.id ? '처리 중...' : '재비딩'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <>
                           <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column' }}>
@@ -1291,18 +1394,27 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       {rfqCandidateRows
                         .map((q) => {
                           const rank = q.rank;
-                          const isChecked = Boolean(rfqSelectedSuppliers[q.supplierId]);
+                          const isRejected = isRejectedSupplier(q);
+                          const isChecked = !isRejected && Boolean(rfqSelectedSuppliers[q.supplierId]);
                           const sourceUrl = safeExternalUrl(q.sourceUrl);
 
                           return (
-                            <tr key={q.supplierId} style={{ backgroundColor: isChecked ? 'rgba(60,60,67,0.02)' : 'transparent' }}>
+                            <tr
+                              key={q.supplierId}
+                              style={{
+                                backgroundColor: isChecked ? 'rgba(60,60,67,0.02)' : 'transparent',
+                                opacity: isRejected ? 0.55 : 1,
+                              }}
+                            >
                               {/* 체크박스 */}
                               <td style={{ textAlign: 'center' }}>
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
+                                  disabled={isRejected}
                                   onChange={() => handleToggleRfqSupplier(q.supplierId)}
-                                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                  style={{ width: '16px', height: '16px', cursor: isRejected ? 'not-allowed' : 'pointer' }}
+                                  title={isRejected ? '이 MR에서 과거 라운드에 수주 접수를 거절한 협력사입니다.' : undefined}
                                 />
                               </td>
                               {/* 순위 */}
@@ -1320,6 +1432,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                     {q.supplierName}
                                     {rank === 1 && (
                                       <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 최우수]</span>
+                                    )}
+                                    {isRejected && (
+                                      <span
+                                        className="badge badge-red"
+                                        style={{ fontSize: '10px', marginLeft: '6px' }}
+                                        title="이 MR의 이전 라운드에서 수주 접수를 거절한 협력사입니다."
+                                      >
+                                        거절됨
+                                      </span>
                                     )}
                                   </span>
                                   {q.isManual && (
@@ -1942,6 +2063,57 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 </button>
                 <button type="submit" className="btn-warning" disabled={!changeReason.trim()}>
                   기존 요청 철회 후 재선정
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 팝업 모달 6: 마감 지남 + 미선정 상태 - 'MR 취소' 사유 입력 모달 */}
+      {cancellingGroup && (
+        <div className="modal-overlay" onClick={() => setCancellingGroup(null)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ width: '520px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <AlertTriangle size={22} color="var(--danger)" />
+                <div>
+                  <h3 style={{ margin: 0 }}>MR 취소</h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    {cancellingGroup.mrNo} · 견적 마감이 지났고 제출된 견적이 없습니다.
+                  </span>
+                </div>
+              </div>
+              <button type="button" className="icon-btn" onClick={() => setCancellingGroup(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmCancelMR}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-main)', backgroundColor: 'var(--danger-bg)', padding: '12px', borderRadius: '6px' }}>
+                  이 MR을 취소하면 발송된 RFQ와 관련 문서가 정리되고 Material Request가 취소 처리됩니다. 이 작업은 되돌릴 수 없습니다.
+                </div>
+                <div className="form-group">
+                  <label htmlFor="mr-cancel-reason">MR 취소 사유</label>
+                  <textarea
+                    id="mr-cancel-reason"
+                    className="form-input"
+                    rows={4}
+                    value={cancelMrReason}
+                    onChange={(event) => setCancelMrReason(event.target.value)}
+                    placeholder="예: 마감 시한까지 응찰한 협력사가 없어 MR을 취소합니다."
+                    autoFocus
+                    required
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn-outline" onClick={() => setCancellingGroup(null)}>
+                  닫기
+                </button>
+                <button type="submit" className="btn-reject" disabled={!cancelMrReason.trim()}>
+                  MR 취소 확정
                 </button>
               </div>
             </form>

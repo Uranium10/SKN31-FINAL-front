@@ -1227,6 +1227,56 @@ function ProcurementWorkspaceComponent({
     }
   };
 
+  // 견적 마감이 지났는데 아직 업체를 선정하지 않은 상태에서 '재비딩'을
+  // 선택했을 때 - handleCheckQuotations와 같은 check_quotations 대기
+  // 작업(pendingTask)에 { decision: 'rebid' }를 보낸다. 지금까지 들어온
+  // 견적/RFQ는 백엔드(check_quotations_command)에서 정리하고, 같은 후보
+  // 풀로 RFQ 대상 선택 단계로 되돌아간다.
+  const handleRebidQuotations = async (groupId: string) => {
+    const group = vendorGroups.find((entry) => entry.id === groupId);
+    if (!apiDataEnabled || !group?.pendingTaskId) {
+      showToast('현재 단계에 실행 가능한 재비딩 작업이 없습니다. 목록을 새로고침해 주세요.');
+      return false;
+    }
+    try {
+      await answerProcurementTask(
+        group.pendingTaskId,
+        { decision: 'rebid' },
+        group.pendingTask?.version,
+      );
+      clearNotificationsForMR(group.mrNo);
+      showToast(`${group.mrNo} 건: 기존 견적을 정리하고 새 RFQ 대상 선택 단계로 되돌아갑니다.`);
+      await loadMRsFromApi(false);
+      return true;
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '재비딩 처리에 실패했습니다.');
+      return false;
+    }
+  };
+
+  // 견적 마감이 지났는데 아직 업체를 선정하지 않은 상태에서 '협력사
+  // 선정' 화면의 'MR 취소' 버튼을 눌렀을 때 - PO 관리 화면의
+  // handleCancelMR(poId)와 동일하게 기존 reject_case 플로우를 그대로
+  // 재사용한다(RFQ/Supplier Quotation 정리 + MR 취소가 이미 거기서
+  // 처리됨).
+  const handleCancelMrFromVendorSelection = async (groupId: string, reason: string) => {
+    const target = vendorGroups.find((group) => group.id === groupId);
+    if (!target?.backendCaseId) {
+      showToast('실제 구매 작업 ID를 찾지 못해 MR을 취소할 수 없습니다. 목록을 새로고침해 주세요.');
+      return false;
+    }
+    try {
+      await rejectProcurementCase(target.backendCaseId, reason);
+      clearNotificationsForMR(target.mrNo);
+      showToast(`${target.mrNo} 건이 취소 처리되었습니다.`);
+      await loadMRsFromApi(false);
+      return true;
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'MR 취소 처리에 실패했습니다.');
+      return false;
+    }
+  };
+
   const handleSearchSuppliers = useCallback(async (query: string, field: 'name' | 'email') => {
     if (!apiDataEnabled) return [];
 
@@ -2050,6 +2100,8 @@ function ProcurementWorkspaceComponent({
                 onSelectSupplier={handleSelectSupplier}
                 onSendPO={handleSendPO}
                 onWithdrawSupplierSelection={handleWithdrawSupplierSelection}
+                onCancelMR={handleCancelMrFromVendorSelection}
+                onRebidQuotations={handleRebidQuotations}
                 onOpenSpecModalByItemCode={handleOpenSpecByItemCode}
                 onExtendDeadline={handleExtendDeadline}
                 onSendRFQ={handleSendRFQ}
