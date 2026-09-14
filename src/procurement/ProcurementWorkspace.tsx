@@ -41,6 +41,7 @@ import {
   extendQuotationDeadline,
   listProcurementCases,
   rejectProcurementCase,
+  searchSuppliers,
   startProcurementCase,
   syncDraftProcurementCases,
   type ProcurementDataMode,
@@ -1179,6 +1180,16 @@ function ProcurementWorkspaceComponent({
     }
   };
 
+  const handleSearchSuppliers = async (query: string) => {
+    if (!apiDataEnabled) return [];
+    try {
+      return await searchSuppliers(query);
+    } catch {
+      // 자동완성은 실패해도 입력 자체를 막을 이유가 없어 조용히 빈 배열 반환.
+      return [];
+    }
+  };
+
   const handleOpenSpecByItemCode = async (
     itemCode: string,
     requestSpecificationOverride?: string,
@@ -1755,6 +1766,7 @@ function ProcurementWorkspaceComponent({
                 onSendRFQ={handleSendRFQ}
                 onCheckQuotations={handleCheckQuotations}
                 onDownloadAttachment={(attachment) => void handleDownloadAttachment(attachment)}
+                onSearchSuppliers={handleSearchSuppliers}
               />
             )}
 

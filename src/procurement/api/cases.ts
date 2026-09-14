@@ -179,6 +179,38 @@ export const extendQuotationDeadline = async (caseId: string, deadlineAt: string
   await parseJson(response);
 };
 
+export interface SupplierSearchResult {
+  name: string;
+  supplierName: string;
+  email: string | null;
+  phone: string | null;
+}
+
+interface SupplierSearchResponse {
+  items: Array<{
+    name?: string;
+    supplier_name?: string;
+    email?: string | null;
+    phone?: string | null;
+  }>;
+}
+
+/** '협력사 직접 입력' 자동완성 드롭다운이 호출하는 기존 supplier 풀 검색. */
+export const searchSuppliers = async (query: string): Promise<SupplierSearchResult[]> => {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const response = await fetchWithAuth(
+    `/api/procurement/suppliers/search?q=${encodeURIComponent(trimmed)}`,
+  );
+  const body = await parseJson<SupplierSearchResponse>(response);
+  return (Array.isArray(body.items) ? body.items : []).map((row) => ({
+    name: row.name || row.supplier_name || '',
+    supplierName: row.supplier_name || row.name || '',
+    email: row.email ?? null,
+    phone: row.phone ?? null,
+  }));
+};
+
 const text = (value: unknown, fallback = ''): string => (
   typeof value === 'string' && value.trim() ? value : fallback
 );

@@ -100,6 +100,16 @@ interface VendorSelectionViewProps {
   ) => Promise<boolean> | boolean;
   onCheckQuotations: (groupId: string) => Promise<boolean> | boolean;
   onDownloadAttachment?: (attachment: MaterialRequest['attachmentFiles'][number]) => void;
+  /** '협력사 직접 입력' 자동완성 드롭다운 - 이름으로 기존 supplier 풀을 검색.
+   * 안 넘기면 드롭다운 없이 지금처럼 순수 텍스트 입력으로 동작한다. */
+  onSearchSuppliers?: (query: string) => Promise<ManualSupplierSuggestion[]>;
+}
+
+export interface ManualSupplierSuggestion {
+  name: string;
+  supplierName: string;
+  email: string | null;
+  phone: string | null;
 }
 
 interface RfqCandidateRow extends Omit<SupplierQuotation, 'scores'> {
@@ -225,6 +235,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onSendRFQ,
   onCheckQuotations,
   onDownloadAttachment,
+  onSearchSuppliers,
 }) => {
   // 모달 상태
   const [selectedGroup, setSelectedGroup] = useState<VendorSelectionGroup | null>(null);
@@ -242,6 +253,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const [rfqManualSuppliers, setRfqManualSuppliers] = useState<string[]>([]);
   const [rfqManualSupplierName, setRfqManualSupplierName] = useState('');
   const [rfqManualSupplierEmail, setRfqManualSupplierEmail] = useState('');
+  const [manualSupplierSuggestions, setManualSupplierSuggestions] = useState<ManualSupplierSuggestion[]>([]);
+  const [isSearchingSuppliers, setIsSearchingSuppliers] = useState(false);
+  const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
   const [rfqEmailErrors, setRfqEmailErrors] = useState<Record<string, boolean>>({});
   const [rfqValidationMessage, setRfqValidationMessage] = useState<string | null>(null);
 
@@ -308,6 +322,45 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       setSelectedGroup(refreshedGroup);
     }
   }, [selectedGroup, vendorGroups]);
+
+  // '협력사 직접 입력' 이름란에 타이핑하면 기존 supplier 풀에서 디바운스
+  // 검색해 드롭다운 후보를 채운다. Tavily 등으로 못 찾은 협력사를 수동
+  // 등록할 때, 이미 등록된 협력사가 있으면 그걸 먼저 골라 쓸 수 있게 하는
+  // 용도라 - 후보가 없으면 그냥 지금처럼 신규 등록으로 진행하면 된다.
+  useEffect(() => {
+    if (!onSearchSuppliers) return;
+    const query = rfqManualSupplierName.trim();
+    if (query.length < 1) {
+      setManualSupplierSuggestions([]);
+      setIsSearchingSuppliers(false);
+      return;
+    }
+    let cancelled = false;
+    setIsSearchingSuppliers(true);
+    const timer = window.setTimeout(() => {
+      onSearchSuppliers(query)
+        .then((results) => {
+          if (cancelled) return;
+          setManualSupplierSuggestions(results);
+        })
+        .catch(() => {
+          if (!cancelled) setManualSupplierSuggestions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearchingSuppliers(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [rfqManualSupplierName, onSearchSuppliers]);
+
+  const handlePickSupplierSuggestion = (suggestion: ManualSupplierSuggestion) => {
+    setRfqManualSupplierName(suggestion.supplierName);
+    setRfqManualSupplierEmail(suggestion.email || '');
+    setShowSupplierSuggestions(false);
+  };
 
   const vendorFilterOptions = useMemo(() => Object.fromEntries(VENDOR_COLUMNS.map((column) => [
     column.key,
@@ -1329,14 +1382,73 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 <div style={{ backgroundColor: 'var(--bg-input)', padding: '16px', borderRadius: '8px', display: 'grid', gap: '10px' }}>
                   <h4 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>협력사 직접 입력</h4>
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(220px, 1.4fr) auto', gap: '8px' }}>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={rfqManualSupplierName}
-                      onChange={(event) => setRfqManualSupplierName(event.target.value)}
-                      placeholder="협력사명"
-                      aria-label="직접 입력 협력사명"
-                    />
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={rfqManualSupplierName}
+                        onChange={(event) => {
+                          setRfqManualSupplierName(event.target.value);
+                          setShowSupplierSuggestions(true);
+                        }}
+                        onFocus={() => setShowSupplierSuggestions(true)}
+                        onBlur={() => window.setTimeout(() => setShowSupplierSuggestions(false), 150)}
+                        placeholder="협력사명"
+                        aria-label="직접 입력 협력사명"
+                        autoComplete="off"
+                      />
+                      {showSupplierSuggestions && rfqManualSupplierName.trim().length > 0 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 4px)',
+                            left: 0,
+                            right: 0,
+                            zIndex: 20,
+                            backgroundColor: 'var(--bg-surface, #fff)',
+                            border: '1px solid var(--border-color, #d0d5dd)',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                            maxHeight: '220px',
+                            overflowY: 'auto',
+                          }}
+                        >
+                          {isSearchingSuppliers && (
+                            <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                              검색 중...
+                            </div>
+                          )}
+                          {!isSearchingSuppliers && manualSupplierSuggestions.length === 0 && (
+                            <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                              기존 협력사 풀에 없음 · 신규로 등록됩니다
+                            </div>
+                          )}
+                          {!isSearchingSuppliers && manualSupplierSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion.name}
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => handlePickSupplierSuggestion(suggestion)}
+                              style={{
+                                display: 'block',
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '8px 12px',
+                                border: 'none',
+                                background: 'transparent',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                              }}
+                            >
+                              <div style={{ fontWeight: 600 }}>{suggestion.supplierName}</div>
+                              <div style={{ color: 'var(--text-muted)' }}>
+                                {suggestion.email || '이메일 없음'}{suggestion.phone ? ` · ${suggestion.phone}` : ''}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <input
                       type="email"
                       className="form-input"
