@@ -1825,6 +1825,41 @@ function ProcurementWorkspaceComponent({
     }
   };
 
+  // 협력사 PR 거절 시, 이미 제출된 다른 협력사의 견적서가 남아있으면
+  // RFQ를 처음부터 다시 보내지 않고 그 협력사를 바로 다음 PR 대상으로
+  // 선택한다(백엔드 handle_pr_rejection_command의 select_next_supplier
+  // 결정으로 request_pr 단계로 바로 이동).
+  const handleSelectNextSupplier = async (poId: string, supplierId: string) => {
+    const rejectedPO = poItems.find((item) => item.id === poId);
+    if (!rejectedPO) return;
+    if (!supplierId) {
+      showToast('선택할 협력사 정보를 확인하지 못했습니다. 목록을 새로고침해 주세요.');
+      return;
+    }
+
+    if (apiDataEnabled) {
+      if (!rejectedPO.pendingTaskId || rejectedPO.pendingTask?.taskType !== 'pr_rejection_review') {
+        showToast('현재 처리 가능한 PR 거절 검토 작업이 없습니다. 목록을 새로고침해 주세요.');
+        return;
+      }
+      try {
+        await answerProcurementTask(
+          rejectedPO.pendingTaskId,
+          { decision: 'select_next_supplier', supplier: supplierId },
+          rejectedPO.pendingTask.version,
+        );
+        clearNotificationsForMR(rejectedPO.mrNo);
+        showToast(`${rejectedPO.mrNo} 건: ${supplierId}에게 새 PR을 요청합니다.`);
+        await loadMRsFromApi(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '차순위 협력사 선정에 실패했습니다.');
+      }
+      return;
+    }
+
+    showToast('현재 화면에서는 기존 견적서 재선택을 지원하지 않습니다.');
+  };
+
   // 협력사 PR 거절 시, PO 관리에서 빠져 협력사 선정 화면(선정 전 상태)으로 되돌리는 처리
   const handleReturnToVendorSelection = async (poId: string) => {
     const rejectedPO = poItems.find((item) => item.id === poId);
@@ -1836,9 +1871,12 @@ function ProcurementWorkspaceComponent({
         return;
       }
       try {
-        // 백엔드에는 "기존 견적만 유지한 채 재선정" 결정이 없어 재비딩(rebid)으로
-        // 보낸다 — 견적은 초기화되지만 케이스가 협력사 선정 화면에 뜨는 stage로
-        // 실제로 돌아가는 유일한 방법이다.
+        // '재비딩'은 RFQ 자체를 새로 보내는 결정(rebid) - 기존 견적/선정
+        // 결과는 초기화되지만, 추천/직접추가했던 협력사 풀(supplier_candidates)은
+        // 백엔드에서 그대로 남겨두므로 select_rfq_targets 화면에서 같은
+        // 후보 목록으로 다시 고를 수 있다. 아직 견적서를 낸 다른 협력사가
+        // 남아있을 땐 이 버튼 대신 "기존 견적서에서 재선택"(select_next_supplier)을
+        // 먼저 권해야 한다.
         await answerProcurementTask(
           rejectedPO.pendingTaskId,
           { decision: 'rebid' },
@@ -2123,6 +2161,7 @@ function ProcurementWorkspaceComponent({
                 onRequestPR={handleRequestPR}
                 onSupplierAcceptOrder={handleSupplierAcceptOrder}
                 onReturnToVendorSelection={handleReturnToVendorSelection}
+                onSelectNextSupplier={handleSelectNextSupplier}
                 onCancelMR={handleCancelMR}
                 onMarkArrived={handleMarkPOArrived}
                 onSubmitScorecard={handleSubmitScorecard}

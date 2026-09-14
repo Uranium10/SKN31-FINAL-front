@@ -53,6 +53,7 @@ interface POManagementViewProps {
   onRequestPR: (poId: string) => void;
   onSupplierAcceptOrder: (poId: string, decision?: 'accept' | 'reject', reason?: string) => void;
   onReturnToVendorSelection: (poId: string) => void;
+  onSelectNextSupplier?: (poId: string, supplierId: string) => void;
   onCancelMR: (poId: string) => void;
   onMarkArrived: (poId: string) => void;
   onSubmitScorecard: (poId: string, scores: SupplierScores) => void;
@@ -130,6 +131,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onRequestPR,
   onSupplierAcceptOrder,
   onReturnToVendorSelection,
+  onSelectNextSupplier,
   onCancelMR,
   onMarkArrived,
   onSubmitScorecard,
@@ -137,6 +139,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
 }) => {
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
   const [selectedRejectReason, setSelectedRejectReason] = useState<POItem | null>(null);
+  const [showReselectList, setShowReselectList] = useState<boolean>(false);
   const [emailModalItem, setEmailModalItem] = useState<POItem | null>(null);
   const [approvalModalItem, setApprovalModalItem] = useState<POItem | null>(null);
   const [scorecardItem, setScorecardItem] = useState<POItem | null>(null);
@@ -216,6 +219,32 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   };
 
   const isDraftComplete = SCORECARD_CRITERIA.every((criterion) => draftScores[criterion.key]);
+
+  // 수주 거절(pr_rejection_review) 대기 작업의 payload에는 백엔드가
+  // "이 거절된 공급사 말고 아직 견적을 제출한 다른 협력사가 남아있는지"
+  // (remaining_suppliers)와 "이 MR에서 지금까지 수주를 거절한 협력사
+  // 누적 이력"(rejected_suppliers)을 함께 내려준다. 후자는 여러 라운드에
+  // 걸쳐 재선택을 반복할 때 예전에 거절했던 협력사가 남은 후보에 다시
+  // 나타날 수 있어서(A거절->B선택->B도거절 시 remaining에 A가 재등장)
+  // 그런 협력사를 빨간 배지로 표시하는 데 쓴다.
+  const canReselectFromQuotations = selectedRejectReason?.pendingTask?.taskType === 'pr_rejection_review';
+  const remainingQuotationSuppliers = useMemo<Array<{ name?: string; supplier?: string; reason?: string }>>(() => {
+    if (!canReselectFromQuotations) return [];
+    const payload = selectedRejectReason?.pendingTask?.payload as Record<string, unknown> | undefined;
+    const raw = payload?.remaining_suppliers;
+    return Array.isArray(raw) ? (raw as Array<{ name?: string; supplier?: string; reason?: string }>) : [];
+  }, [canReselectFromQuotations, selectedRejectReason]);
+  const previouslyRejectedSupplierKeys = useMemo<Set<string>>(() => {
+    const payload = selectedRejectReason?.pendingTask?.payload as Record<string, unknown> | undefined;
+    const raw = payload?.rejected_suppliers;
+    const keys = new Set<string>();
+    if (Array.isArray(raw)) {
+      (raw as Array<{ supplier?: string }>).forEach((entry) => {
+        if (entry?.supplier) keys.add(entry.supplier);
+      });
+    }
+    return keys;
+  }, [selectedRejectReason]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -422,7 +451,10 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         액션이 없어(자동으로 PO 생성 진행) 여기 더 보여줄 게
                         없다. */}
                     {!item.poCreated && (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') && (
-                      <button className="btn-sm btn-reject" onClick={() => setSelectedRejectReason(item)}>
+                      <button
+                        className="btn-sm btn-reject"
+                        onClick={() => { setSelectedRejectReason(item); setShowReselectList(false); }}
+                      >
                         <AlertTriangle size={14} />
                         <span>수주 거절 사유</span>
                       </button>
@@ -674,14 +706,18 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
 
       {/* PR / 수주 거절 사유 확인 Modal */}
       {selectedRejectReason && (
-        <div className="modal-overlay" onClick={() => setSelectedRejectReason(null)}>
+        <div className="modal-overlay" onClick={() => { setSelectedRejectReason(null); setShowReselectList(false); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '480px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <AlertTriangle size={20} color="var(--danger)" />
                 <h3>공급사 수주 거절 사유 확인 ({selectedRejectReason.mrNo})</h3>
               </div>
-              <button type="button" className="icon-btn" onClick={() => setSelectedRejectReason(null)}>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => { setSelectedRejectReason(null); setShowReselectList(false); }}
+              >
                 <X size={18} />
               </button>
             </div>
@@ -702,20 +738,93 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               >
                 {selectedRejectReason.prRejectionReason || selectedRejectReason.rejectReason || '사유가 작성되지 않았습니다.'}
               </div>
+
+              {canReselectFromQuotations && remainingQuotationSuppliers.length > 0 && (
+                <div style={{ marginTop: '14px' }}>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    onClick={() => setShowReselectList((prev) => !prev)}
+                  >
+                    {showReselectList
+                      ? '접기'
+                      : `기존 견적서에서 재선택 (남은 협력사 ${remainingQuotationSuppliers.length}곳)`}
+                  </button>
+                  {showReselectList && (
+                    <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {remainingQuotationSuppliers.map((row) => {
+                        const supplierId = row.supplier || '';
+                        const wasRejectedBefore = previouslyRejectedSupplierKeys.has(supplierId);
+                        return (
+                          <div
+                            key={supplierId || row.name}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '10px',
+                              border: '1px solid var(--border)',
+                              borderRadius: '6px',
+                              padding: '8px 10px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                              <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-main)' }}>
+                                {supplierId || '이름 미상'}
+                                {wasRejectedBefore && (
+                                  <span
+                                    className="badge badge-red"
+                                    style={{ fontSize: '10px', marginLeft: '6px' }}
+                                    title="이 MR에서 예전에 수주를 거절했던 협력사입니다."
+                                  >
+                                    거절됨
+                                  </span>
+                                )}
+                              </span>
+                              {row.reason && (
+                                <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{row.reason}</span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-sm btn-primary"
+                              disabled={!supplierId}
+                              onClick={() => {
+                                onSelectNextSupplier?.(selectedRejectReason.id, supplierId);
+                                setSelectedRejectReason(null);
+                                setShowReselectList(false);
+                              }}
+                            >
+                              이 업체로 재선정
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
-              <button type="button" className="btn-outline" onClick={() => setSelectedRejectReason(null)}>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => { setSelectedRejectReason(null); setShowReselectList(false); }}
+              >
                 닫기
               </button>
               <button
                 type="button"
                 className="btn-outline"
+                title="협력사 선택부터 마감일 지정까지 RFQ 전체를 다시 진행합니다."
                 onClick={() => {
                   onReturnToVendorSelection(selectedRejectReason.id);
                   setSelectedRejectReason(null);
+                  setShowReselectList(false);
                 }}
               >
-                협력사 재선정으로 보내기
+                재비딩
               </button>
               <button
                 type="button"
@@ -724,6 +833,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   if (!window.confirm(`${selectedRejectReason.mrNo} 건을 취소하시겠습니까?\nERP에서 MR이 취소(Cancel/Discard) 처리되며 되돌릴 수 없습니다.`)) return;
                   onCancelMR(selectedRejectReason.id);
                   setSelectedRejectReason(null);
+                  setShowReselectList(false);
                 }}
               >
                 MR 취소
