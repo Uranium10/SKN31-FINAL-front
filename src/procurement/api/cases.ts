@@ -199,12 +199,19 @@ interface SupplierSearchResponse {
   }>;
 }
 
-/** '협력사 직접 입력' 자동완성 드롭다운이 호출하는 기존 supplier 풀 검색. */
-export const searchSuppliers = async (query: string): Promise<SupplierSearchResult[]> => {
+/**
+ * '협력사 직접 입력' 자동완성 드롭다운이 호출하는 기존 supplier 풀 검색.
+ * field='name'이면 협력사명만, field='email'이면 이메일만 대조해서
+ * 이름란/이메일란 드롭다운에 서로 다른 결과가 뜨게 한다.
+ */
+export const searchSuppliers = async (
+  query: string,
+  field: 'name' | 'email' = 'name',
+): Promise<SupplierSearchResult[]> => {
   const trimmed = query.trim();
   if (!trimmed) return [];
   const response = await fetchWithAuth(
-    `/api/procurement/suppliers/search?q=${encodeURIComponent(trimmed)}`,
+    `/api/procurement/suppliers/search?q=${encodeURIComponent(trimmed)}&field=${field}`,
   );
   const body = await parseJson<SupplierSearchResponse>(response);
   return (Array.isArray(body.items) ? body.items : []).map((row) => ({

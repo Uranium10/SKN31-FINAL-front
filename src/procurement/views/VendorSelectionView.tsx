@@ -100,9 +100,11 @@ interface VendorSelectionViewProps {
   ) => Promise<boolean> | boolean;
   onCheckQuotations: (groupId: string) => Promise<boolean> | boolean;
   onDownloadAttachment?: (attachment: MaterialRequest['attachmentFiles'][number]) => void;
-  /** '협력사 직접 입력' 자동완성 드롭다운 - 이름으로 기존 supplier 풀을 검색.
-   * 안 넘기면 드롭다운 없이 지금처럼 순수 텍스트 입력으로 동작한다. */
-  onSearchSuppliers?: (query: string) => Promise<ManualSupplierSuggestion[]>;
+  /** '협력사 직접 입력' 자동완성 드롭다운 - 이름/이메일 각 입력란에서 기존
+   * supplier 풀을 필드별로 검색한다(field='name'이면 이름만, 'email'이면
+   * 이메일만 대조된 결과). 안 넘기면 드롭다운 없이 지금처럼 순수 텍스트
+   * 입력으로 동작한다. */
+  onSearchSuppliers?: (query: string, field: 'name' | 'email') => Promise<ManualSupplierSuggestion[]>;
 }
 
 export interface ManualSupplierSuggestion {
@@ -256,6 +258,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const [manualSupplierSuggestions, setManualSupplierSuggestions] = useState<ManualSupplierSuggestion[]>([]);
   const [isSearchingSuppliers, setIsSearchingSuppliers] = useState(false);
   const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
+  const [emailSupplierSuggestions, setEmailSupplierSuggestions] = useState<ManualSupplierSuggestion[]>([]);
+  const [isSearchingSupplierEmails, setIsSearchingSupplierEmails] = useState(false);
+  const [showEmailSuggestions, setShowEmailSuggestions] = useState(false);
   const [rfqEmailErrors, setRfqEmailErrors] = useState<Record<string, boolean>>({});
   const [rfqValidationMessage, setRfqValidationMessage] = useState<string | null>(null);
 
@@ -338,7 +343,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     let cancelled = false;
     setIsSearchingSuppliers(true);
     const timer = window.setTimeout(() => {
-      onSearchSuppliers(query)
+      onSearchSuppliers(query, 'name')
         .then((results) => {
           if (cancelled) return;
           setManualSupplierSuggestions(results);
@@ -356,10 +361,43 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     };
   }, [rfqManualSupplierName, onSearchSuppliers]);
 
+  // '협력사 직접 입력' 이메일란도 이름란과 똑같은 방식으로, 다만 이메일
+  // 필드만 대조한 결과를 별도로 디바운스 검색해 이메일란 전용 드롭다운에
+  // 채운다 - 이름란 드롭다운과 결과가 섞이면 안 된다.
+  useEffect(() => {
+    if (!onSearchSuppliers) return;
+    const query = rfqManualSupplierEmail.trim();
+    if (query.length < 1) {
+      setEmailSupplierSuggestions([]);
+      setIsSearchingSupplierEmails(false);
+      return;
+    }
+    let cancelled = false;
+    setIsSearchingSupplierEmails(true);
+    const timer = window.setTimeout(() => {
+      onSearchSuppliers(query, 'email')
+        .then((results) => {
+          if (cancelled) return;
+          setEmailSupplierSuggestions(results);
+        })
+        .catch(() => {
+          if (!cancelled) setEmailSupplierSuggestions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearchingSupplierEmails(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [rfqManualSupplierEmail, onSearchSuppliers]);
+
   const handlePickSupplierSuggestion = (suggestion: ManualSupplierSuggestion) => {
     setRfqManualSupplierName(suggestion.supplierName);
     setRfqManualSupplierEmail(suggestion.email || '');
     setShowSupplierSuggestions(false);
+    setShowEmailSuggestions(false);
   };
 
   const vendorFilterOptions = useMemo(() => Object.fromEntries(VENDOR_COLUMNS.map((column) => [
@@ -1449,14 +1487,73 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         </div>
                       )}
                     </div>
-                    <input
-                      type="email"
-                      className="form-input"
-                      value={rfqManualSupplierEmail}
-                      onChange={(event) => setRfqManualSupplierEmail(event.target.value)}
-                      placeholder="contact@example.com"
-                      aria-label="직접 입력 협력사 이메일"
-                    />
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="email"
+                        className="form-input"
+                        value={rfqManualSupplierEmail}
+                        onChange={(event) => {
+                          setRfqManualSupplierEmail(event.target.value);
+                          setShowEmailSuggestions(true);
+                        }}
+                        onFocus={() => setShowEmailSuggestions(true)}
+                        onBlur={() => window.setTimeout(() => setShowEmailSuggestions(false), 150)}
+                        placeholder="contact@example.com"
+                        aria-label="직접 입력 협력사 이메일"
+                        autoComplete="off"
+                      />
+                      {showEmailSuggestions && rfqManualSupplierEmail.trim().length > 0 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 4px)',
+                            left: 0,
+                            right: 0,
+                            zIndex: 20,
+                            backgroundColor: 'var(--bg-surface, #fff)',
+                            border: '1px solid var(--border-color, #d0d5dd)',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                            maxHeight: '220px',
+                            overflowY: 'auto',
+                          }}
+                        >
+                          {isSearchingSupplierEmails && (
+                            <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                              검색 중...
+                            </div>
+                          )}
+                          {!isSearchingSupplierEmails && emailSupplierSuggestions.length === 0 && (
+                            <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                              기존 협력사 풀에 없음 · 신규로 등록됩니다
+                            </div>
+                          )}
+                          {!isSearchingSupplierEmails && emailSupplierSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion.name}
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => handlePickSupplierSuggestion(suggestion)}
+                              style={{
+                                display: 'block',
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '8px 12px',
+                                border: 'none',
+                                background: 'transparent',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                              }}
+                            >
+                              <div style={{ fontWeight: 600 }}>{suggestion.email || '이메일 없음'}</div>
+                              <div style={{ color: 'var(--text-muted)' }}>
+                                {suggestion.supplierName}{suggestion.phone ? ` · ${suggestion.phone}` : ''}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <button type="button" className="btn-outline" onClick={handleAddManualSupplier}>
                       + 대상 추가
                     </button>

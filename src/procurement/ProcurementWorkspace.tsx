@@ -1227,11 +1227,11 @@ function ProcurementWorkspaceComponent({
     }
   };
 
-  const handleSearchSuppliers = useCallback(async (query: string) => {
+  const handleSearchSuppliers = useCallback(async (query: string, field: 'name' | 'email') => {
     if (!apiDataEnabled) return [];
 
     try {
-      return await searchSuppliers(query);
+      return await searchSuppliers(query, field);
     } catch (error) {
       console.error('[Supplier Search] failed:', error);
       return [];
