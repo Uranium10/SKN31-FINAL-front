@@ -1227,15 +1227,16 @@ function ProcurementWorkspaceComponent({
     }
   };
 
-  const handleSearchSuppliers = async (query: string) => {
+  const handleSearchSuppliers = useCallback(async (query: string) => {
     if (!apiDataEnabled) return [];
+
     try {
       return await searchSuppliers(query);
-    } catch {
-      // 자동완성은 실패해도 입력 자체를 막을 이유가 없어 조용히 빈 배열 반환.
+    } catch (error) {
+      console.error('[Supplier Search] failed:', error);
       return [];
     }
-  };
+  }, []);
 
   const handleOpenSpecByItemCode = async (
     itemCode: string,
