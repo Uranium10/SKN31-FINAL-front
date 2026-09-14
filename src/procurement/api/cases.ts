@@ -621,6 +621,12 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     itemCode: request.itemCode,
     department: request.department,
     selectedSupplier,
+    // ⚠️ 예전에는 이 필드가 아예 채워지지 않아서(타입에는 있는데 여기서
+    // 한 번도 값을 안 넣어줌) PO 관리 화면에 협력사 이메일을 보여줄 수가
+    // 없었다. 이미 위에서 최종 선정된 Supplier Quotation을 찾아놨으니
+    // 거기서 이메일을 가져온다 - PR 발송 전이라 prSupplierEmail이 아직
+    // 없는 경우에도 협력사 이메일을 바로 볼 수 있다.
+    supplierEmail: selectedQuotation?.email || text(values.pr_supplier_email) || undefined,
     totalAmount: directTotalAmount
       || quotationTotalAmount
       || request.totalPrice

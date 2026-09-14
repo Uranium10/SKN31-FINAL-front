@@ -27,12 +27,13 @@ import {
   Send,
 } from 'lucide-react';
 
-type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'amount' | 'promisedDate' | 'receivedDate' | 'payment' | 'status';
+type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'supplier' | 'amount' | 'promisedDate' | 'receivedDate' | 'payment' | 'status';
 
 const PO_COLUMNS: readonly TableColumnDefinition<POColumnKey>[] = [
   { key: 'poNo', label: 'PO 번호', defaultWidth: 175, minWidth: 130 },
   { key: 'mrNo', label: 'MR 번호', defaultWidth: 175, minWidth: 135 },
   { key: 'item', label: '품목명 및 아이템코드', defaultWidth: 250, minWidth: 180 },
+  { key: 'supplier', label: '협력사', defaultWidth: 190, minWidth: 140 },
   { key: 'amount', label: '발주금액', defaultWidth: 145, minWidth: 110, align: 'right', filterMode: 'number-range' },
   { key: 'promisedDate', label: '약정 납기일', defaultWidth: 145, minWidth: 115, filterMode: 'date-range' },
   { key: 'receivedDate', label: '실제 수령일', defaultWidth: 145, minWidth: 115, filterMode: 'date-range' },
@@ -110,6 +111,7 @@ const poFilterValue = (item: POItem, key: POColumnKey): string | number => {
     case 'poNo': return item.poNo ?? '발주 대기';
     case 'mrNo': return item.mrNo;
     case 'item': return `${item.itemName} · ${item.itemCode}`;
+    case 'supplier': return item.selectedSupplier || '협력사 미지정';
     case 'amount': return item.totalAmount;
     case 'promisedDate': return item.promisedDeliveryDate ?? item.dueDate;
     case 'receivedDate': return item.fullReceiptDate ?? item.arrivedDate ?? item.firstReceiptDate ?? '-';
@@ -285,7 +287,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                     <StageMovePlaceholderRow
                       key={placeholder.id}
                       placeholder={placeholder}
-                      colSpan={8}
+                      colSpan={9}
                       onNavigate={onNavigateMovePlaceholder}
                       onDismiss={onDismissMovePlaceholder}
                     />
@@ -324,6 +326,19 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                       {item.itemName} ({item.itemCode})
                     </span>
                   </button>
+                </td>
+                {/* 협력사 (선정된 공급사명 + 이메일) */}
+                <td>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                      {item.selectedSupplier || '협력사 미지정'}
+                    </span>
+                    {item.supplierEmail && (
+                      <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
+                        {item.supplierEmail}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
                   {item.totalAmount > 0 ? `₩${item.totalAmount.toLocaleString()}` : '금액 확인 중'}
@@ -391,20 +406,21 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         <span>PR 요청</span>
                       </button>
                     )}
-                    {!item.poCreated && (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') && (
-                      <>
-                        <span className="badge badge-gray"><Clock size={12} /> PR 요청 · 수주접수 대기</span>
-                        {!isApiMode && (
-                          <button className="btn-sm btn-outline" onClick={() => setEmailModalItem(item)}>
-                            <Mail size={12} />
-                            <span>이메일/수주접수</span>
-                          </button>
-                        )}
-                      </>
+                    {/* ⚠️ 바로 위에서 getOverallProgress()가 이미 'PR 요청 · 수주접수
+                        대기' 배지를 보여주고 있어서, 여기서 같은 문구의 배지를
+                        또 띄우면 화면에 똑같은 문구가 두 번 나온다(스크린샷으로
+                        지적됨). 이 자리에는 그 상태에서 취할 수 있는 액션
+                        (이메일/수주접수 버튼)만 추가한다. */}
+                    {!item.poCreated && (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') && !isApiMode && (
+                      <button className="btn-sm btn-outline" onClick={() => setEmailModalItem(item)}>
+                        <Mail size={12} />
+                        <span>이메일/수주접수</span>
+                      </button>
                     )}
-                    {!item.poCreated && (item.prStatus === 'ACCEPTED' || item.supplierApprovalStatus === 'accepted' || item.supplierApprovalStatus === 'approved') && (
-                      <span className="badge badge-green"><CheckCircle2 size={12} /> 수주접수 · PO 생성 중</span>
-                    )}
+                    {/* ACCEPTED 상태도 마찬가지 - '수주접수 · PO 생성 중'은 이미
+                        위 요약 배지에 나오고, 이 단계는 버이어가 취할 별도
+                        액션이 없어(자동으로 PO 생성 진행) 여기 더 보여줄 게
+                        없다. */}
                     {!item.poCreated && (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') && (
                       <button className="btn-sm btn-reject" onClick={() => setSelectedRejectReason(item)}>
                         <AlertTriangle size={14} />
@@ -457,14 +473,14 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 <StageMovePlaceholderRow
                   key={placeholder.id}
                   placeholder={placeholder}
-                  colSpan={8}
+                  colSpan={9}
                   onNavigate={onNavigateMovePlaceholder}
                   onDismiss={onDismissMovePlaceholder}
                 />
               ))}
             {visiblePOItems.length === 0 && movePlaceholders.length === 0 && (
               <tr>
-                <td colSpan={8} className="table-empty-state">
+                <td colSpan={9} className="table-empty-state">
                   발주 시작 또는 입고 진행 중인 건이 없습니다.
                 </td>
               </tr>

@@ -945,8 +945,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               // 'YYYY-MM-DD' 형식이라 사전식 비교로 충분함).
               const isPastTargetDueDate = group.targetDueDate < todayIso;
               const isOverdueUnsentRfq = !rfqActive && isPastTargetDueDate;
-              const canConfigureRFQ = !group.workflowStage
-                || group.workflowStage === 'RFQ_TARGET_SELECTION';
+              // 납기요청일이 이미 지난 건은 RFQ를 새로 보내는 것 자체가
+              // 의미가 없으므로(제때 납품이 불가능) 대상 선택 버튼을 막는다.
+              const canConfigureRFQ = (
+                !group.workflowStage || group.workflowStage === 'RFQ_TARGET_SELECTION'
+              ) && !isPastTargetDueDate;
               const canReviewQuotations = !group.workflowStage
                 || ['QUOTATION_COLLECTION', 'SUPPLIER_SELECTION'].includes(group.workflowStage);
               const canStartOrder = hasSelection && (
@@ -1034,7 +1037,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       }}
                       title={canConfigureRFQ
                         ? 'AI 추천 협력사 순위, 이메일 확인 및 RFQ 발송'
-                        : '협력사 추천이 끝나고 RFQ 대상 선택 단계가 되면 활성화됩니다.'}
+                        : isPastTargetDueDate
+                          ? `납기요청일(${group.targetDueDate})이 이미 지나 RFQ를 새로 보낼 수 없습니다. MR 취소를 진행해 주세요.`
+                          : '협력사 추천이 끝나고 RFQ 대상 선택 단계가 되면 활성화됩니다.'}
                     >
                       <Building2 size={14} color="var(--primary)" />
                       <span>RFQ 협력사 추천 ({totalSuppliers}개사)</span>
@@ -1067,39 +1072,55 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                             </span>
                           </div>
                           {group.workflowStage === 'QUOTATION_COLLECTION' && (
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                              {respondedCount === 0 ? (
-                                <button
-                                  type="button"
-                                  className="btn-sm btn-reject"
-                                  onClick={() => { setCancellingGroup(group); setCancelMrReason(''); }}
-                                  style={{ fontSize: '10px', padding: '3px 8px' }}
-                                  title="제출된 견적이 없어 이 MR을 취소합니다."
-                                >
-                                  MR 취소
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="btn-sm btn-primary"
-                                  onClick={() => handleOpenQuotationModal(group)}
-                                  style={{ fontSize: '10px', padding: '3px 8px' }}
-                                  title="지금까지 들어온 견적으로 업체 선정을 진행합니다."
-                                >
-                                  이대로 선정 진행
-                                </button>
-                              )}
+                            isPastTargetDueDate ? (
+                              // 납기요청일까지 이미 지나버리면 더 손쓸 도리가
+                              // 없는 건이므로 재비딩/이대로 선정 진행 같은
+                              // 선택지는 다 없애고 MR 취소만 남긴다.
                               <button
                                 type="button"
-                                className="btn-sm btn-outline"
-                                disabled={isRebidding === group.id}
-                                onClick={() => handleRebid(group)}
+                                className="btn-sm btn-reject"
+                                disabled={isCancellingOverdue === group.id}
+                                onClick={() => handleConfirmOverdueCancel(group)}
                                 style={{ fontSize: '10px', padding: '3px 8px' }}
-                                title="지금까지 들어온 견적을 버리고 새 마감일로 RFQ를 다시 보냅니다."
+                                title={`납기요청일(${group.targetDueDate})이 지나 더 이상 진행할 수 없습니다. 확인을 누르면 이 MR을 취소합니다.`}
                               >
-                                {isRebidding === group.id ? '처리 중...' : '재비딩'}
+                                {isCancellingOverdue === group.id ? '취소 처리 중...' : '확인 · MR 취소'}
                               </button>
-                            </div>
+                            ) : (
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                {respondedCount === 0 ? (
+                                  <button
+                                    type="button"
+                                    className="btn-sm btn-reject"
+                                    onClick={() => { setCancellingGroup(group); setCancelMrReason(''); }}
+                                    style={{ fontSize: '10px', padding: '3px 8px' }}
+                                    title="제출된 견적이 없어 이 MR을 취소합니다."
+                                  >
+                                    MR 취소
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="btn-sm btn-primary"
+                                    onClick={() => handleOpenQuotationModal(group)}
+                                    style={{ fontSize: '10px', padding: '3px 8px' }}
+                                    title="지금까지 들어온 견적으로 업체 선정을 진행합니다."
+                                  >
+                                    이대로 선정 진행
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="btn-sm btn-outline"
+                                  disabled={isRebidding === group.id}
+                                  onClick={() => handleRebid(group)}
+                                  style={{ fontSize: '10px', padding: '3px 8px' }}
+                                  title="지금까지 들어온 견적을 버리고 새 마감일로 RFQ를 다시 보냅니다."
+                                >
+                                  {isRebidding === group.id ? '처리 중...' : '재비딩'}
+                                </button>
+                              </div>
+                            )
                           )}
                         </div>
                       ) : (
