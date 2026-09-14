@@ -214,6 +214,50 @@ export interface VendorResolutionIssue {
   failedAt: string;
 }
 
+/** 재비딩으로 이미 마감된 지난 RFQ 라운드("차수") 1건의 이력입니다.
+ * 재비딩해도 ERPNext의 RFQ/Supplier Quotation은 취소하지 않고 그대로
+ * 남겨두므로, rfqName으로 언제든 그 라운드의 견적을 다시 조회할 수
+ * 있습니다. */
+export interface RfqRoundHistoryEntry {
+  round: number;
+  rfqName: string;
+  deadline?: string;
+  closedAt?: string;
+}
+
+/** 차수 팝업에서 보여줄, 특정 RFQ 1건에 실제로 제출된 견적 품목 1줄. */
+export interface RfqRoundQuotationItem {
+  itemCode?: string;
+  itemName?: string;
+  description?: string;
+  qty?: number;
+  uom?: string;
+  rate?: number;
+  amount?: number;
+  expectedDeliveryDate?: string;
+  leadTimeDays?: number;
+}
+
+/** 차수 팝업에서 보여줄, 특정 RFQ 1건에 제출된 Supplier Quotation 1건. */
+export interface RfqRoundQuotation {
+  name: string;
+  supplier: string;
+  transactionDate?: string;
+  validTill?: string;
+  grandTotal?: number;
+  items: RfqRoundQuotationItem[];
+}
+
+/** GET /cases/{caseId}/rfq-rounds/{rfqName}/quotations 응답 - 특정 차수의
+ * 견적 회신 현황 스냅샷입니다. */
+export interface RfqRoundSnapshot {
+  rfqName: string;
+  recipientCount: number;
+  respondedCount: number;
+  responseRate: number;
+  quotations: RfqRoundQuotation[];
+}
+
 export interface VendorSelectionGroup {
   id: string;
   mrNo: string;
@@ -228,6 +272,12 @@ export interface VendorSelectionGroup {
   deadlineDDay: number;
   isExtended?: boolean;
   rfqSent?: boolean;
+  /** 지금 진행 중인(마감되지 않은) 라운드의 RFQ 문서명입니다. 아직 RFQ를
+   * 한 번도 안 보냈으면 undefined입니다. */
+  rfqName?: string;
+  /** 재비딩으로 이미 마감된 지난 라운드들의 이력(오래된 순). 총 차수는
+   * rfqRounds.length + (rfqName이 있으면 1)입니다. */
+  rfqRounds?: RfqRoundHistoryEntry[];
   quotations: SupplierQuotation[];
   selectedSupplierId?: string;
   supplierApprovalStatus?: 'approved' | 'rejected' | 'pending';

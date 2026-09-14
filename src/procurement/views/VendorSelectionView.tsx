@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type {
   VendorSelectionGroup,
   MaterialRequest,
+  RfqRoundSnapshot,
   SupplierQuotation,
   SupplierScores,
   StageMovePlaceholder,
@@ -110,6 +111,10 @@ interface VendorSelectionViewProps {
    * 이메일만 대조된 결과). 안 넘기면 드롭다운 없이 지금처럼 순수 텍스트
    * 입력으로 동작한다. */
   onSearchSuppliers?: (query: string, field: 'name' | 'email') => Promise<ManualSupplierSuggestion[]>;
+  /** 차수(라운드) 팝업에서 특정 RFQ 1건에 실제로 제출된 견적을 다시
+   * 조회한다. 재비딩해도 지난 RFQ를 취소하지 않고 그대로 두기 때문에
+   * 언제든 조회 가능하다. */
+  onFetchRfqRoundQuotations?: (caseId: string, rfqName: string) => Promise<RfqRoundSnapshot>;
 }
 
 export interface ManualSupplierSuggestion {
@@ -256,6 +261,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onCheckQuotations,
   onDownloadAttachment,
   onSearchSuppliers,
+  onFetchRfqRoundQuotations,
 }) => {
   // 모달 상태
   const [selectedGroup, setSelectedGroup] = useState<VendorSelectionGroup | null>(null);
@@ -321,6 +327,63 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // 6. 마감 지남 + 미선정 상태에서 'MR 취소' 모달 (재비딩은 확인창 하나로 바로 실행)
   const [cancellingGroup, setCancellingGroup] = useState<VendorSelectionGroup | null>(null);
   const [cancelMrReason, setCancelMrReason] = useState('');
+
+  // 7. 차수(라운드) 배지 클릭 시 지난/현재 라운드별 견적 조회 팝업.
+  // 재비딩해도 ERPNext의 RFQ/Supplier Quotation을 취소하지 않고 그대로
+  // 두기 때문에, rfqName만 있으면 언제든 그 라운드의 견적을 다시 조회할
+  // 수 있다 - roundSnapshotCache는 이미 불러온 라운드를 rfqName 기준으로
+  // 캐싱해서 탭을 왔다갔다 해도 매번 다시 안 부르게 한다.
+  const [roundsGroup, setRoundsGroup] = useState<VendorSelectionGroup | null>(null);
+  const [activeRoundIndex, setActiveRoundIndex] = useState<number>(0);
+  const [roundSnapshotCache, setRoundSnapshotCache] = useState<
+    Record<string, RfqRoundSnapshot | 'loading' | 'error'>
+  >({});
+
+  // rfqRounds(마감된 지난 라운드, 오래된 순) + 지금 진행 중인 라운드(있으면)를
+  // 합쳐 1차부터 순서대로 보여준다.
+  const roundsForGroup = (group: VendorSelectionGroup): Array<{ round: number; rfqName: string; deadline?: string }> => {
+    const closed = (group.rfqRounds ?? []).map((entry) => ({
+      round: entry.round,
+      rfqName: entry.rfqName,
+      deadline: entry.deadline,
+    }));
+    if (group.rfqName) {
+      closed.push({
+        round: closed.length + 1,
+        rfqName: group.rfqName,
+        deadline: `${group.deadlineDate} ${group.deadlineTime}`.trim(),
+      });
+    }
+    return closed;
+  };
+
+  const handleOpenRoundsModal = (group: VendorSelectionGroup) => {
+    const list = roundsForGroup(group);
+    if (list.length === 0) return;
+    setRoundsGroup(group);
+    setActiveRoundIndex(list.length - 1);
+  };
+
+  useEffect(() => {
+    if (!roundsGroup || !onFetchRfqRoundQuotations) return;
+    const list = roundsForGroup(roundsGroup);
+    const target = list[activeRoundIndex];
+    if (!target || !roundsGroup.backendCaseId) return;
+    if (roundSnapshotCache[target.rfqName]) return;
+    setRoundSnapshotCache((prev) => ({ ...prev, [target.rfqName]: 'loading' }));
+    let cancelled = false;
+    onFetchRfqRoundQuotations(roundsGroup.backendCaseId, target.rfqName)
+      .then((snapshot) => {
+        if (cancelled) return;
+        setRoundSnapshotCache((prev) => ({ ...prev, [target.rfqName]: snapshot }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRoundSnapshotCache((prev) => ({ ...prev, [target.rfqName]: 'error' }));
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roundsGroup, activeRoundIndex, onFetchRfqRoundQuotations]);
   const [isRebidding, setIsRebidding] = useState<string | null>(null);
   const [selectingSupplierId, setSelectingSupplierId] = useState<string | null>(null);
   const [resultModal, setResultModal] = useState<{
@@ -1048,6 +1111,30 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
                   {/* 4. 마감시간 (마감연장도 가능한) - RFQ 발송 전에는 흐리게 비활성화 */}
                   <td>
+                    {(() => {
+                      const totalRounds = (group.rfqRounds?.length ?? 0) + (group.rfqName ? 1 : 0);
+                      return (
+                        <button
+                          type="button"
+                          className="badge badge-purple"
+                          disabled={totalRounds === 0}
+                          onClick={() => handleOpenRoundsModal(group)}
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            marginBottom: '6px',
+                            border: 'none',
+                            cursor: totalRounds === 0 ? 'not-allowed' : 'pointer',
+                            opacity: totalRounds === 0 ? 0.4 : 1,
+                          }}
+                          title={totalRounds === 0
+                            ? 'RFQ를 아직 보내지 않아 차수 기록이 없습니다.'
+                            : `지금까지 ${totalRounds}차 RFQ를 보냈습니다. 클릭하면 차수별로 받았던 견적을 볼 수 있습니다.`}
+                        >
+                          {totalRounds}차
+                        </button>
+                      );
+                    })()}
                     <div
                       style={{
                         display: 'flex',
@@ -1289,6 +1376,149 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       {/* ========================================================================= */}
       {/* 팝업 모달 1: MR 번호 클릭 시 -> MR 상세 정보 모달 */}
       {/* ========================================================================= */}
+      {/* 차수(라운드) 클릭 시 - 재비딩으로 지금까지 보낸 RFQ 라운드별로
+          실제 받았던 견적(단가/납기일 등)을 다시 볼 수 있는 팝업.
+          여러 차수가 있으면 탭/화살표로 옆 라운드로 넘어간다. */}
+      {roundsGroup && (() => {
+        const list = roundsForGroup(roundsGroup);
+        if (list.length === 0) return null;
+        const clampedIndex = Math.min(activeRoundIndex, list.length - 1);
+        const active = list[clampedIndex];
+        const snapshot = roundSnapshotCache[active.rfqName];
+        return (
+          <div className="modal-overlay" onClick={() => setRoundsGroup(null)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '720px' }}>
+              <div className="modal-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <FileText size={20} color="var(--primary)" />
+                  <div>
+                    <h3 style={{ margin: 0 }}>차수별 견적 조회 ({roundsGroup.mrNo})</h3>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      재비딩해도 지난 RFQ는 지우지 않으므로 차수별로 받았던 견적을 다시 볼 수 있습니다.
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="icon-btn" onClick={() => setRoundsGroup(null)}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* 차수 탭 + 이전/다음 버튼 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-sm btn-outline"
+                    disabled={clampedIndex === 0}
+                    onClick={() => setActiveRoundIndex((idx) => Math.max(0, idx - 1))}
+                    title="이전 차수"
+                  >
+                    ‹
+                  </button>
+                  {list.map((round, index) => (
+                    <button
+                      key={round.rfqName}
+                      type="button"
+                      className={`badge ${index === clampedIndex ? 'badge-purple' : 'badge-gray'}`}
+                      onClick={() => setActiveRoundIndex(index)}
+                      style={{
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: index === clampedIndex ? 700 : 500,
+                        fontSize: '12px',
+                      }}
+                    >
+                      {round.round}차{index === list.length - 1 ? ' (현재)' : ''}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn-sm btn-outline"
+                    disabled={clampedIndex === list.length - 1}
+                    onClick={() => setActiveRoundIndex((idx) => Math.min(list.length - 1, idx + 1))}
+                    title="다음 차수"
+                  >
+                    ›
+                  </button>
+                </div>
+
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  RFQ 번호: <span style={{ fontFamily: 'monospace' }}>{active.rfqName}</span>
+                  {active.deadline && <> · 마감: {active.deadline}</>}
+                </div>
+
+                {/* 선택된 차수의 견적 목록 */}
+                {!onFetchRfqRoundQuotations ? (
+                  <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '20px', textAlign: 'center' }}>
+                    현재 화면에서는 차수별 견적 조회를 지원하지 않습니다.
+                  </div>
+                ) : snapshot === 'loading' || snapshot === undefined ? (
+                  <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '20px', textAlign: 'center' }}>
+                    <LoaderCircle size={14} /> 견적을 불러오는 중...
+                  </div>
+                ) : snapshot === 'error' ? (
+                  <div style={{ fontSize: '13px', color: 'var(--danger)', padding: '20px', textAlign: 'center' }}>
+                    견적을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      회신 {snapshot.respondedCount}/{snapshot.recipientCount}건 ({snapshot.responseRate}%)
+                    </div>
+                    {snapshot.quotations.length === 0 ? (
+                      <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '20px', textAlign: 'center' }}>
+                        이 차수에는 제출된 견적이 없습니다.
+                      </div>
+                    ) : (
+                      <table className="custom-table" style={{ width: '100%' }}>
+                        <thead>
+                          <tr>
+                            <th>협력사</th>
+                            <th>품목</th>
+                            <th style={{ textAlign: 'right' }}>단가</th>
+                            <th style={{ textAlign: 'right' }}>총액</th>
+                            <th>납기일</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {snapshot.quotations.map((quotation) => {
+                            const firstItem = quotation.items[0];
+                            return (
+                              <tr key={quotation.name}>
+                                <td style={{ fontWeight: 600 }}>{quotation.supplier}</td>
+                                <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                  {firstItem?.itemName ?? '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {firstItem?.rate ? `₩${firstItem.rate.toLocaleString()}` : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {quotation.grandTotal ? `₩${quotation.grandTotal.toLocaleString()}` : '-'}
+                                </td>
+                                <td style={{ fontSize: '12px' }}>
+                                  {firstItem?.expectedDeliveryDate
+                                    ?? (firstItem?.leadTimeDays ? `${firstItem.leadTimeDays}일 소요` : '미기재')}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn-outline" onClick={() => setRoundsGroup(null)}>
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {showMRModal && selectedGroup && (
         <div className="modal-overlay" onClick={() => setShowMRModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '800px' }}>

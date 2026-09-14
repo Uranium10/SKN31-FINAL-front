@@ -3,6 +3,8 @@ import type {
   MaterialRequest,
   MaterialRequestAttachment,
   POItem,
+  RfqRoundHistoryEntry,
+  RfqRoundSnapshot,
   SupplierQuotation,
   VendorSelectionGroup,
 } from '../types';
@@ -169,6 +171,45 @@ export const answerProcurementTask = async (
     body: JSON.stringify({ answer, version }),
   });
   await parseJson(response);
+};
+
+// 차수(라운드) 팝업 전용 - 지난(또는 현재) 라운드 RFQ 하나에 실제로 제출된
+// Supplier Quotation을 그때그때 다시 조회한다. 재비딩해도 ERPNext의
+// RFQ/SQ 문서를 취소하지 않고 그대로 두기 때문에 언제든 rfqName으로
+// 다시 조회할 수 있다.
+export const fetchRfqRoundQuotations = async (
+  caseId: string,
+  rfqName: string,
+): Promise<RfqRoundSnapshot> => {
+  const response = await fetchWithAuth(
+    `/api/procurement/cases/${encodeURIComponent(caseId)}/rfq-rounds/${encodeURIComponent(rfqName)}/quotations`,
+  );
+  const data = await parseJson<Record<string, unknown>>(response);
+  const quotations = rows(data.quotations).map((row) => ({
+    name: text(row.name),
+    supplier: supplierName(row),
+    transactionDate: text(row.transaction_date) || undefined,
+    validTill: text(row.valid_till) || undefined,
+    grandTotal: numberValue(row.grand_total ?? row.base_grand_total) || undefined,
+    items: rows(row.items).map((item) => ({
+      itemCode: text(item.item_code) || undefined,
+      itemName: text(item.item_name) || undefined,
+      description: text(item.description) || undefined,
+      qty: numberValue(item.qty) || undefined,
+      uom: text(item.uom) || undefined,
+      rate: numberValue(item.rate) || undefined,
+      amount: numberValue(item.amount) || undefined,
+      expectedDeliveryDate: text(item.expected_delivery_date) || undefined,
+      leadTimeDays: numberValue(item.lead_time_days) || undefined,
+    })),
+  }));
+  return {
+    rfqName: text(data.rfq_name, rfqName),
+    recipientCount: numberValue(data.recipient_count),
+    respondedCount: numberValue(data.responded_count),
+    responseRate: numberValue(data.response_rate),
+    quotations,
+  };
 };
 
 export const extendQuotationDeadline = async (caseId: string, deadlineAt: string): Promise<void> => {
@@ -544,6 +585,19 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
   const deadlineDDay = hasDeadline
     ? Math.ceil((deadline.getTime() - Date.now()) / 86_400_000)
     : Math.max(0, request.dDay - 3);
+  // 재비딩해도 지난 RFQ를 취소하지 않고 그대로 둔 채 새 RFQ를 하나 더
+  // 만드는 방식으로 바뀌면서, 백엔드가 마감된 지난 라운드들을
+  // workflow_snapshot.values.rfq_rounds에 쌓아준다. 지금 진행 중인
+  // 라운드(rfq_name)는 이 목록에 없고 별도 필드로 내려온다 - 총 차수는
+  // rfqRounds.length + (rfqName이 있으면 1)이다.
+  const rfqRounds: RfqRoundHistoryEntry[] = rows(values.rfq_rounds)
+    .map((row, index) => ({
+      round: numberValue(row.round) || index + 1,
+      rfqName: text(row.rfq_name),
+      deadline: text(row.deadline) || undefined,
+      closedAt: text(row.closed_at) || undefined,
+    }))
+    .filter((round) => round.rfqName);
   return {
     id: entry.case_id,
     backendCaseId: entry.case_id,
@@ -562,6 +616,8 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     deadlineTime,
     deadlineDDay,
     rfqSent,
+    rfqName: text(values.rfq_name) || undefined,
+    rfqRounds,
     prSent: false,
     quotations,
     selectedSupplierId: selected || undefined,

@@ -39,6 +39,7 @@ import {
   caseToVendorSelectionGroup,
   downloadMaterialRequestAttachment,
   extendQuotationDeadline,
+  fetchRfqRoundQuotations,
   isDirectPurchaseOrderStart,
   listProcurementCases,
   rejectProcurementCase,
@@ -1288,6 +1289,16 @@ function ProcurementWorkspaceComponent({
     }
   }, []);
 
+  // 협력사 선정 화면의 '차수' 배지 팝업 - 재비딩으로 이미 마감된 라운드도
+  // ERPNext RFQ/SQ를 취소하지 않고 그대로 두므로, 그 라운드의 rfqName만
+  // 있으면 언제든 견적을 다시 조회할 수 있다.
+  const handleFetchRfqRoundQuotations = useCallback(async (caseId: string, rfqName: string) => {
+    if (!apiDataEnabled) {
+      throw new Error('현재 화면에서는 차수별 견적 조회를 지원하지 않습니다.');
+    }
+    return fetchRfqRoundQuotations(caseId, rfqName);
+  }, []);
+
   const handleOpenSpecByItemCode = async (
     itemCode: string,
     requestSpecificationOverride?: string,
@@ -2146,6 +2157,7 @@ function ProcurementWorkspaceComponent({
                 onCheckQuotations={handleCheckQuotations}
                 onDownloadAttachment={(attachment) => void handleDownloadAttachment(attachment)}
                 onSearchSuppliers={handleSearchSuppliers}
+                onFetchRfqRoundQuotations={handleFetchRfqRoundQuotations}
               />
             )}
 
