@@ -224,6 +224,10 @@ const getCountOf5 = (scores: SupplierScores): number => {
   return Object.values(scores).filter((v) => v === 5).length;
 };
 
+const getAverageScore = (scores: SupplierScores): number => (
+  (scores.leadTime + scores.quality + scores.price + scores.service + scores.communication) / 5
+);
+
 const formatExpectedDelivery = (quotation: SupplierQuotation): string => {
   if (quotation.expectedDeliveryDate) {
     const date = new Date(`${quotation.expectedDeliveryDate.slice(0, 10)}T00:00:00`);
@@ -1720,12 +1724,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         <th style={{ width: '40px', textAlign: 'center' }}>선택</th>
                         <th style={{ width: '60px', textAlign: 'center' }}>순위</th>
                         <th>협력사 정보</th>
+                        <th style={{ textAlign: 'center', width: '90px' }}>평균 점수</th>
                         <th style={{ textAlign: 'center' }}>납기 (5점)</th>
                         <th style={{ textAlign: 'center' }}>품질 (5점)</th>
                         <th style={{ textAlign: 'center' }}>가격 (5점)</th>
                         <th style={{ textAlign: 'center' }}>응대 (5점)</th>
                         <th style={{ textAlign: 'center' }}>의사소통 (5점)</th>
-                        <th style={{ textAlign: 'center', width: '90px' }}>5점 개수</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1832,6 +1836,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   ) : <span className="rfq-supplier-source-link">출처 URL: 없음</span>}
                                 </div>
                               </td>
+                              {/* 5개 평가 항목 평균 */}
+                              <td style={{ textAlign: 'center' }}>
+                                {q.scores ? (
+                                  <span className="badge badge-purple" style={{ fontWeight: 700 }}>
+                                    {getAverageScore(q.scores).toFixed(1)}점
+                                  </span>
+                                ) : '—'}
+                              </td>
                               {/* 납기 */}
                               <td style={{ textAlign: 'center', color: q.scores?.leadTime === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.leadTime === 5 ? 700 : 400 }}>
                                 {q.scores ? `⭐ ${q.scores.leadTime}점` : '—'}
@@ -1851,14 +1863,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               {/* 의사소통 */}
                               <td style={{ textAlign: 'center', color: q.scores?.communication === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.communication === 5 ? 700 : 400 }}>
                                 {q.scores ? `⭐ ${q.scores.communication}점` : '—'}
-                              </td>
-                              {/* 5점 개수 */}
-                              <td style={{ textAlign: 'center' }}>
-                                {q.count5 === null ? '—' : (
-                                  <span className="badge badge-purple" style={{ fontWeight: 700 }}>
-                                    {q.count5}개 보유
-                                  </span>
-                                )}
                               </td>
                             </tr>
                           );
