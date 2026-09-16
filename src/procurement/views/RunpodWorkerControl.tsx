@@ -9,7 +9,7 @@ const modelLabels: Record<string, string> = {
 };
 
 /** Timers are ONLY for display/refresh. The server owns the persisted expiry. */
-export function RunpodWorkerControl() {
+export function RunpodWorkerControl({ active = true }: { active?: boolean }) {
   const [data, setData] = useState<RunpodWorkerState | null>(null);
   const [minutes, setMinutes] = useState(60);
   const [busy, setBusy] = useState(false);
@@ -35,6 +35,7 @@ export function RunpodWorkerControl() {
     } finally { inFlight.current = false; }
   }
   useEffect(() => {
+    if (!active) return;
     alive.current = true;
     void refresh();
     const timer = window.setInterval(() => {
@@ -42,7 +43,7 @@ export function RunpodWorkerControl() {
       if (document.visibilityState === 'visible') void refresh();
     }, 15000);
     return () => { alive.current = false; window.clearInterval(timer); };
-  }, []);
+  }, [active]);
 
   async function apply() {
     if (!confirming || data?.revision === undefined || inFlight.current) return;

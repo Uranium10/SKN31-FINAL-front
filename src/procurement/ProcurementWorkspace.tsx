@@ -2100,7 +2100,7 @@ function ProcurementWorkspaceComponent({
         {/* Content Body (Full Width) */}
         <div className="content-body">
           <main className="view-content">
-            {canManagePolicy && <div hidden={currentTab !== 'company-policy'}><CompanyPolicyView roles={policyRoles} /></div>}
+            {canManagePolicy && <div hidden={currentTab !== 'company-policy'}><CompanyPolicyView roles={policyRoles} active={currentTab === 'company-policy'} /></div>}
             {!canManagePolicy && currentTab === 'company-policy' && <p role="alert">ERPNext의 정책 관리 권한을 확인할 수 없습니다. 권한 변경 후 화면을 새로고침해주세요.</p>}
             {/* Screen 2: 대시보드 */}
             {currentTab === 'dashboard' && (

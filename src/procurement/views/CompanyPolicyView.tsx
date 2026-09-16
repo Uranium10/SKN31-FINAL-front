@@ -38,7 +38,7 @@ const fields: { key: NumericRule; label: string; unit: string; min: number; max:
 const errorText = (error: unknown) => error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
 
 /** Draft stays mounted while navigating tabs; only explicit publish changes DB. */
-export function CompanyPolicyView({ roles = [] }: { roles?: string[] }) {
+export function CompanyPolicyView({ roles = [], active = true }: { roles?: string[]; active?: boolean }) {
   const [data, setData] = useState<PolicyResponse | null>(null);
   const [draft, setDraft] = useState<CompanyPolicy | null>(null);
   const [reason, setReason] = useState('');
@@ -116,7 +116,7 @@ export function CompanyPolicyView({ roles = [] }: { roles?: string[] }) {
       {message && <p role="status" className="policy-success">{message}</p>}
     </div>
     {draft && data && <>
-      <RunpodWorkerControl />
+      <RunpodWorkerControl active={active} />
       <EmailAllowlistEditor />
       <form ref={form} onSubmit={e => { e.preventDefault(); if (form.current?.reportValidity()) setConfirming(true); }}>
         <fieldset disabled={busy || confirming}>
