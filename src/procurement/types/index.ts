@@ -301,6 +301,8 @@ export interface POProcessingIssue {
   failedAt: string;
 }
 
+export type POScorecardScores = Omit<SupplierScores, 'price'> & { price?: number };
+
 export interface POItem {
   id: string;
   prNo: string;
@@ -336,7 +338,7 @@ export interface POItem {
   // PO 발주 후 입고 확인 및 Supplier Scorecard 평가
   arrived?: boolean;
   arrivedDate?: string;
-  scorecardScores?: SupplierScores;
+  scorecardScores?: POScorecardScores;
   automaticScorecard?: {
     scores: Partial<Pick<SupplierScores, 'leadTime' | 'price'>>;
     reasons: Partial<Record<'leadTime' | 'price', string>>;

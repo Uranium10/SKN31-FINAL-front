@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import type { POItem, SupplierScores, StageMovePlaceholder } from '../types';
+import type { POItem, POScorecardScores, SupplierScores, StageMovePlaceholder } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
@@ -56,7 +56,7 @@ interface POManagementViewProps {
   onSelectNextSupplier?: (poId: string, supplierId: string) => void;
   onCancelMR: (poId: string) => void;
   onMarkArrived: (poId: string) => void;
-  onSubmitScorecard: (poId: string, scores: SupplierScores) => void;
+  onSubmitScorecard: (poId: string, scores: POScorecardScores) => void;
   isApiMode?: boolean;
 }
 
@@ -66,8 +66,9 @@ const SCORECARD_CRITERIA: { key: keyof SupplierScores; label: string }[] = [
   { key: 'quality', label: '품질' },
 ];
 
-const getScoreAverage = (scores: SupplierScores) => (
-  (scores.quality + scores.leadTime + scores.price + scores.service + scores.communication) / 5
+const getScoreAverage = (scores: POScorecardScores) => (
+  (scores.quality + scores.leadTime + (scores.price ?? 0) + scores.service + scores.communication)
+  / (scores.price == null ? 4 : 5)
 );
 
 const getOverallProgress = (item: POItem) => {
@@ -219,7 +220,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   const currentScorecardItem = poItems.find((item) => item.id === scorecardItem?.id) ?? scorecardItem;
   const automaticScorecard = currentScorecardItem?.automaticScorecard;
   const isDraftComplete = SCORECARD_CRITERIA.every((criterion) => draftScores[criterion.key])
-    && automaticScorecard?.scores.leadTime != null && automaticScorecard?.scores.price != null;
+    && automaticScorecard?.scores.leadTime != null;
 
   // 수주 거절(pr_rejection_review) 대기 작업의 payload에는 백엔드가
   // "이 거절된 공급사 말고 아직 견적을 제출한 다른 협력사가 남아있는지"
@@ -493,6 +494,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                       <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                         <CheckCircle2 size={12} /> 평가 완료
                         {item.scorecardScores && ` · 평균 ${getScoreAverage(item.scorecardScores).toFixed(1)}점`}
+                        {item.scorecardScores && item.scorecardScores.price == null && ' (가격 제외)'}
                       </span>
                     )}
                   </div>
@@ -917,10 +919,11 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 <div key={key} style={{ padding: '12px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '13px' }}>
                     <strong>{key === 'leadTime' ? '납기 준수' : '가격 경쟁력'}</strong>
-                    <strong>{automaticScorecard?.scores[key] != null ? `${automaticScorecard.scores[key]} / 5점` : '계산 불가'}</strong>
+                    <strong>{automaticScorecard?.scores[key] != null ? `${automaticScorecard.scores[key]} / 5점` : key === 'price' ? '평가 제외' : '계산 불가'}</strong>
                   </div>
                   <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
                     {automaticScorecard?.reasons[key] ?? '자동 평가에 필요한 정보를 확인해주세요.'}
+                    {key === 'price' && automaticScorecard?.scores.price == null && ' 가격을 제외한 4개 항목으로 평가를 완료합니다.'}
                   </p>
                 </div>
               ))}
@@ -966,7 +969,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 disabled={!isDraftComplete}
                 onClick={() => {
                   if (!isDraftComplete) return;
-                  onSubmitScorecard(scorecardItem.id, { ...draftScores, ...automaticScorecard?.scores } as SupplierScores);
+                  onSubmitScorecard(scorecardItem.id, { ...draftScores, ...automaticScorecard?.scores, price: automaticScorecard?.scores.price } as POScorecardScores);
                   closeScorecard();
                 }}
               >

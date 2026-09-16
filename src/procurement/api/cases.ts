@@ -657,12 +657,12 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
   );
   const fullReceipt = delivery?.delivery_status === 'FULL';
   const scorecard = delivery?.scorecard;
-  const scorecardScores = scorecard && ['quality', 'leadTime', 'price', 'service', 'communication']
+  const scorecardScores = scorecard && ['quality', 'leadTime', 'service', 'communication']
     .every((key) => typeof scorecard[key] === 'number')
     ? {
       quality: scorecard.quality as number,
       leadTime: scorecard.leadTime as number,
-      price: scorecard.price as number,
+      price: typeof scorecard.price === 'number' ? scorecard.price : undefined,
       service: scorecard.service as number,
       communication: scorecard.communication as number,
     }

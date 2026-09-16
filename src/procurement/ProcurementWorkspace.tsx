@@ -20,7 +20,7 @@ import type {
   MaterialRequestAttachment,
   VendorSelectionGroup,
   POItem,
-  SupplierScores,
+  POScorecardScores,
   ProcurementNotification,
   GlobalSearchResult,
   StageMovePlaceholder,
@@ -2026,7 +2026,7 @@ function ProcurementWorkspaceComponent({
   };
 
   // Supplier Scorecard 평가 제출 -> 해당 PO 건 발주 프로세스 종료
-  const handleSubmitScorecard = async (poId: string, scores: SupplierScores) => {
+  const handleSubmitScorecard = async (poId: string, scores: POScorecardScores) => {
     const targetPO = poItems.find((item) => item.id === poId);
     if (!targetPO) return;
 
