@@ -268,13 +268,25 @@ function ProcurementWorkspaceComponent({
   // Navigation & Search
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
   const [canManagePolicy, setCanManagePolicy] = useState(false);
+  const [policyRoles, setPolicyRoles] = useState<string[]>([]);
   useEffect(() => {
     let alive = true;
     setCanManagePolicy(false);
-    getPolicyCapabilities().then(result => {
-      if (alive) setCanManagePolicy(result.can_manage);
-    }).catch(() => { /* Fail closed: backend remains the authorization source. */ });
-    return () => { alive = false; };
+    setPolicyRoles([]);
+    const refreshAccess = () => {
+      getPolicyCapabilities().then(result => {
+        if (alive) {
+          setCanManagePolicy(result.can_manage);
+          setPolicyRoles(result.roles || []);
+        }
+      }).catch(() => {
+        // An unavailable ERP role lookup must not leave stale privileges visible.
+        if (alive) { setCanManagePolicy(false); setPolicyRoles([]); }
+      });
+    };
+    refreshAccess();
+    window.addEventListener('focus', refreshAccess);
+    return () => { alive = false; window.removeEventListener('focus', refreshAccess); };
   }, [currentUser?.id, currentUser?.email]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
@@ -2088,7 +2100,8 @@ function ProcurementWorkspaceComponent({
         {/* Content Body (Full Width) */}
         <div className="content-body">
           <main className="view-content">
-            {canManagePolicy && <div hidden={currentTab !== 'company-policy'}><CompanyPolicyView /></div>}
+            {canManagePolicy && <div hidden={currentTab !== 'company-policy'}><CompanyPolicyView roles={policyRoles} /></div>}
+            {!canManagePolicy && currentTab === 'company-policy' && <p role="alert">ERPNext의 정책 관리 권한을 확인할 수 없습니다. 권한 변경 후 화면을 새로고침해주세요.</p>}
             {/* Screen 2: 대시보드 */}
             {currentTab === 'dashboard' && (
               <section

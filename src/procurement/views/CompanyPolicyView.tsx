@@ -36,7 +36,7 @@ const fields: { key: NumericRule; label: string; unit: string; min: number; max:
 const errorText = (error: unknown) => error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
 
 /** Draft stays mounted while navigating tabs; only explicit publish changes DB. */
-export function CompanyPolicyView() {
+export function CompanyPolicyView({ roles = [] }: { roles?: string[] }) {
   const [data, setData] = useState<PolicyResponse | null>(null);
   const [draft, setDraft] = useState<CompanyPolicy | null>(null);
   const [reason, setReason] = useState('');
@@ -105,6 +105,9 @@ export function CompanyPolicyView() {
       <strong>{data ? `현재 적용 v${data.active.version}` : '정책 불러오는 중'}</strong>
       <span>진행 중인 MR은 시작 시점의 정책을 유지합니다. 기존 품목군 규격은 자동 재생성하지 않습니다.</span>
       <span>메일 발송 제한·필수 승인·규격 검증은 유지됩니다. 현재 연결된 회사 전체에 적용됩니다.</span>
+      <details><summary>ERPNext에서 확인한 내 역할 ({roles.length}개)</summary>
+        <p>{roles.join(' · ') || 'Administrator 계정 권한으로 접근'}</p>
+      </details>
     </div>
     <div ref={feedback}>
       {error && <p role="alert" className="policy-error">{error}</p>}
