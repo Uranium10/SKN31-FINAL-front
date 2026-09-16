@@ -6,6 +6,7 @@ import {
 } from '../api/companyPolicy';
 import './CompanyPolicyView.css';
 import { EmailAllowlistEditor } from './EmailAllowlistEditor';
+import { RunpodWorkerControl } from './RunpodWorkerControl';
 
 type NumericRule = Exclude<keyof CompanyPolicy['rules'], 'quotation_priority'>;
 // Display the team's original rule names so operators can reconcile settings
@@ -115,9 +116,27 @@ export function CompanyPolicyView({ roles = [] }: { roles?: string[] }) {
       {message && <p role="status" className="policy-success">{message}</p>}
     </div>
     {draft && data && <>
+      <RunpodWorkerControl />
       <EmailAllowlistEditor />
       <form ref={form} onSubmit={e => { e.preventDefault(); if (form.current?.reportValidity()) setConfirming(true); }}>
         <fieldset disabled={busy || confirming}>
+          <section className="policy-section"><h3>신규 공급사 탐색 소스</h3>
+            <p>복수 선택할 수 있습니다. 최소 1개를 선택하세요. 기존 ERP 협력사 조회는 그대로 유지됩니다.</p>
+            <div className="policy-source-options">{([
+              ['tavily', 'Tavily', '웹 검색 기반 공급사 탐색'],
+              ['narajangteo', '나라장터', '나라장터 실시간 API 조회'],
+              ['db', 'DB', '저장된 나라장터 업체 데이터 조회'],
+            ] as const).map(([key, label, hint]) => <label className="policy-source-option" key={key}>
+              <input type="checkbox" checked={(draft.supplier_sources || ['tavily']).includes(key)}
+                onChange={e => {
+                  const sources = draft.supplier_sources || ['tavily'];
+                  const next = e.target.checked ? [...sources, key] : sources.filter(source => source !== key);
+                  if (!next.length) { setError('탐색 소스를 최소 1개 선택하세요.'); return; }
+                  setError(''); setDraft({ ...draft, supplier_sources: next.sort() });
+                }} /><span><strong>{label}</strong><small>{hint}</small></span>
+            </label>)}</div>
+            <p>선택한 소스에서 후보를 모은 뒤 기존 검증·연락처 보완 과정을 거칩니다. DB만 선택해도 연락처 보완 등에 외부 API가 사용될 수 있습니다.</p>
+          </section>
           <section className="policy-section"><h3>구매 판단 기준</h3>
             <div className="policy-grid">{fields.map(field => <label className="policy-field" key={field.key}>
               <strong>{field.label}</strong><code className="policy-rule-name">{ruleNames[field.key]}</code><div className="policy-number">
@@ -157,6 +176,8 @@ export function CompanyPolicyView({ roles = [] }: { roles?: string[] }) {
         <h3>v{data.active.version + 1}으로 게시할까요?</h3>
         <ul>{fields.filter(f => draft.rules[f.key] !== data.active.policy.rules[f.key]).map(f =>
           <li key={f.key}>{f.label}: {data.active.policy.rules[f.key].toLocaleString()} → {draft.rules[f.key].toLocaleString()} {f.unit}</li>)}
+          {JSON.stringify(draft.supplier_sources) !== JSON.stringify(data.active.policy.supplier_sources) &&
+            <li>공급사 탐색 소스: {draft.supplier_sources.join(' · ')}</li>}
           {draft.rules.quotation_priority !== data.active.policy.rules.quotation_priority && <li>견적 비교 우선순위 변경</li>}
           {draft.guidance.item_specification !== data.active.policy.guidance.item_specification && <li>품목 규격 검토 지침 변경</li>}
           {draft.guidance.substitute_selection !== data.active.policy.guidance.substitute_selection && <li>대체품 추천 지침 변경</li>}

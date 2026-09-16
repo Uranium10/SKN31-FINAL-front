@@ -33,3 +33,17 @@
 .policy-error, .policy-success { padding: 14px 18px; border: 1px solid #52525b; border-radius: 8px; background: #fff; line-height: 1.6; }
 .policy-error { border-left: 4px solid #18181b; font-weight: 600; }
 @media (max-width: 800px) { .policy-grid, .policy-publish { grid-template-columns: 1fr; } .policy-heading { align-items: flex-start; flex-direction: column; } .policy-history article { flex-wrap: wrap; } }
+.runpod-control h3, .runpod-duration, .runpod-refresh { display: flex; align-items: center; gap: 8px; }
+.runpod-status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+.runpod-status-grid > div { padding: 16px; background: #f6f6f6; border: 1px solid #d7d7d7; border-radius: 10px; }
+.runpod-status-grid strong, .runpod-status-grid small { display: block; overflow-wrap: anywhere; }
+.runpod-status-grid small { color: #626262; margin: 4px 0; }
+.runpod-note { font-size: 13px; line-height: 1.65; color: #606060; }
+.runpod-duration select { border: 1px solid #bdbdbd; border-radius: 8px; padding: 8px; background: white; color: #171717; }
+.runpod-refresh { margin-top: 14px; }
+@media (max-width: 760px) { .runpod-status-grid { grid-template-columns: 1fr; } }
+.policy-source-options { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+.policy-source-option { display: flex; align-items: center; gap: 12px; padding: 18px; border: 1px solid #bdbdbd; border-radius: 10px; cursor: pointer; }
+.policy-source-option:has(input:checked) { border-color: #161616; background: #f3f3f3; }
+.policy-source-option input { width: 18px; height: 18px; accent-color: #111; }
+.policy-source-option small { display: block; margin-top: 4px; color: #666; }

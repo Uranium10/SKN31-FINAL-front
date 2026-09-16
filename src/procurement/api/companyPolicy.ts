@@ -1,6 +1,7 @@
 import { fetchWithAuth } from '../../utils/auth';
 
 export interface CompanyPolicy {
+  supplier_sources: ('tavily' | 'narajangteo' | 'db')[];
   rules: {
     urgent_lead_days: number;
     bidding_amount: number;
@@ -27,6 +28,14 @@ export interface EmailAllowlist {
   delivery_mode: 'custom_only' | 'send_all' | 'block_all'; enabled: boolean; editable: boolean;
 }
 
+export interface RunpodWorkerState {
+  enabled: boolean; default_minutes: number; message?: string;
+  revision?: number; owned?: boolean; expires_at?: string | null;
+  updated_by?: string | null; model_status?: string; last_error?: string | null;
+  remote_known?: boolean; workers_min?: number | null; workers_max?: number | null;
+  workers?: { running?: number; ready?: number; initializing?: number; idle?: number; unhealthy?: number };
+}
+
 async function read<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetchWithAuth(`/api/company-policy${path}`, options);
   const body = await response.json().catch(() => ({}));
@@ -37,6 +46,12 @@ async function read<T>(path: string, options?: RequestInit): Promise<T> {
 }
 export const getPolicyCapabilities = () => read<{ can_manage: boolean; roles: string[]; source: 'erpnext'; enabled: boolean }>('/capabilities');
 export const getCompanyPolicy = () => read<PolicyResponse>('');
+export const getRunpodWorker = () => read<RunpodWorkerState>('/runpod-worker');
+export const changeRunpodWorker = (action: 'start' | 'extend' | 'stop', revision: number, minutes = 60) =>
+  read<RunpodWorkerState>('/runpod-worker', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, expected_revision: revision, minutes }),
+  });
 export const getEmailAllowlist = () => read<EmailAllowlist>('/email-allowlist');
 export const saveEmailAllowlist = (recipients: string[], revision: string, reason: string) =>
   read<EmailAllowlist>('/email-allowlist', { method: 'POST', headers: { 'Content-Type': 'application/json' },
