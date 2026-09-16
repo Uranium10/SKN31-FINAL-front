@@ -22,6 +22,10 @@ export interface PolicyVersion {
   published_at: string;
 }
 export interface PolicyResponse { active: PolicyVersion; history: PolicyVersion[] }
+export interface EmailAllowlist {
+  revision: string; recipients: string[];
+  delivery_mode: 'custom_only' | 'send_all' | 'block_all'; enabled: boolean; editable: boolean;
+}
 
 async function read<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetchWithAuth(`/api/company-policy${path}`, options);
@@ -33,6 +37,10 @@ async function read<T>(path: string, options?: RequestInit): Promise<T> {
 }
 export const getPolicyCapabilities = () => read<{ can_manage: boolean; roles: string[]; source: 'erpnext'; enabled: boolean }>('/capabilities');
 export const getCompanyPolicy = () => read<PolicyResponse>('');
+export const getEmailAllowlist = () => read<EmailAllowlist>('/email-allowlist');
+export const saveEmailAllowlist = (recipients: string[], revision: string, reason: string) =>
+  read<EmailAllowlist>('/email-allowlist', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipients, expected_revision: revision, reason }) });
 export const publishCompanyPolicy = (policy: CompanyPolicy, version: number, reason: string) =>
   read<PolicyVersion>('/publish', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

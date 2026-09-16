@@ -5,6 +5,7 @@ import {
   type CompanyPolicy, type PolicyResponse,
 } from '../api/companyPolicy';
 import './CompanyPolicyView.css';
+import { EmailAllowlistEditor } from './EmailAllowlistEditor';
 
 type NumericRule = Exclude<keyof CompanyPolicy['rules'], 'quotation_priority'>;
 // Display the team's original rule names so operators can reconcile settings
@@ -114,6 +115,7 @@ export function CompanyPolicyView({ roles = [] }: { roles?: string[] }) {
       {message && <p role="status" className="policy-success">{message}</p>}
     </div>
     {draft && data && <>
+      <EmailAllowlistEditor />
       <form ref={form} onSubmit={e => { e.preventDefault(); if (form.current?.reportValidity()) setConfirming(true); }}>
         <fieldset disabled={busy || confirming}>
           <section className="policy-section"><h3>구매 판단 기준</h3>
