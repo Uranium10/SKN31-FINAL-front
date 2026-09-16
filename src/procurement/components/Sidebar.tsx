@@ -9,11 +9,13 @@ import {
   LogOut,
   ChevronLeft,
   PanelLeftOpen,
+  Settings,
 } from 'lucide-react';
 import SailboatIcon from '../../components/common/SailboatIcon';
 import type { NavigationTab } from '../types';
 
 interface SidebarProps {
+  canManagePolicy?: boolean;
   currentTab: NavigationTab;
   setCurrentTab: (tab: NavigationTab) => void;
   pendingCount: number;
@@ -40,6 +42,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
+  canManagePolicy = false,
   currentTab,
   setCurrentTab,
   pendingCount,
@@ -167,6 +170,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           )}
         </li>
+        {canManagePolicy && <li>
+          <button type="button" className={`nav-item ${currentTab === 'company-policy' ? 'active' : ''}`}
+            style={{ width: '100%', border: 0, textAlign: 'left', font: 'inherit' }}
+            onClick={() => setCurrentTab('company-policy')} title="관리자 환경설정 · 회사 구매 정책">
+            <div className="nav-item-left"><Settings size={18} /><span>회사 구매 정책</span></div>
+          </button>
+        </li>}
       </ul>
 
       {/* Process Stages Mini Indicator inside Sidebar */}

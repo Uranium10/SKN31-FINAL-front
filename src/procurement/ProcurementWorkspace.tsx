@@ -10,6 +10,8 @@ import { ItemRegistrationView } from './views/ItemRegistrationView';
 import { MRListView } from './views/MRListView';
 import { VendorSelectionView } from './views/VendorSelectionView';
 import { POManagementView } from './views/POManagementView';
+import { CompanyPolicyView } from './views/CompanyPolicyView';
+import { getPolicyCapabilities } from './api/companyPolicy';
 
 import type {
   NavigationTab,
@@ -116,6 +118,7 @@ function DashboardDatabaseLoader() {
 }
 
 const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
+  'company-policy': { title: '회사 구매 정책', detail: '관리자가 구매 기준과 AI 보조 판단 지침을 변경하고 게시합니다.' },
   dashboard: {
     title: '구매 대시보드',
     detail: '승인 대기, 견적 회신, 협력사 승인과 PO 생성 현황을 확인합니다.',
@@ -264,6 +267,15 @@ function ProcurementWorkspaceComponent({
 }: ProcurementWorkspaceProps) {
   // Navigation & Search
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
+  const [canManagePolicy, setCanManagePolicy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setCanManagePolicy(false);
+    getPolicyCapabilities().then(result => {
+      if (alive) setCanManagePolicy(result.can_manage);
+    }).catch(() => { /* Fail closed: backend remains the authorization source. */ });
+    return () => { alive = false; };
+  }, [currentUser?.id, currentUser?.email]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.localStorage.getItem('biddingflow.sidebar.collapsed') === 'true'
@@ -2045,6 +2057,7 @@ function ProcurementWorkspaceComponent({
     <div className="procurement-shell">
       {/* 1. 왼쪽 사이드바 */}
       <Sidebar
+        canManagePolicy={canManagePolicy}
         currentTab={currentTab}
         setCurrentTab={handleSidebarNavigation}
         pendingCount={pendingCount}
@@ -2075,6 +2088,7 @@ function ProcurementWorkspaceComponent({
         {/* Content Body (Full Width) */}
         <div className="content-body">
           <main className="view-content">
+            {canManagePolicy && <div hidden={currentTab !== 'company-policy'}><CompanyPolicyView /></div>}
             {/* Screen 2: 대시보드 */}
             {currentTab === 'dashboard' && (
               <section
