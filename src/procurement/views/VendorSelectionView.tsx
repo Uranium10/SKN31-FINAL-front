@@ -5,6 +5,7 @@ import type {
   RfqRoundSnapshot,
   SupplierQuotation,
   POScorecardScores,
+  SupplierRecommendation,
   StageMovePlaceholder,
 } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
@@ -121,6 +122,7 @@ interface VendorSelectionViewProps {
    * 이메일만 대조된 결과). 안 넘기면 드롭다운 없이 지금처럼 순수 텍스트
    * 입력으로 동작한다. */
   onSearchSuppliers?: (query: string, field: 'name' | 'email') => Promise<ManualSupplierSuggestion[]>;
+  onLoadSupplierEvaluations?: (names: string[]) => Promise<Record<string, SupplierRecommendation>>;
   /** 차수(라운드) 팝업에서 특정 RFQ 1건에 실제로 제출된 견적을 다시
    * 조회한다. 재비딩해도 지난 RFQ를 취소하지 않고 그대로 두기 때문에
    * 언제든 조회 가능하다. */
@@ -132,6 +134,7 @@ export interface ManualSupplierSuggestion {
   supplierName: string;
   email: string | null;
   phone: string | null;
+  recommendation?: SupplierRecommendation | null;
 }
 
 interface RfqCandidateRow extends Omit<SupplierQuotation, 'scores'> {
@@ -254,6 +257,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onCheckQuotations,
   onDownloadAttachment,
   onSearchSuppliers,
+  onLoadSupplierEvaluations,
   onFetchRfqRoundQuotations,
 }) => {
   // 모달 상태
@@ -291,6 +295,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const [rfqDeadlineTime, setRfqDeadlineTime] = useState<string>('18:00');
   const [rfqSupplierEmails, setRfqSupplierEmails] = useState<Record<string, string>>({});
   const [rfqManualSuppliers, setRfqManualSuppliers] = useState<string[]>([]);
+  const [manualEvaluations, setManualEvaluations] = useState<Record<string, SupplierRecommendation>>({});
+  const [manualEvaluationError, setManualEvaluationError] = useState(false);
   const [rfqManualSupplierName, setRfqManualSupplierName] = useState('');
   const [rfqManualSupplierEmail, setRfqManualSupplierEmail] = useState('');
   const [manualSupplierSuggestions, setManualSupplierSuggestions] = useState<ManualSupplierSuggestion[]>([]);
@@ -487,8 +493,23 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     };
   }, [rfqManualSupplierEmail, onSearchSuppliers]);
 
+  useEffect(() => {
+    if (!showRfqModal || !onLoadSupplierEvaluations || !rfqManualSuppliers.length) return;
+    let cancelled = false;
+    setManualEvaluationError(false);
+    onLoadSupplierEvaluations(rfqManualSuppliers).then((evaluations) => {
+      if (!cancelled) setManualEvaluations(evaluations);
+    }).catch(() => {
+      if (!cancelled) setManualEvaluationError(true);
+    });
+    return () => { cancelled = true; };
+  }, [rfqManualSuppliers, showRfqModal, onLoadSupplierEvaluations]);
+
   const handlePickSupplierSuggestion = (suggestion: ManualSupplierSuggestion) => {
-    setRfqManualSupplierName(suggestion.supplierName);
+    setRfqManualSupplierName(suggestion.name);
+    if (suggestion.recommendation) {
+      setManualEvaluations((previous) => ({ ...previous, [suggestion.name]: suggestion.recommendation! }));
+    }
     setRfqManualSupplierEmail(suggestion.email || '');
     setShowSupplierSuggestions(false);
     setShowEmailSuggestions(false);
@@ -552,13 +573,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       isSelected: false,
       email: rfqSupplierEmails[name] || undefined,
       source: 'manual',
-      scores: null,
-      averageScore: null,
+      scores: manualEvaluations[name]?.scores ?? null,
+      averageScore: manualEvaluations[name]?.average_score ?? null,
+      evaluationCount: manualEvaluations[name]?.evaluation_count,
       rank: null,
       isManual: true,
     } satisfies RfqCandidateRow));
-    return [...ranked, ...manual];
-  }, [rfqManualSuppliers, rfqSupplierEmails, selectedGroup]);
+    const combined = [...ranked, ...manual].sort((left, right) => (right.averageScore ?? -1) - (left.averageScore ?? -1));
+    return combined.map((row) => ({ ...row, rank: row.averageScore == null ? null : combined.findIndex((candidate) => candidate.averageScore === row.averageScore) + 1 }));
+  }, [rfqManualSuppliers, rfqSupplierEmails, selectedGroup, manualEvaluations]);
 
   // 이 MR(선택된 그룹) 안에서 과거 라운드에 수주 접수를 거절한 협력사 -
   // id와 name 둘 다로 대조한다(직접 입력한 협력사는 RFQ 후보 쪽에서
@@ -1695,6 +1718,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </div>
                 )}
 
+                {manualEvaluationError && <p role="alert" style={{ color: 'var(--accent)' }}>직접 추가한 협력사의 평가 이력을 불러오지 못했습니다. 창을 다시 열어 확인해주세요.</p>}
                 {/* 5대 항목 평가표 (Table) */}
                 <div className="table-container rfq-candidate-list">
                   <table className="custom-table rfq-candidate-table">
@@ -1919,6 +1943,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               }}
                             >
                               <div style={{ fontWeight: 600 }}>{suggestion.supplierName}</div>
+                              <div>{suggestion.recommendation ? `평가 평균 ${suggestion.recommendation.average_score.toFixed(1)}점 · ${suggestion.recommendation.evaluation_count}건` : '평가 이력 없음'}</div>
                               <div style={{ color: 'var(--text-muted)' }}>
                                 {suggestion.email || '이메일 없음'}{suggestion.phone ? ` · ${suggestion.phone}` : ''}
                               </div>
@@ -1986,6 +2011,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               }}
                             >
                               <div style={{ fontWeight: 600 }}>{suggestion.email || '이메일 없음'}</div>
+                              <div>{suggestion.recommendation ? `평가 평균 ${suggestion.recommendation.average_score.toFixed(1)}점 · ${suggestion.recommendation.evaluation_count}건` : '평가 이력 없음'}</div>
                               <div style={{ color: 'var(--text-muted)' }}>
                                 {suggestion.supplierName}{suggestion.phone ? ` · ${suggestion.phone}` : ''}
                               </div>

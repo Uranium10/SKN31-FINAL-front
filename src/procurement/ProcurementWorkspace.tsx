@@ -46,6 +46,7 @@ import {
   listProcurementCases,
   rejectProcurementCase,
   searchSuppliers,
+  getSupplierEvaluations,
   startProcurementCase,
   syncDraftProcurementCases,
   type ProcurementDataMode,
@@ -2184,6 +2185,7 @@ function ProcurementWorkspaceComponent({
                 onCheckQuotations={handleCheckQuotations}
                 onDownloadAttachment={(attachment) => void handleDownloadAttachment(attachment)}
                 onSearchSuppliers={handleSearchSuppliers}
+                onLoadSupplierEvaluations={apiDataEnabled ? getSupplierEvaluations : undefined}
                 onFetchRfqRoundQuotations={handleFetchRfqRoundQuotations}
               />
             )}

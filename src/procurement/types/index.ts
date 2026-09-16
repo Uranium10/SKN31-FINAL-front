@@ -305,6 +305,12 @@ export interface POProcessingIssue {
 
 export type POScorecardScores = Omit<SupplierScores, 'price'> & { price?: number };
 
+export interface SupplierRecommendation {
+  scores: POScorecardScores;
+  average_score: number;
+  evaluation_count: number;
+}
+
 export interface POItem {
   id: string;
   prNo: string;

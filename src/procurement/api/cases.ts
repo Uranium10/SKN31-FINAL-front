@@ -6,6 +6,7 @@ import type {
   RfqRoundHistoryEntry,
   RfqRoundSnapshot,
   SupplierQuotation,
+  SupplierRecommendation,
   VendorSelectionGroup,
 } from '../types';
 
@@ -235,6 +236,7 @@ export interface SupplierSearchResult {
   supplierName: string;
   email: string | null;
   phone: string | null;
+  recommendation?: SupplierRecommendation | null;
 }
 
 interface SupplierSearchResponse {
@@ -243,6 +245,7 @@ interface SupplierSearchResponse {
     supplier_name?: string;
     email?: string | null;
     phone?: string | null;
+    recommendation?: SupplierRecommendation | null;
   }>;
 }
 
@@ -266,7 +269,18 @@ export const searchSuppliers = async (
     supplierName: row.supplier_name || row.name || '',
     email: row.email ?? null,
     phone: row.phone ?? null,
+    recommendation: row.recommendation,
   }));
+};
+
+export const getSupplierEvaluations = async (names: string[]): Promise<Record<string, SupplierRecommendation>> => {
+  const response = await fetchWithAuth('/api/procurement/suppliers/evaluations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ names }),
+  });
+  const body = await parseJson<{ items: Record<string, SupplierRecommendation> }>(response);
+  return body.items;
 };
 
 const text = (value: unknown, fallback = ''): string => (
