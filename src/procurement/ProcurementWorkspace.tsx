@@ -2038,7 +2038,7 @@ function ProcurementWorkspaceComponent({
       try {
         await answerProcurementTask(
           targetPO.pendingTaskId,
-          { ...scores },
+          { quality: scores.quality, service: scores.service, communication: scores.communication },
           targetPO.pendingTask?.version,
         );
         clearNotificationsForMR(targetPO.mrNo);

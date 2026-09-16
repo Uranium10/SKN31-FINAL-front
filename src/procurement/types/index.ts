@@ -337,6 +337,10 @@ export interface POItem {
   arrived?: boolean;
   arrivedDate?: string;
   scorecardScores?: SupplierScores;
+  automaticScorecard?: {
+    scores: Partial<Pick<SupplierScores, 'leadTime' | 'price'>>;
+    reasons: Partial<Record<'leadTime' | 'price', string>>;
+  };
   scorecardCompleted?: boolean;
   backendCaseId?: string;
   pendingTaskId?: string;

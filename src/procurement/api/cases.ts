@@ -54,6 +54,7 @@ export interface ProcurementCaseDTO {
     full_receipt_date?: string;
     scorecard_status?: 'LOCKED' | 'AVAILABLE' | 'COMPLETED';
     scorecard?: Record<string, unknown> | null;
+    automatic_scorecard?: POItem['automaticScorecard'];
     invoice_count?: number;
     latest_invoice_name?: string;
     invoice_total?: number | string;
@@ -708,6 +709,7 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     fullReceiptDate: delivery?.full_receipt_date,
     scorecardCompleted: delivery?.scorecard_status === 'COMPLETED',
     scorecardScores,
+    automaticScorecard: delivery?.automatic_scorecard,
     invoiceCount: numberValue(delivery?.invoice_count),
     latestInvoiceName: delivery?.latest_invoice_name,
     invoiceTotal: numberValue(delivery?.invoice_total),
