@@ -4,7 +4,7 @@ import type {
   MaterialRequest,
   RfqRoundSnapshot,
   SupplierQuotation,
-  SupplierScores,
+  POScorecardScores,
   StageMovePlaceholder,
 } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
@@ -135,8 +135,8 @@ export interface ManualSupplierSuggestion {
 }
 
 interface RfqCandidateRow extends Omit<SupplierQuotation, 'scores'> {
-  scores: SupplierScores | null;
-  count5: number | null;
+  scores: POScorecardScores | null;
+  averageScore: number | null;
   rank: number | null;
   isManual: boolean;
 }
@@ -205,27 +205,6 @@ const removeRfqDraftCache = (mrNo: string): void => {
 
 const hasQuotationAiEvaluation = (quotation: SupplierQuotation): boolean => (
   quotation.aiEvaluated ?? Boolean(quotation.aiReason.trim())
-);
-
-// AI 5대 항목 평가 점수 생성 헬퍼 함수 (납기, 품질, 가격, 응대, 의사소통 각 5점 만점)
-const getSupplierScores = (quotation: SupplierQuotation): SupplierScores => {
-  if (quotation.scores) return quotation.scores;
-  if (quotation.aiRank === 1) {
-    return { leadTime: 5, quality: 5, price: 5, service: 4, communication: 5 };
-  } else if (quotation.aiRank === 2) {
-    return { leadTime: 5, quality: 4, price: 4, service: 5, communication: 5 };
-  } else {
-    return { leadTime: 4, quality: 5, price: 4, service: 4, communication: 5 };
-  }
-};
-
-// 5점 만점 개수 산출 헬퍼
-const getCountOf5 = (scores: SupplierScores): number => {
-  return Object.values(scores).filter((v) => v === 5).length;
-};
-
-const getAverageScore = (scores: SupplierScores): number => (
-  (scores.leadTime + scores.quality + scores.price + scores.service + scores.communication) / 5
 );
 
 const formatExpectedDelivery = (quotation: SupplierQuotation): string => {
@@ -547,15 +526,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     if (!selectedGroup) return [];
     const ranked = [...selectedGroup.quotations]
       .map((quotation) => {
-        const scores = getSupplierScores(quotation);
-        return { quotation, scores, count5: getCountOf5(scores) };
+        const scores = quotation.scores ?? null;
+        return { quotation, scores, averageScore: quotation.recommendationScore ?? null };
       })
-      .sort((left, right) => right.count5 - left.count5)
-      .map(({ quotation, scores, count5 }, index) => ({
+      .sort((left, right) => (right.averageScore ?? -1) - (left.averageScore ?? -1))
+      .map(({ quotation, scores, averageScore }, _index, sorted) => ({
         ...quotation,
         scores,
-        count5,
-        rank: index + 1,
+        averageScore,
+        rank: averageScore == null ? null : sorted.findIndex((row) => row.averageScore === averageScore) + 1,
         isManual: false,
       }));
     const manual = rfqManualSuppliers.map((name) => ({
@@ -574,7 +553,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       email: rfqSupplierEmails[name] || undefined,
       source: 'manual',
       scores: null,
-      count5: null,
+      averageScore: null,
       rank: null,
       isManual: true,
     } satisfies RfqCandidateRow));
@@ -1682,7 +1661,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   }}
                 >
                   <Sparkles size={14} style={{ display: 'inline', marginRight: '6px' }} />
-                  AI가 <strong>납기, 품질, 가격, 응대, 의사소통</strong> 5개 항목을 5점 만점으로 평가하여 <strong>5점이 많은 순위</strong>대로 랭킹을 산출했습니다. RFQ를 발송할 업체를 체크해 주세요.
+                  비딩플로우에서 완료한 <strong>PO별 평가 평균을 다시 평균</strong>하여 높은 점수 순으로 추천합니다. 제외된 가격은 해당 평가의 평균에서 제외하며, 항목별 점수는 평가 이력의 평균입니다. 평가 이력이 없는 협력사는 미평가로 표시합니다. RFQ를 발송할 업체를 체크해 주세요.
                 </div>
 
                 <div className="rfq-selection-toolbar">
@@ -1763,7 +1742,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   <span className={`rank-badge rank-${rank}`} style={{ display: 'inline-block', width: '22px', height: '22px', lineHeight: '22px', fontSize: '11px' }}>
                                     {rank}
                                   </span>
-                                ) : <span className="badge badge-gray">직접</span>}
+                                ) : <span className="badge badge-gray">{q.isManual ? '직접' : '미평가'}</span>}
                               </td>
                               {/* 협력사명·이메일·연락처·출처 URL */}
                               <td className="rfq-supplier-info-cell">
@@ -1771,7 +1750,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   <span>
                                     {q.supplierName}
                                     {rank === 1 && (
-                                      <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 최우수]</span>
+                                      <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[평가 평균 1위]</span>
                                     )}
                                     {isRejected && (
                                       <span
@@ -1838,31 +1817,31 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               </td>
                               {/* 5개 평가 항목 평균 */}
                               <td style={{ textAlign: 'center' }}>
-                                {q.scores ? (
-                                  <span className="badge badge-purple" style={{ fontWeight: 700 }}>
-                                    {getAverageScore(q.scores).toFixed(1)}점
+                                {q.averageScore != null ? (
+                                  <span className="badge badge-purple" style={{ fontWeight: 700 }} title={`완료된 PO 평가 ${q.evaluationCount ?? 0}건 평균`}>
+                                    {q.averageScore.toFixed(1)}점
                                   </span>
                                 ) : '—'}
                               </td>
                               {/* 납기 */}
                               <td style={{ textAlign: 'center', color: q.scores?.leadTime === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.leadTime === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.leadTime}점` : '—'}
+                                {q.scores?.leadTime != null ? `⭐ ${q.scores.leadTime.toFixed(1)}점` : '—'}
                               </td>
                               {/* 품질 */}
                               <td style={{ textAlign: 'center', color: q.scores?.quality === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.quality === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.quality}점` : '—'}
+                                {q.scores?.quality != null ? `⭐ ${q.scores.quality.toFixed(1)}점` : '—'}
                               </td>
                               {/* 가격 */}
                               <td style={{ textAlign: 'center', color: q.scores?.price === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.price === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.price}점` : '—'}
+                                {q.scores?.price != null ? `⭐ ${q.scores.price.toFixed(1)}점` : '—'}
                               </td>
                               {/* 응대 */}
                               <td style={{ textAlign: 'center', color: q.scores?.service === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.service === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.service}점` : '—'}
+                                {q.scores?.service != null ? `⭐ ${q.scores.service.toFixed(1)}점` : '—'}
                               </td>
                               {/* 의사소통 */}
                               <td style={{ textAlign: 'center', color: q.scores?.communication === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.communication === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.communication}점` : '—'}
+                                {q.scores?.communication != null ? `⭐ ${q.scores.communication.toFixed(1)}점` : '—'}
                               </td>
                             </tr>
                           );

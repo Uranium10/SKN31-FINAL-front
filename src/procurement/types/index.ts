@@ -192,7 +192,9 @@ export interface SupplierQuotation {
   sourceUrl?: string;
   /** ERPNext, 나라장터, 웹 검색 등 후보가 유입된 경로입니다. */
   source?: string;
-  scores?: SupplierScores;
+  scores?: POScorecardScores;
+  recommendationScore?: number;
+  evaluationCount?: number;
 }
 
 export interface VendorSelectionHistoryEntry {

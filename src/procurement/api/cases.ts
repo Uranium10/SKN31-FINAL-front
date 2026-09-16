@@ -19,6 +19,11 @@ export interface ProcurementCaseDTO {
   item_code?: string | null;
   item_name?: string | null;
   summary?: Record<string, unknown>;
+  supplier_recommendations?: Record<string, {
+    scores: NonNullable<SupplierQuotation['scores']>;
+    average_score: number;
+    evaluation_count: number;
+  }>;
   workflow_snapshot?: Record<string, unknown>;
   quotation_snapshot?: {
     rfq_name?: string;
@@ -518,6 +523,9 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
     return {
       supplierId: name,
       supplierName: name,
+      scores: entry.supplier_recommendations?.[name]?.scores,
+      recommendationScore: entry.supplier_recommendations?.[name]?.average_score,
+      evaluationCount: entry.supplier_recommendations?.[name]?.evaluation_count,
       quoteUnitPrice: unitPrice,
       quoteTotalPrice: totalPrice,
       leadTimeDays: numberValue(row.lead_time_days ?? row.lead_time),
