@@ -1,0 +1,254 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2500" height="2050" viewBox="0 0 2500 2050">
+<title>BiddingFlow AI 시스템 아키텍처</title><desc>아이콘으로 표현한 구매 에이전트, 데이터 흐름, 장애 대응 및 확장 설계</desc>
+<defs>
+<marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0L8 4L0 8" fill="#667b94"/></marker>
+<marker id="f" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0L8 4L0 8" fill="#d18a26"/></marker>
+</defs><style>text{font-family:'Malgun Gothic',sans-serif;fill:#223b57} .label{font-size:23px;font-weight:700} .small{font-size:18px;fill:#62758c} .section{font-size:20px;font-weight:700}</style>
+<rect width="2500" height="2050" fill="#f7f9fc"/>
+<text x="70" y="65" style="font-size:28px;font-weight:700">BiddingFlow  |  AI 시스템 아키텍처</text>
+<text x="70" y="97" class="small" text-anchor="start">전체 연결 구조 → 구매 실행 단계 → 확장 설계 순서로 읽습니다.</text>
+<rect x="1740" y="40" width="62" height="24" rx="5" fill="#f0e8ff" stroke="#7850b5"/>
+<path d="M1752 46l6 6-6 6-6-6z" fill="#7850b5"/>
+<text x="1763" y="57" style="font-size:13px;font-weight:700;fill:#7850b5">AI</text>
+<text x="1817" y="58" class="small" text-anchor="start">모델 추론·추천</text>
+<rect x="1970" y="40" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="1977" y="47" width="10" height="10" fill="#276caa"/>
+<text x="1993" y="57" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<text x="2047" y="58" class="small" text-anchor="start">조건·검증·실행</text>
+<rect x="2200" y="40" width="62" height="24" rx="12" fill="#fff0ce" stroke="#a16c11"/>
+<circle cx="2212" cy="52" r="5" fill="#a16c11"/>
+<text x="2223" y="57" style="font-size:13px;font-weight:700;fill:#a16c11">사람</text>
+<text x="2277" y="58" class="small" text-anchor="start">선택·승인</text>
+<text x="1740" y="100" class="small" text-anchor="start">실선: 연결 흐름   주황: 장애 대응   [예정]: 추가·전환 설계</text>
+<rect x="590" y="170" width="300" height="135" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(716.0 183) scale(1)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="13" r="8"/><path d="M8 43v-5a16 16 0 0 1 32 0v5M6 43h36"/></g>
+<text x="740.0" y="255" class="label" text-anchor="middle">사용자 · 공급사</text>
+<text x="740.0" y="278" class="small" text-anchor="middle">구매 요청 / 견적 제출 / 수주 응답</text>
+<rect x="1030" y="170" width="400" height="135" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(1206.0 183) scale(1)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="42" height="30" rx="4"/><path d="M17 44h14M24 35v9M3 13h42"/></g>
+<text x="1230.0" y="255" class="label" text-anchor="middle">구매 업무 화면</text>
+<text x="1230.0" y="278" class="small" text-anchor="middle">React · Vite / 구매 상태·작업 관리</text>
+<path d="M890 237H1030" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="880.0" y="194" width="160" height="36" rx="7" fill="#f7f9fc"/>
+<text x="960" y="219" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">요청 · 확인</text>
+<rect x="1030" y="360" width="400" height="100" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(1050 382) scale(1)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="40" height="16" rx="3"/><rect x="4" y="28" width="40" height="16" rx="3"/><path d="M12 12h2m7 0h15M12 36h2m7 0h15"/></g>
+<text x="1120" y="394" class="label" text-anchor="start">FastAPI · 업무 서비스</text>
+<text x="1120" y="425" class="small" text-anchor="start">인증 / 업무 API / SSE 알림</text>
+<path d="M1230 305V360" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="1253.0" y="314" width="134" height="36" rx="7" fill="#f7f9fc"/>
+<text x="1320" y="339" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">API / SSE</text>
+<rect x="870" y="530" width="760" height="340" rx="16" fill="#dfeefa" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(912 568) scale(1.65)" fill="none" stroke="#286ea8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="12" width="40" height="30" rx="8"/><path d="M24 12V4M20 4h8M14 24h2m16 0h2M15 34h18M0 23v10m48-10v10"/></g>
+<text x="1020" y="599" style="font-size:28px;font-weight:700">구매 오케스트레이터</text>
+<text x="1020" y="631" class="small" text-anchor="start">LangGraph · 상태 기반 워크플로</text>
+<rect x="1528" y="556" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="1535" y="563" width="10" height="10" fill="#276caa"/>
+<text x="1551" y="573" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<rect x="910" y="688" width="680" height="87" rx="16" fill="#ffffff" stroke="#ccd8e5" stroke-width="1.5"/>
+<text x="1250" y="722" class="label" text-anchor="middle">현재 상태 + 규칙 + 사용자 응답</text>
+<text x="1250" y="752" class="small" text-anchor="middle">Command(update, goto) → 다음 단계 결정</text>
+<text x="1250" y="826" class="label" text-anchor="middle">대체품 → 공급사 → RFQ → 견적 → 수주 → PO</text>
+<path d="M1230 460V530" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)"/>
+<rect x="1267.0" y="477" width="126" height="36" rx="7" fill="#f7f9fc"/>
+<text x="1330" y="502" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">구매 실행</text>
+<rect x="70" y="530" width="600" height="340" rx="16" fill="#f2ebfd" stroke="#ccd8e5" stroke-width="1.5"/>
+<text x="100" y="577" style="font-size:28px;font-weight:700">AI 모델</text>
+<text x="100" y="609" class="small" text-anchor="start">사용자 확정 운영안 · Qwen 통합 전환</text>
+<g transform="translate(105 638) scale(1.05)" fill="none" stroke="#8057b0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="10" y="10" width="28" height="28" rx="5"/><path d="M18 0v10m12-10v10M18 38v10m12-10v10M0 18h10m-10 12h10M38 18h10m-10 12h10M19 19h10v10H19z"/></g>
+<text x="181" y="660" class="label" text-anchor="start">Qwen3.5-9B · 4bit</text>
+<text x="181" y="688" class="small" text-anchor="start">단일 모델 / OCR: thinking off / 판단: on</text>
+<text x="105" y="727" class="small" text-anchor="start">내부 판단: 견적 평가 · 품목 규격 검증 · 대체품 탐색</text>
+<g transform="translate(105 772) scale(1.05)" fill="none" stroke="#8057b0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 38h25a10 10 0 0 0 2-20 15 15 0 0 0-29-2 11 11 0 0 0 2 22z"/></g>
+<text x="181" y="794" class="label" text-anchor="start">gpt-5.6-luna</text>
+<text x="181" y="822" class="small" text-anchor="start">외부 웹 / Tool-Calling 에이전트 3종</text>
+<path d="M870 655H670" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="667.0" y="605" width="206" height="36" rx="7" fill="#f7f9fc"/>
+<text x="770" y="630" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">추론 요청 / 결과</text>
+<rect x="1780" y="170" width="650" height="330" rx="16" fill="#f2ebfd" stroke="#ccd8e5" stroke-width="1.5" stroke-dasharray="7 6"/>
+<text x="1810" y="214" style="font-size:28px;font-weight:700">견적서 파싱 · OCR</text>
+<rect x="2230" y="239" width="62" height="24" rx="5" fill="#f0e8ff" stroke="#7850b5"/>
+<path d="M2242 245l6 6-6 6-6-6z" fill="#7850b5"/>
+<text x="2253" y="256" style="font-size:13px;font-weight:700;fill:#7850b5">AI</text>
+<rect x="2300" y="239" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="2307" y="246" width="10" height="10" fill="#276caa"/>
+<text x="2323" y="256" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<g transform="translate(1815 270) scale(1.05)" fill="none" stroke="#8057b0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h22l10 10v32H9zM30 3v12h11M16 24h18M16 32h18"/></g>
+<text x="1891" y="292" class="label" text-anchor="start">견적서 → OCR → JSON</text>
+<text x="1891" y="320" class="small" text-anchor="start">손글씨 / 인쇄 · Qwen3.5-9B 4bit</text>
+<text x="1815" y="380" class="label" text-anchor="start">AI  추출 (thinking off)</text>
+<text x="1815" y="431" class="small" text-anchor="start">규칙  JSON 검증 → ERP 등록</text>
+<path d="M2110 500V560" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)"/>
+<rect x="2185.0" y="514" width="210" height="36" rx="7" fill="#f7f9fc"/>
+<text x="2290" y="539" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">견적 JSON [예정]</text>
+<rect x="70" y="950" width="600" height="240" rx="16" fill="#edf5fc" stroke="#ccd8e5" stroke-width="1.5"/>
+<text x="100" y="995" style="font-size:28px;font-weight:700">외부 검색 도구</text>
+<g transform="translate(115 1030) scale(1.15)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="20" cy="20" r="14"/><path d="M30 30l15 15M13 20h14M20 13v14"/></g>
+<text x="140" y="1110" class="label" text-anchor="middle">Tavily</text>
+<text x="140" y="1140" class="small" text-anchor="middle">후보 수집</text>
+<g transform="translate(300 1030) scale(1.15)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M24 3L43 10v15c0 11-19 21-19 21S5 36 5 25V10zM14 24l7 7 14-15"/></g>
+<text x="325" y="1110" class="label" text-anchor="middle">DART</text>
+<text x="325" y="1140" class="small" text-anchor="middle">기업 매칭</text>
+<g transform="translate(490 1030) scale(1.15)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 38h25a10 10 0 0 0 2-20 15 15 0 0 0-29-2 11 11 0 0 0 2 22z"/></g>
+<text x="515" y="1110" class="label" text-anchor="middle">Naver</text>
+<text x="515" y="1140" class="small" text-anchor="middle">연락처 보완</text>
+<path d="M205 1060H275" fill="none" stroke="#667b94" stroke-width="2" marker-end="url(#a)"/>
+<path d="M397 1060H465" fill="none" stroke="#667b94" stroke-width="2" marker-end="url(#a)"/>
+<path d="M670 1050H760V790H870" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="685.0" y="883" width="150" height="36" rx="7" fill="#f7f9fc"/>
+<text x="760" y="908" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">검색 / 보완</text>
+<rect x="1780" y="560" width="650" height="330" rx="16" fill="#eeedf9" stroke="#ccd8e5" stroke-width="1.5"/>
+<text x="1810" y="605" style="font-size:28px;font-weight:700">데이터 · 실행 메모리</text>
+<g transform="translate(1815 650) scale(1.05)" fill="none" stroke="#8065ab" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="24" cy="9" rx="19" ry="7"/><path d="M5 9v30c0 10 38 10 38 0V9M5 23c0 10 38 10 38 0"/></g>
+<text x="1891" y="672" class="label" text-anchor="start">ERPNext</text>
+<text x="1891" y="700" class="small" text-anchor="start">MR · 공급사 · RFQ · 견적 · PO 원천</text>
+<g transform="translate(1815 730) scale(1.05)" fill="none" stroke="#8065ab" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="24" cy="9" rx="19" ry="7"/><path d="M5 9v30c0 10 38 10 38 0V9M5 23c0 10 38 10 38 0"/></g>
+<text x="1891" y="752" class="label" text-anchor="start">PostgreSQL</text>
+<text x="1891" y="780" class="small" text-anchor="start">케이스 · 작업 · 알림 · 검색 캐시 · 판단 이력</text>
+<g transform="translate(1815 810) scale(1.05)" fill="none" stroke="#8065ab" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M40 16A18 18 0 1 0 42 31M40 3v13H27"/></g>
+<text x="1891" y="832" class="label" text-anchor="start">SQLite 체크포인트</text>
+<text x="1891" y="860" class="small" text-anchor="start">thread_id 단위 실행 저장 / 재개</text>
+<path d="M1630 680H1780" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="1630.0" y="630" width="150" height="36" rx="7" fill="#f7f9fc"/>
+<text x="1705" y="655" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">저장 / 조회</text>
+<text x="2105" y="925" class="small" text-anchor="middle">ERP Webhook / Polling → 업무 서비스 동기화</text>
+<rect x="870" y="970" width="760" height="170" rx="16" fill="#fff3da" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(905 1006) scale(1.4)" fill="none" stroke="#af7928" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="13" r="8"/><path d="M8 43v-5a16 16 0 0 1 32 0v5M6 43h36"/></g>
+<text x="1000" y="1015" style="font-size:28px;font-weight:700">사람의 판단 · 승인</text>
+<text x="1000" y="1057" class="small" text-anchor="start">대체품 선택 · RFQ 대상 · 최종 업체 · 서류 · PR 요청</text>
+<text x="1000" y="1092" class="small" text-anchor="start">담당자 승인 / 공급사 수주 응답 → 대기 중인 단계 재개</text>
+<path d="M1250 870V970" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)" marker-start="url(#a)"/>
+<rect x="1279.0" y="904" width="242" height="36" rx="7" fill="#f7f9fc"/>
+<text x="1400" y="929" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">interrupt / resume</text>
+<rect x="1780" y="980" width="650" height="210" rx="16" fill="#fff0e3" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(1810 1005) scale(1.1)" fill="none" stroke="#c18830" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M40 16A18 18 0 1 0 42 31M40 3v13H27"/></g>
+<text x="1880" y="1038" style="font-size:28px;font-weight:700">Fallback · 복구</text>
+<text x="1815" y="1080" class="small" text-anchor="start">견적 결과 없음 → 대기·재확인</text>
+<text x="1815" y="1110" class="small" text-anchor="start">실행 오류 → 체크포인트 재시도 / polling → 다음 주기</text>
+<text x="1815" y="1140" class="small" text-anchor="start">파싱 실패 [예정] → 제한 재추출 → 사람 확인</text>
+<text x="1815" y="1170" class="small" text-anchor="start">재개 가능 상태에 적용 · 공통 대체 모델 전환 미구현</text>
+<path d="M1630 800H1685V1060H1780" fill="none" stroke="#c18830" stroke-width="3" marker-end="url(#f)"/>
+<rect x="1610.0" y="936" width="150" height="36" rx="7" fill="#f7f9fc"/>
+<text x="1685" y="961" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#985e13">오류 / 복구</text>
+<text x="70" y="1280" style="font-size:28px;font-weight:700">구매 실행 상세</text>
+<text x="70" y="1312" class="small" text-anchor="start">견적 수신 방식에 따라 분기 · 파일은 파싱·검증, 포털은 ERP 등록 후 평가로 직행</text>
+<rect x="70" y="1460" width="310" height="230" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(88 1478) scale(1.05)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="20" cy="20" r="14"/><path d="M30 30l15 15M13 20h14M20 13v14"/></g>
+<rect x="164" y="1487" width="62" height="24" rx="5" fill="#f0e8ff" stroke="#7850b5"/>
+<path d="M176 1493l6 6-6 6-6-6z" fill="#7850b5"/>
+<text x="187" y="1504" style="font-size:13px;font-weight:700;fill:#7850b5">AI</text>
+<rect x="232" y="1487" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="239" y="1494" width="10" height="10" fill="#276caa"/>
+<text x="255" y="1504" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<rect x="300" y="1487" width="62" height="24" rx="12" fill="#fff0ce" stroke="#a16c11"/>
+<circle cx="312" cy="1499" r="5" fill="#a16c11"/>
+<text x="323" y="1504" style="font-size:13px;font-weight:700;fill:#a16c11">사람</text>
+<text x="88" y="1560" class="label" text-anchor="start">01  대체품 · 비딩</text>
+<text x="88" y="1600" class="small" text-anchor="start">AI  대체품 추천</text>
+<text x="88" y="1630" class="small" text-anchor="start">규칙  경쟁 / 직접 구매 판정</text>
+<text x="88" y="1660" class="small" text-anchor="start">사람  대체품 / 신규 구매 선택</text>
+<path d="M380 1565h32" fill="none" stroke="#667b94" stroke-width="2" marker-end="url(#a)"/>
+<rect x="412" y="1460" width="310" height="230" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(430 1478) scale(1.05)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="12" width="40" height="30" rx="8"/><path d="M24 12V4M20 4h8M14 24h2m16 0h2M15 34h18M0 23v10m48-10v10"/></g>
+<rect x="574" y="1487" width="62" height="24" rx="5" fill="#f0e8ff" stroke="#7850b5"/>
+<path d="M586 1493l6 6-6 6-6-6z" fill="#7850b5"/>
+<text x="597" y="1504" style="font-size:13px;font-weight:700;fill:#7850b5">AI</text>
+<rect x="642" y="1487" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="649" y="1494" width="10" height="10" fill="#276caa"/>
+<text x="665" y="1504" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<text x="430" y="1560" class="label" text-anchor="start">02  공급사 탐색</text>
+<text x="430" y="1600" class="small" text-anchor="start">AI  후보·연락처 추출</text>
+<text x="430" y="1630" class="small" text-anchor="start">규칙  기존 풀·캐시·중복 제거</text>
+<text x="430" y="1660" class="small" text-anchor="start">도구  Tavily → DART → Naver</text>
+<path d="M722 1565h32" fill="none" stroke="#667b94" stroke-width="2" marker-end="url(#a)"/>
+<rect x="754" y="1460" width="310" height="230" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(772 1478) scale(1.05)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="42" height="31" rx="4"/><path d="M4 12l20 16 20-16"/></g>
+<rect x="916" y="1487" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="923" y="1494" width="10" height="10" fill="#276caa"/>
+<text x="939" y="1504" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<rect x="984" y="1487" width="62" height="24" rx="12" fill="#fff0ce" stroke="#a16c11"/>
+<circle cx="996" cy="1499" r="5" fill="#a16c11"/>
+<text x="1007" y="1504" style="font-size:13px;font-weight:700;fill:#a16c11">사람</text>
+<text x="772" y="1560" class="label" text-anchor="start">03  RFQ 발송</text>
+<text x="772" y="1600" class="small" text-anchor="start">사람  발송 대상 선택</text>
+<text x="772" y="1630" class="small" text-anchor="start">규칙  검증·등록·발송</text>
+<text x="772" y="1660" class="small" text-anchor="start">이후  파일 / 포털 견적 수신</text>
+<rect x="1096" y="1460" width="310" height="230" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(1114 1478) scale(1.05)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h22l10 10v32H9zM30 3v12h11M16 24h18M16 32h18"/></g>
+<rect x="1258" y="1487" width="62" height="24" rx="5" fill="#f0e8ff" stroke="#7850b5"/>
+<path d="M1270 1493l6 6-6 6-6-6z" fill="#7850b5"/>
+<text x="1281" y="1504" style="font-size:13px;font-weight:700;fill:#7850b5">AI</text>
+<rect x="1326" y="1487" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="1333" y="1494" width="10" height="10" fill="#276caa"/>
+<text x="1349" y="1504" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<text x="1114" y="1560" class="label" text-anchor="start">04  파싱 · 검증</text>
+<text x="1114" y="1600" class="small" text-anchor="start">AI  OCR → JSON (thinking off)</text>
+<text x="1114" y="1630" class="small" text-anchor="start">규칙  JSON 검증 → ERP 등록</text>
+<text x="1114" y="1660" class="small" text-anchor="start">대상  파일 견적만 처리</text>
+<path d="M1406 1565h32" fill="none" stroke="#667b94" stroke-width="2" marker-end="url(#a)"/>
+<rect x="1438" y="1460" width="310" height="230" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(1456 1478) scale(1.05)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v41h40M13 35V24h6v11m7 0V15h6v20m7 0V6h6v29"/></g>
+<rect x="1532" y="1487" width="62" height="24" rx="5" fill="#f0e8ff" stroke="#7850b5"/>
+<path d="M1544 1493l6 6-6 6-6-6z" fill="#7850b5"/>
+<text x="1555" y="1504" style="font-size:13px;font-weight:700;fill:#7850b5">AI</text>
+<rect x="1600" y="1487" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="1607" y="1494" width="10" height="10" fill="#276caa"/>
+<text x="1623" y="1504" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<rect x="1668" y="1487" width="62" height="24" rx="12" fill="#fff0ce" stroke="#a16c11"/>
+<circle cx="1680" cy="1499" r="5" fill="#a16c11"/>
+<text x="1691" y="1504" style="font-size:13px;font-weight:700;fill:#a16c11">사람</text>
+<text x="1456" y="1560" class="label" text-anchor="start">05  견적 비교 · 선정</text>
+<text x="1456" y="1600" class="small" text-anchor="start">AI  Qwen 평가 [전환 예정]</text>
+<text x="1456" y="1630" class="small" text-anchor="start">규칙  1건 비교 생략·확정</text>
+<text x="1456" y="1660" class="small" text-anchor="start">사람  최종 공급사 선정</text>
+<path d="M1748 1565h32" fill="none" stroke="#667b94" stroke-width="2" marker-end="url(#a)"/>
+<rect x="1780" y="1460" width="310" height="230" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(1798 1478) scale(1.05)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M24 3L43 10v15c0 11-19 21-19 21S5 36 5 25V10zM14 24l7 7 14-15"/></g>
+<rect x="1942" y="1487" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="1949" y="1494" width="10" height="10" fill="#276caa"/>
+<text x="1965" y="1504" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<rect x="2010" y="1487" width="62" height="24" rx="12" fill="#fff0ce" stroke="#a16c11"/>
+<circle cx="2022" cy="1499" r="5" fill="#a16c11"/>
+<text x="2033" y="1504" style="font-size:13px;font-weight:700;fill:#a16c11">사람</text>
+<text x="1798" y="1560" class="label" text-anchor="start">06  서류 · 수주 확인</text>
+<text x="1798" y="1600" class="small" text-anchor="start">규칙  서류 검사·PR·응답 분기</text>
+<text x="1798" y="1630" class="small" text-anchor="start">사람  서류 승인·PR 요청</text>
+<text x="1798" y="1660" class="small" text-anchor="start">공급사  수주 수락 / 거절</text>
+<path d="M2090 1565h32" fill="none" stroke="#667b94" stroke-width="2" marker-end="url(#a)"/>
+<rect x="2122" y="1460" width="310" height="230" rx="16" fill="#fff" stroke="#ccd8e5" stroke-width="1.5"/>
+<g transform="translate(2140 1478) scale(1.05)" fill="none" stroke="#3979b7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h26v26H3zM29 21h10l7 9v7H29"/><circle cx="12" cy="39" r="5"/><circle cx="37" cy="39" r="5"/></g>
+<rect x="2352" y="1487" width="62" height="24" rx="5" fill="#e6f2ff" stroke="#276caa"/>
+<rect x="2359" y="1494" width="10" height="10" fill="#276caa"/>
+<text x="2375" y="1504" style="font-size:13px;font-weight:700;fill:#276caa">규칙</text>
+<text x="2140" y="1560" class="label" text-anchor="start">07  발주 실행</text>
+<text x="2140" y="1600" class="small" text-anchor="start">규칙  수주 수락 확인</text>
+<text x="2140" y="1630" class="small" text-anchor="start">실행  PO 생성·Submit·발송</text>
+<text x="2140" y="1660" class="small" text-anchor="start">이후  입고 등 후속 업무 서비스</text>
+<path d="M840 1460V1360H1593V1460" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)"/>
+<rect x="1055.0" y="1323" width="410" height="36" rx="7" fill="#f7f9fc"/>
+<text x="1260" y="1348" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">포털 견적 → ERP 등록 · 파싱 생략</text>
+<path d="M990 1460V1415H1251V1460" fill="none" stroke="#617991" stroke-width="3" marker-end="url(#a)"/>
+<rect x="1057.0" y="1378" width="126" height="36" rx="7" fill="#f7f9fc"/>
+<text x="1120" y="1403" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#304d69">파일 견적</text>
+<path d="M1935 1460V1395H1680V1460" fill="none" stroke="#c18830" stroke-width="3" marker-end="url(#f)"/>
+<rect x="1732.0" y="1353" width="316" height="36" rx="7" fill="#f7f9fc"/>
+<text x="1890" y="1378" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#985e13">수주 거절 → 차순위 재선정</text>
+<text x="70" y="1730" class="small" text-anchor="start">직접 구매: 01 → 06   ·   대체품 선택: 구매 그래프 종료   ·   수주 거절: 차순위 PR / 재비딩 / 사람 검토</text>
+<rect x="70" y="1790" width="2360" height="145" rx="16" fill="#eef2f7" stroke="#ccd8e5" stroke-width="1.5" stroke-dasharray="7 6"/>
+<text x="100" y="1830" style="font-size:28px;font-weight:700">확장 설계</text>
+<text x="100" y="1862" class="small" text-anchor="start">제안 / 미구현</text>
+<g transform="translate(420 1824) scale(1.05)" fill="none" stroke="#61768f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="42" height="10" rx="3"/><rect x="3" y="20" width="42" height="10" rx="3"/><rect x="3" y="35" width="42" height="10" rx="3"/></g>
+<text x="496" y="1846" class="label" text-anchor="start">영속 작업 큐</text>
+<text x="496" y="1874" class="small" text-anchor="start">Outbox · 멱등 키</text>
+<g transform="translate(950 1824) scale(1.05)" fill="none" stroke="#61768f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="40" height="16" rx="3"/><rect x="4" y="28" width="40" height="16" rx="3"/><path d="M12 12h2m7 0h15M12 36h2m7 0h15"/></g>
+<text x="1026" y="1846" class="label" text-anchor="start">공유 상태 · 워커 풀</text>
+<text x="1026" y="1874" class="small" text-anchor="start">케이스별 잠금 · 체크포인터</text>
+<g transform="translate(1510 1824) scale(1.05)" fill="none" stroke="#61768f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="10" y="10" width="28" height="28" rx="5"/><path d="M18 0v10m12-10v10M18 38v10m12-10v10M0 18h10m-10 12h10M38 18h10m-10 12h10M19 19h10v10H19z"/></g>
+<text x="1586" y="1846" class="label" text-anchor="start">모델 워커 분리</text>
+<text x="1586" y="1874" class="small" text-anchor="start">추론 자원 독립 확장</text>
+<g transform="translate(2030 1824) scale(1.05)" fill="none" stroke="#61768f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M24 3L43 10v15c0 11-19 21-19 21S5 36 5 25V10zM14 24l7 7 14-15"/></g>
+<text x="2106" y="1846" class="label" text-anchor="start">장애 격리</text>
+<text x="2106" y="1874" class="small" text-anchor="start">제한 재시도 · 실패 작업 보관</text>
+<text x="70" y="1980" class="small" text-anchor="start">QLoRA 예정: Qwen3.5-9B 및 Qwen2.5-VL-7B · 손글씨 성능 개선 목표 / 최종 운영안은 Qwen3.5-9B 단일 모델</text>
+<text x="70" y="2015" class="small" text-anchor="start">현재 구조 + 사용자 제공 전환 계획 · [예정]은 구현·배포 미확인 · 모델 성능은 별도 검증 필요 · 상세: AI_SYSTEM_ARCHITECTURE.md</text>
+</svg>
