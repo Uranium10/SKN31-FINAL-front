@@ -176,6 +176,15 @@ export interface SupplierQuotation {
   aiRank: number;
   aiScore: number;
   aiReason: string;
+  /** quotation_ranker의 가격·납기 규칙 점수(0~100). */
+  numericScore?: number;
+  /** quotation_ranker의 규격 적합도 점수(0~100). */
+  specificationScore?: number;
+  /** 두 점수를 환경변수 가중치로 합산한 최종 점수(0~100). */
+  overallScore?: number;
+  /** 규격 평가에 실제 사용된 모델명. */
+  evaluationSource?: string;
+  currency?: string;
   /** 현재 SQ 집계본에 실제 AI 견적 평가 결과가 결합됐는지 여부입니다. */
   aiEvaluated?: boolean;
   /** AI가 확인한 규격 일치 여부입니다. 평가 전에는 undefined입니다. */

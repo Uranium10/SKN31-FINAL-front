@@ -2232,7 +2232,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                 )}
                                 {q.aiReason && (
                                   <div style={{ color: 'var(--primary-hover)', marginTop: '4px', fontWeight: 500 }}>
-                                    💡 AI {q.aiRank}위 · {q.aiReason}
+                                    💡 AI {q.aiRank}위
+                                    {q.overallScore !== undefined && (
+                                      <> · 종합 {q.overallScore.toFixed(2)}점</>
+                                    )}
+                                    {q.numericScore !== undefined && q.specificationScore !== undefined && (
+                                      <>: 가격·납기 {q.numericScore.toFixed(2)}점, 규격 {q.specificationScore.toFixed(2)}점</>
+                                    )}
+                                    {' · '}{q.aiReason}
                                   </div>
                                 )}
                                 {q.aiIssues && q.aiIssues.length > 0 && (

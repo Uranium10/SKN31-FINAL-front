@@ -524,7 +524,18 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
     const name = supplierName(row);
     const responded = liveBySupplier.has(name) || rankingBySupplier.has(name);
     const aiEvaluated = rankingBySupplier.has(name);
-    const unitPrice = numberValue(row.rate ?? row.unit_price ?? row.net_rate ?? row.quote_unit_price);
+    const quotationItems = rows(row.items);
+    const quotationItem = quotationItems.find((item) => (
+      !entry.item_code || text(item.item_code) === entry.item_code
+    )) ?? quotationItems[0] ?? {};
+    const unitPrice = numberValue(
+      row.rate
+      ?? row.unit_price
+      ?? row.net_rate
+      ?? row.quote_unit_price
+      ?? quotationItem.rate
+      ?? quotationItem.net_rate,
+    );
     const totalPrice = numberValue(
       row.total_amount
       ?? row.grand_total
@@ -532,7 +543,9 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       ?? row.amount
       ?? row.net_amount
       ?? row.total
-      ?? row.total_price,
+      ?? row.total_price
+      ?? quotationItem.amount
+      ?? quotationItem.net_amount,
     ) || unitPrice;
     return {
       supplierId: name,
@@ -544,17 +557,33 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       quoteTotalPrice: totalPrice,
       leadTimeDays: numberValue(row.lead_time_days ?? row.lead_time),
       expectedDeliveryDate: text(
-        row.expected_delivery_date ?? row.schedule_date ?? row.delivery_date,
+        row.expected_delivery_date
+        ?? row.schedule_date
+        ?? row.delivery_date
+        ?? quotationItem.expected_delivery_date
+        ?? quotationItem.schedule_date
+        ?? quotationItem.delivery_date,
       ) || undefined,
       isResponded: responded,
       resContent: text(
-        row.response_summary ?? row.remarks ?? row.supplier_response,
+        row.response_summary ?? row.remarks ?? row.supplier_response ?? row.terms,
         responded ? '견적 단가와 제시 납기 정보를 수신했습니다.' : '아직 견적을 회신하지 않았습니다.',
       ),
       resAttachments: [],
       aiRank: numberValue(row.rank) || index + 1,
-      aiScore: numberValue(row.score ?? row.ai_score),
+      aiScore: numberValue(row.overall_score ?? row.score ?? row.ai_score),
       aiReason: aiEvaluated ? text(row.reason ?? row.ai_reason) : '',
+      numericScore: aiEvaluated && row.numeric_score != null
+        ? numberValue(row.numeric_score)
+        : undefined,
+      specificationScore: aiEvaluated && row.specification_score != null
+        ? numberValue(row.specification_score)
+        : undefined,
+      overallScore: aiEvaluated && (row.overall_score ?? row.score ?? row.ai_score) != null
+        ? numberValue(row.overall_score ?? row.score ?? row.ai_score)
+        : undefined,
+      evaluationSource: aiEvaluated ? text(row.evaluation_source) || undefined : undefined,
+      currency: text(row.currency) || undefined,
       aiEvaluated,
       specMatch: typeof row.spec_match === 'boolean' ? row.spec_match : undefined,
       fulfillsQuantity: typeof row.fulfills_qty === 'boolean' ? row.fulfills_qty : undefined,
