@@ -332,16 +332,14 @@ function ProcurementWorkspaceComponent({
   const uniqueRequests = useMemo(() => uniqueByMrNo(requests), [requests]);
   const mrQueueRequests = useMemo(
     () => uniqueRequests.filter((request) => {
-      // 반려 건은 사유 확인을 위해 MR 목록에 남기되, 대체품 선택 등으로
-      // 정상 취소된 건과 완료 건은 다음 단계 목록에서 숨긴다.
-      if (request.workflowStatus === 'REJECTED') return true;
-      // 009-03 이전에 urgent_no_supplier_cancelled가 CANCELLED로 저장된
-      // 기존 케이스도 반려 사유가 있으면 같은 방식으로 복구 표시한다.
-      if (request.workflowStatus === 'CANCELLED' && request.rejectReason) return true;
-      if (request.workflowStatus && ['COMPLETED', 'CANCELLED'].includes(request.workflowStatus)) {
+      // 반려·취소·완료 건은 MR 목록 화면(BiddingFlow)에 더 이상 남기지
+      // 않는다. ERPNext에서 MR이 삭제되어 대사 과정에서 CANCELLED로
+      // 종료된 케이스도 여기서 함께 숨겨야 삭제된 MR이 반려 배지로
+      // 계속 화면에 남는 문제가 재발하지 않는다.
+      if (request.workflowStatus && ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(request.workflowStatus)) {
         return false;
       }
-      if (!request.workflowStage) return request.status !== '승인';
+      if (!request.workflowStage) return request.status !== '승인' && request.status !== '반려';
       return ['MR_REVIEW', 'ITEM_CHECK', 'SUBSTITUTE_DECISION', 'HUMAN_REVIEW'].includes(
         request.workflowStage
       );
