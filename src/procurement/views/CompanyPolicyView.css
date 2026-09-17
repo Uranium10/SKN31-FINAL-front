@@ -21,6 +21,14 @@
 .policy-number { display: flex; align-items: center; gap: 10px; }
 .policy-number span { white-space: nowrap; font-size: 13px; color: #626269; min-width: 45px; }
 .policy-priority { margin-top: 24px; }
+.policy-weight-editor { margin-top: 24px; padding: 20px; border: 1px solid #d4d4d8; border-radius: 10px; background: #fafafa; }
+.policy-weight-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 18px; }
+.policy-weight-heading strong, .policy-weight-heading small { display: block; }
+.policy-weight-heading small { margin-top: 7px; color: #64646c; line-height: 1.6; }
+.policy-weight-heading > span { flex: 0 0 auto; padding: 7px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.policy-weight-heading > span.is-valid { color: #166534; background: #dcfce7; }
+.policy-weight-heading > span.is-invalid { color: #991b1b; background: #fee2e2; }
+.policy-weight-warning { margin: 14px 0 0; color: #991b1b; font-size: 12px; font-weight: 650; }
 .policy-publish { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 20px; }
 .policy-confirm { border: 2px solid #27272a; border-radius: 12px; padding: 22px; margin-top: 20px; background: #f4f4f5; }
 .policy-confirm ul { margin: 14px 0; padding-left: 22px; line-height: 1.9; }
@@ -32,7 +40,7 @@
 .policy-history small { display: block; margin-top: 7px; color: #71717a; font-size: 12px; }
 .policy-error, .policy-success { padding: 14px 18px; border: 1px solid #52525b; border-radius: 8px; background: #fff; line-height: 1.6; }
 .policy-error { border-left: 4px solid #18181b; font-weight: 600; }
-@media (max-width: 800px) { .policy-grid, .policy-publish { grid-template-columns: 1fr; } .policy-heading { align-items: flex-start; flex-direction: column; } .policy-history article { flex-wrap: wrap; } }
+@media (max-width: 800px) { .policy-grid, .policy-publish { grid-template-columns: 1fr; } .policy-heading, .policy-weight-heading { align-items: flex-start; flex-direction: column; } .policy-history article { flex-wrap: wrap; } }
 .runpod-control h3, .runpod-duration, .runpod-refresh { display: flex; align-items: center; gap: 8px; }
 .runpod-status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
 .runpod-status-grid > div { padding: 16px; background: #f6f6f6; border: 1px solid #d7d7d7; border-radius: 10px; }

@@ -12,6 +12,8 @@ export interface CompanyPolicy {
     min_competing_suppliers: number;
     supplier_refresh_years: number;
     quotation_priority: 'price_then_delivery' | 'delivery_then_price';
+    quotation_numeric_score_weight: number;
+    quotation_spec_score_weight: number;
   };
   guidance: { item_specification: string; substitute_selection: string };
 }
