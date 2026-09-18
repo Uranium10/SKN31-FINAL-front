@@ -21,6 +21,7 @@ interface HeaderProps {
 
 const tabTitles: Record<NavigationTab, string> = {
   'company-policy': '관리자 환경설정',
+  'ai-decision-log': 'AI 판단 로그',
   dashboard: '대시보드',
   'item-register': '아이템 목록',
   'mr-list': 'MR 목록',

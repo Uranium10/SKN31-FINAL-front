@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   PanelLeftOpen,
   Settings,
+  BrainCircuit,
 } from 'lucide-react';
 import SailboatIcon from '../../components/common/SailboatIcon';
 import type { NavigationTab } from '../types';
@@ -175,6 +176,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             style={{ width: '100%', border: 0, textAlign: 'left', font: 'inherit' }}
             onClick={() => setCurrentTab('company-policy')} title="관리자 환경설정 · 회사 구매 정책">
             <div className="nav-item-left"><Settings size={18} /><span>회사 구매 정책</span></div>
+          </button>
+        </li>}
+        {canManagePolicy && <li>
+          <button type="button" className={`nav-item ${currentTab === 'ai-decision-log' ? 'active' : ''}`}
+            style={{ width: '100%', border: 0, textAlign: 'left', font: 'inherit' }}
+            onClick={() => setCurrentTab('ai-decision-log')} title="AI 판단 근거 감사 로그">
+            <div className="nav-item-left"><BrainCircuit size={18} /><span>AI 판단 로그</span></div>
           </button>
         </li>}
       </ul>

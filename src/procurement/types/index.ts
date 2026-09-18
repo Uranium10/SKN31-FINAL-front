@@ -1,4 +1,4 @@
-export type NavigationTab = 'dashboard' | 'item-register' | 'mr-list' | 'vendor-select' | 'po-manage' | 'company-policy';
+export type NavigationTab = 'dashboard' | 'item-register' | 'mr-list' | 'vendor-select' | 'po-manage' | 'company-policy' | 'ai-decision-log';
 
 export type ItemSpecificationValue = string | number | boolean | null;
 

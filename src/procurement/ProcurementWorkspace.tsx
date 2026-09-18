@@ -11,6 +11,7 @@ import { MRListView } from './views/MRListView';
 import { VendorSelectionView } from './views/VendorSelectionView';
 import { POManagementView } from './views/POManagementView';
 import { CompanyPolicyView } from './views/CompanyPolicyView';
+import { AiDecisionLogView } from './views/AiDecisionLogView';
 import { getPolicyCapabilities } from './api/companyPolicy';
 
 import type {
@@ -120,6 +121,7 @@ function DashboardDatabaseLoader() {
 
 const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
   'company-policy': { title: '회사 구매 정책', detail: '관리자가 구매 기준과 AI 보조 판단 지침을 변경하고 게시합니다.' },
+  'ai-decision-log': { title: 'AI 판단 로그', detail: '구매 자동화 과정에서 기록된 AI 판단 단계와 근거를 조회합니다.' },
   dashboard: {
     title: '구매 대시보드',
     detail: '승인 대기, 견적 회신, 협력사 승인과 PO 생성 현황을 확인합니다.',
@@ -2101,6 +2103,8 @@ function ProcurementWorkspaceComponent({
           <main className="view-content">
             {canManagePolicy && <div hidden={currentTab !== 'company-policy'}><CompanyPolicyView roles={policyRoles} active={currentTab === 'company-policy'} /></div>}
             {!canManagePolicy && currentTab === 'company-policy' && <p role="alert">ERPNext의 정책 관리 권한을 확인할 수 없습니다. 권한 변경 후 화면을 새로고침해주세요.</p>}
+            {canManagePolicy && <div hidden={currentTab !== 'ai-decision-log'}><AiDecisionLogView active={currentTab === 'ai-decision-log'} /></div>}
+            {!canManagePolicy && currentTab === 'ai-decision-log' && <p role="alert">AI 판단 로그를 조회할 관리자 권한이 없습니다.</p>}
             {/* Screen 2: 대시보드 */}
             {currentTab === 'dashboard' && (
               <section
