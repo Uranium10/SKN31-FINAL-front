@@ -12,13 +12,18 @@
 .ai-log-search input { width: 100%; padding-left: 32px; }
 .ai-log-error { padding: 12px 14px; border: 1px solid var(--danger); border-radius: 7px; color: var(--danger); background: var(--danger-bg); }
 .ai-log-table-wrap { border: 1px solid var(--border-color); border-radius: 8px; overflow-x: auto; }
-.ai-log-table { min-width: 920px; }
+.ai-log-table { min-width: 1280px; }
 .ai-log-table th:first-child { width: 170px; }
 .ai-log-table th:nth-child(2) { width: 190px; }
-.ai-log-table th:nth-child(3) { width: 230px; }
+.ai-log-table th:nth-child(3) { width: 220px; }
+.ai-log-table th:nth-child(4) { width: 230px; }
+.ai-log-table th:nth-child(5) { width: 150px; }
 .ai-log-date, .ai-log-case { color: var(--text-muted); font-family: monospace; font-size: 12px; }
 .ai-log-node { display: block; color: var(--text-main); font-weight: 700; }
 .ai-log-table small { color: var(--text-dim); }
+.ai-log-case strong, .ai-log-target span, .ai-log-evaluation strong { display: block; color: var(--text-main); font-family: inherit; }
+.ai-log-case small, .ai-log-target small, .ai-log-evaluation small { display: block; margin-top: 4px; word-break: break-all; }
+.ai-log-evaluation strong { color: var(--primary); }
 .ai-log-reason { white-space: pre-wrap; word-break: break-word; line-height: 1.55; color: var(--text-main); }
 .ai-log-empty { padding: 36px !important; text-align: center; color: var(--text-muted); }
 .ai-log-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 8px; color: var(--text-muted); font-size: 12px; }

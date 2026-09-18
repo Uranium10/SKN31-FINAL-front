@@ -11,7 +11,6 @@ const nodeLabels: Record<string, string> = {
   site_selection: '공식 사이트 선택',
   contact_extraction: '연락처 추출',
   company_name_extraction: '회사명 추출',
-  item_spec_completeness_check: '품목 규격 완전성 검사',
   item_group_spec_definition: '품목군 필수 규격 정의',
   quotation_specification_evaluation: '견적 규격 평가',
 };
@@ -63,6 +62,10 @@ export function AiDecisionLogView({ active }: { active: boolean }) {
       nodeLabels[item.node] ?? '',
       item.reason ?? '',
       item.case_id ?? '',
+      item.mr_name ?? '',
+      item.rfq_name ?? '',
+      item.quotation_id ?? '',
+      item.evaluation_source ?? '',
     ].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalized)));
   }, [items, query]);
 
@@ -96,7 +99,7 @@ export function AiDecisionLogView({ active }: { active: boolean }) {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="근거, 노드, 케이스 ID 검색"
+            placeholder="근거, MR, RFQ, 견적 번호 검색"
           />
         </label>
         <button type="button" className="btn-outline" disabled={loading} onClick={() => void load(offset)}>
@@ -108,16 +111,27 @@ export function AiDecisionLogView({ active }: { active: boolean }) {
 
       <div className="table-container ai-log-table-wrap">
         <table className="custom-table ai-log-table">
-          <thead><tr><th>기록 시각</th><th>판단 단계</th><th>케이스</th><th>판단 근거</th></tr></thead>
+          <thead><tr><th>기록 시각</th><th>판단 단계</th><th>구매 건</th><th>평가 대상</th><th>점수 / 모델</th><th>판단 근거</th></tr></thead>
           <tbody>
             {!loading && visibleItems.length === 0 && (
-              <tr><td colSpan={4} className="ai-log-empty">표시할 AI 판단 로그가 없습니다.</td></tr>
+              <tr><td colSpan={6} className="ai-log-empty">표시할 AI 판단 로그가 없습니다.</td></tr>
             )}
             {visibleItems.map((item) => (
               <tr key={item.id}>
                 <td className="ai-log-date">{formatDateTime(item.created_at)}</td>
                 <td><span className="ai-log-node">{nodeLabels[item.node] ?? item.node}</span><small>{item.node}</small></td>
-                <td className="ai-log-case">{item.case_id ?? '연결 없음'}</td>
+                <td className="ai-log-case">
+                  <strong>{item.mr_name ?? '연결 없음'}</strong>
+                  {item.case_id && <small>{item.case_id}</small>}
+                </td>
+                <td className="ai-log-target">
+                  {item.rfq_name ? <span>RFQ {item.rfq_name}</span> : <span>-</span>}
+                  {item.quotation_id && <small>견적 {item.quotation_id}</small>}
+                </td>
+                <td className="ai-log-evaluation">
+                  {item.score !== null ? <strong>{item.score.toFixed(1)}점</strong> : <span>-</span>}
+                  {item.evaluation_source && <small>{item.evaluation_source}</small>}
+                </td>
                 <td className="ai-log-reason">{item.reason || '근거가 기록되지 않았습니다.'}</td>
               </tr>
             ))}

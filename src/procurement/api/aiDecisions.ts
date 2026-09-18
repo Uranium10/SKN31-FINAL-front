@@ -1,9 +1,15 @@
 import { fetchWithAuth } from '../../utils/auth';
 
 export interface AiDecisionLogEntry {
-  id: number;
+  id: string;
+  source: 'ai_decision_log' | 'quotation_specification_cache';
   case_id: string | null;
+  mr_name: string | null;
+  rfq_name: string | null;
+  quotation_id: string | null;
   node: string;
+  score: number | null;
+  evaluation_source: string | null;
   reason: string | null;
   created_at: string;
 }
