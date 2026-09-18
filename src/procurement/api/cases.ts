@@ -171,13 +171,13 @@ export const answerProcurementTask = async (
   taskId: string,
   answer: Record<string, unknown>,
   version?: number,
-): Promise<void> => {
+): Promise<Record<string, unknown>> => {
   const response = await fetchWithAuth(`/api/procurement/tasks/${encodeURIComponent(taskId)}/answer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ answer, version }),
   });
-  await parseJson(response);
+  return parseJson<Record<string, unknown>>(response);
 };
 
 // 차수(라운드) 팝업 전용 - 지난(또는 현재) 라운드 RFQ 하나에 실제로 제출된
@@ -655,7 +655,9 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     backendCaseId: entry.case_id,
     pendingTaskId: entry.pending_task?.task_id,
     pendingTask: pendingTask(entry),
+    workflowStatus: entry.status,
     workflowStage: entry.stage,
+    workflowError: friendlyWorkflowError(entry.last_error),
     orderStarted: ['PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED'].includes(entry.stage),
     mrNo: entry.mr_name,
     itemName: request.itemName,

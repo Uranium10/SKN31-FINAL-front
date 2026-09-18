@@ -924,8 +924,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const selectedApprovalHasAiEvaluation = selectedApprovalQuotation
     ? hasQuotationAiEvaluation(selectedApprovalQuotation)
     : false;
+  const quotationAnalysisRunning = selectedGroup?.workflowStatus === 'RUNNING';
   const canAnalyzeSelectedGroup = Boolean(
     selectedGroup?.workflowStage === 'QUOTATION_COLLECTION'
+    && !quotationAnalysisRunning
     && selectedGroup.quotations.some((quotation) => quotation.isResponded),
   );
 
@@ -2101,6 +2103,20 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
             </div>
 
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {selectedGroup.workflowError && !quotationAnalysisRunning && (
+                <div
+                  role="alert"
+                  style={{
+                    padding: '12px 14px',
+                    border: '1px solid var(--danger)',
+                    borderRadius: '8px',
+                    color: 'var(--danger)',
+                    background: 'var(--danger-bg)',
+                  }}
+                >
+                  AI 분석 실패: {selectedGroup.workflowError}
+                </div>
+              )}
               {/* 회신 현황 상세 표 (Table) */}
               <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflowX: 'visible' }}>
                 <table className="custom-table" style={{ fontSize: '12px', width: '100%', minWidth: 0, tableLayout: 'fixed' }}>
@@ -2126,7 +2142,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               : '견적 수집 단계에서 회신된 견적이 있을 때 분석할 수 있습니다.'}
                             style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
                           >
-                            {isAnalyzingQuotations
+                            {isAnalyzingQuotations || quotationAnalysisRunning
                               ? <><LoaderCircle size={12} className="spin-icon" /> 분석 중...</>
                               : <><Sparkles size={12} /> AI 분석</>}
                           </button>
@@ -2211,7 +2227,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                             {q.resContent}
                             {q.isResponded && !hasQuotationAiEvaluation(q) && (
                               <div style={{ marginTop: '4px', color: 'var(--text-dim)' }}>
-                                AI 분석 전 · 상단의 AI 분석 버튼을 눌러주세요.
+                                {quotationAnalysisRunning
+                                  ? 'AI가 규격 적합도와 순위를 분석하고 있습니다.'
+                                  : 'AI 분석 전 · 상단의 AI 분석 버튼을 눌러주세요.'}
                               </div>
                             )}
                             {hasQuotationAiEvaluation(q) && (

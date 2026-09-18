@@ -300,7 +300,9 @@ export interface VendorSelectionGroup {
   backendCaseId?: string;
   pendingTaskId?: string;
   pendingTask?: PendingHumanTask;
+  workflowStatus?: string;
   workflowStage?: string;
+  workflowError?: string;
   orderStarted?: boolean;
   transitionPhase?: WorkflowTransitionPhase;
 }

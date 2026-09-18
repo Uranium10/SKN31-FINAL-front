@@ -1238,13 +1238,15 @@ function ProcurementWorkspaceComponent({
       return false;
     }
     try {
-      await answerProcurementTask(
+      const result = await answerProcurementTask(
         group.pendingTaskId,
         { decision: 'check' },
         group.pendingTask?.version,
       );
       clearNotificationsForMR(group.mrNo);
-      showToast(`${group.mrNo} 공급사 견적 AI 분석과 순위 산정이 완료되었습니다.`);
+      showToast(result.accepted === true
+        ? `${group.mrNo} 공급사 견적 AI 분석을 시작했습니다. 완료되면 화면에 자동 반영됩니다.`
+        : `${group.mrNo} 공급사 견적 AI 분석과 순위 산정이 완료되었습니다.`);
       await loadMRsFromApi(false);
       return true;
     } catch (error) {
