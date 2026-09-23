@@ -3612,6 +3612,23 @@ body.is-resizing-table-column {
   white-space: nowrap;
 }
 
+/* 클릭하면 전체 문구를 펼쳐 보여주는 에러 메시지(말줄임 + hover 툴팁만으로는
+   전체 내용을 보기 불편하다는 피드백에 따라 추가). */
+.mr-workflow-error.is-clickable {
+  cursor: pointer;
+}
+
+.mr-workflow-error.is-clickable:hover {
+  text-decoration: underline;
+}
+
+.mr-workflow-error.is-expanded {
+  max-width: 100%;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .procurement-shell .workflow-interrupt-form {
   min-width: 220px;
   max-width: 330px;

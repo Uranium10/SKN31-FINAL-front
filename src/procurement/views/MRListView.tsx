@@ -176,6 +176,16 @@ export const MRListView: React.FC<MRListViewProps> = ({
   const [draftQuery, setDraftQuery] = useState(searchQuery);
   const [currentPage, setCurrentPage] = useState(1);
   const [historySelection, setHistorySelection] = useState<HistorySelection | null>(null);
+  // 워크플로 에러 메시지 클릭-펼치기: 기본은 한 줄 말줄임(hover 툴팁)이고,
+  // 클릭하면 전체 문구를 줄바꿈으로 펼쳐서 보여준다(요청 id별로 토글).
+  const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+  const toggleErrorExpanded = (id: string) => {
+    setExpandedErrors((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   const [sortKey, setSortKey] = useState<MRSortKey>('dueDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const tableState = useSessionTableState('mr-list', MR_COLUMNS);
@@ -594,23 +604,60 @@ export const MRListView: React.FC<MRListViewProps> = ({
                       </div>
                     )}
                     {req.workflowStatus === 'WAITING_INPUT' && req.workflowStage !== 'SUBSTITUTE_DECISION' && (
-                      <div className="mr-stage-row">
-                        <span className="badge badge-yellow">
-                          <Clock size={13} />
-                          {req.workflowStage === 'HUMAN_REVIEW'
-                            ? '예외 발생 · 구매 담당자 수동 검토 필요'
-                            : req.workflowStage === 'MR_REVIEW'
-                              ? 'MR 내용 확인 필요'
-                              : '구매 담당자 확인 필요'}
-                        </span>
-                      </div>
+                      <>
+                        <div className="mr-stage-row">
+                          <span className="badge badge-yellow">
+                            <Clock size={13} />
+                            {req.workflowStage === 'HUMAN_REVIEW'
+                              ? '예외 발생 · 구매 담당자 수동 검토 필요'
+                              : req.workflowStage === 'MR_REVIEW'
+                                ? 'MR 내용 확인 필요'
+                                : req.workflowStage === 'PO_CREATION_FAILED'
+                                  ? 'PO 생성 실패 · 확인 필요'
+                                  : '구매 담당자 확인 필요'}
+                          </span>
+                        </div>
+                        {req.workflowError && (
+                          <span
+                            className={`mr-workflow-error is-clickable${expandedErrors.has(req.id) ? ' is-expanded' : ''}`}
+                            title={req.workflowError}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleErrorExpanded(req.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                toggleErrorExpanded(req.id);
+                              }
+                            }}
+                          >
+                            {req.workflowError}
+                          </span>
+                        )}
+                      </>
                     )}
                     {req.workflowStatus === 'FAILED' && (
                       <>
                         <div className="mr-stage-row">
                           <span className="badge badge-red"><AlertCircle size={13} /> 처리 확인 필요</span>
                         </div>
-                        {req.workflowError && <span className="mr-workflow-error" title={req.workflowError}>{req.workflowError}</span>}
+                        {req.workflowError && (
+                          <span
+                            className={`mr-workflow-error is-clickable${expandedErrors.has(req.id) ? ' is-expanded' : ''}`}
+                            title={req.workflowError}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleErrorExpanded(req.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                toggleErrorExpanded(req.id);
+                              }
+                            }}
+                          >
+                            {req.workflowError}
+                          </span>
+                        )}
                         <div className="mr-stage-row">
                           <div className="action-btn-group">
                             {req.canRetry ? (
