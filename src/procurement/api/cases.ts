@@ -523,7 +523,13 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   rankingGroupsBySupplier.forEach((group) => {
     group.forEach((row) => {
       const rowRfqName = text(row.rfq_name);
-      const isCurrentRound = !currentRfqName || !rowRfqName || rowRfqName === currentRfqName;
+      // currentRfqName이 비어있다는 건 재비딩으로 방금 rfq_name이 리셋되고
+      // 아직 새 RFQ 대상 선택/발송이 끝나지 않은 "라운드 사이" 상태다 - 이때
+      // 모든 ranking 행을 "현재 라운드"로 잘못 취급하면, 지난 라운드에
+      // 회신했던 협력사가 마치 지금 막 회신한 것처럼 후보 행에 병합되어
+      // 보인다(회신 상태/AI 평가가 옛날 데이터인데 최신인 것처럼 뜸).
+      // 활성 라운드가 없으면 어떤 행도 "현재"로 취급하지 않는다.
+      const isCurrentRound = Boolean(currentRfqName) && (!rowRfqName || rowRfqName === currentRfqName);
       const name = supplierName(row);
       if (isCurrentRound && !currentRankingBySupplier.has(name)) {
         currentRankingBySupplier.set(name, row);

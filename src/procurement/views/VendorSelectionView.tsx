@@ -962,7 +962,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     if (!confirmed) return;
     setIsRebidding(group.id);
     try {
-      await onRebidQuotations(group.id);
+      const rebid = await onRebidQuotations(group.id);
+      // 재비딩이 성공하면 이 MR은 곧바로 "RFQ 대상 선택" 단계로 넘어가서
+      // rfq_name/선택 협력사 목록이 리셋된다 - 지금 열려있는 "최종 업체
+      // 선정" 모달은 그 이전 라운드 스냅샷 기준으로 그려진 것이라 그대로
+      // 두면 옛 데이터가 뒤섞여 보인다. 성공 시 모달을 닫아서, 새로고침된
+      // 목록에서 "RFQ 대상 선택" 버튼으로 다음 단계를 이어가게 한다.
+      if (rebid) {
+        setShowQuotationModal(false);
+      }
     } finally {
       setIsRebidding((current) => (current === group.id ? null : current));
     }
