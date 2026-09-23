@@ -2165,7 +2165,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       const isChecked = selectedSupplierForApproval === q.supplierId;
 
                       return (
-                        <tr key={q.supplierId} style={{ backgroundColor: isChecked ? 'var(--success-bg)' : 'transparent' }}>
+                        <tr key={q.quotationId ?? `${q.supplierId}-${q.rfqRound ?? 1}`} style={{ backgroundColor: isChecked ? 'var(--success-bg)' : 'transparent' }}>
                           {/* 라디오/체크박스 */}
                           <td style={{ textAlign: 'center' }}>
                             <input
@@ -2180,6 +2180,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           {/* 협력사명 */}
                           <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                             {q.supplierName}
+                            <span className="badge badge-blue" style={{ marginLeft: '6px', fontSize: '10px' }}>
+                              {q.rfqRound ?? 1}차
+                            </span>
                             {q.isResponded && hasQuotationAiEvaluation(q) && q.aiRank === 1 && (
                               <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 추천]</span>
                             )}

@@ -163,6 +163,14 @@ export interface SupplierScores {
 }
 
 export interface SupplierQuotation {
+  /** Supplier Quotation 문서명. 재비딩으로 같은 공급사가 여러 차수에
+   * 걸쳐 견적을 낼 수 있어, supplierId만으로는 행을 구분할 수 없다 -
+   * 목록 key와 최종선정 제출 시 어느 견적인지 특정하는 데 쓴다. */
+  quotationId?: string;
+  /** 이 견적이 제출된 RFQ 문서명. */
+  rfqName?: string;
+  /** 이 견적이 몇 차 RFQ에서 나왔는지 (재비딩 이력 배지 표시용). */
+  rfqRound?: number;
   supplierId: string;
   supplierName: string;
   quoteUnitPrice: number;
