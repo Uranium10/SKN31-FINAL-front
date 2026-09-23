@@ -492,6 +492,7 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   const ranking = rows(values.quotation_ranking);
   const liveQuotations = rows(entry.quotation_snapshot?.quotations);
   const candidates = rows(values.supplier_candidates ?? values.existing_supplier_candidates);
+  const currentRfqName = text(values.rfq_name);
   const sentSupplierNames = new Set(
     (Array.isArray(values.selected_suppliers) ? values.selected_suppliers : [])
       .map((value) => text(value))
@@ -503,12 +504,13 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   const recipientCandidates = sentSupplierNames.size > 0
     ? candidates.filter((candidate) => sentSupplierNames.has(supplierName(candidate)))
     : candidates;
-  // 재비딩으로 같은 공급사가 여러 차수에 걸쳐 견적을 낼 수 있어, 공급사
-  // 이름 하나로 ranking 행을 묶으면 마지막 차수 견적만 남고 이전 차수
-  // 견적은 조용히 사라진다(이전 차수도 최종선정 가능해야 하므로 문제).
-  // 차수별 ranking 행을 모두 모아두고, 후보/실시간 견적과 병합할 "대표"
-  // 행(가장 최근 차수)만 rankingBySupplier에 남긴 뒤, 나머지 차수 행은
-  // extraRankingRows로 별도 행으로 추가한다.
+  // 재비딩으로 같은 공급사가 여러 차수에 걸쳐 견적을 낼 수 있어, quotation_ranking에는
+  // 지금 라운드와 지난 라운드 견적이 함께 들어있을 수 있다(재평가 전이면 지난 라운드
+  // 것만 있을 수도 있다). 공급사 이름 하나로 뭉뚱그리면 지난 라운드 견적이 "지금
+  // 라운드에 방금 회신한 견적"으로 잘못 둔갑해서, 회신율/상세비교 둘 다 엉뚱한
+  // 데이터를 보여주는 버그가 생긴다 - rfq_name이 지금 라운드와 일치하는 행만
+  // "이번 라운드 응답"으로 후보/실시간 견적에 병합하고, 그 외(지난 라운드) 행은
+  // 항상 독립된 행으로 그대로 노출한다.
   const rankingGroupsBySupplier = new Map<string, Array<Record<string, unknown>>>();
   ranking.forEach((row) => {
     const name = supplierName(row);
@@ -516,37 +518,52 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
     group.push(row);
     rankingGroupsBySupplier.set(name, group);
   });
-  const rankingBySupplier = new Map(
-    Array.from(rankingGroupsBySupplier.entries()).map(([name, group]) => [name, group[group.length - 1]]),
-  );
+  const currentRankingBySupplier = new Map<string, Record<string, unknown>>();
+  const historicalRankingRows: Array<Record<string, unknown>> = [];
+  rankingGroupsBySupplier.forEach((group) => {
+    group.forEach((row) => {
+      const rowRfqName = text(row.rfq_name);
+      const isCurrentRound = !currentRfqName || !rowRfqName || rowRfqName === currentRfqName;
+      const name = supplierName(row);
+      if (isCurrentRound && !currentRankingBySupplier.has(name)) {
+        currentRankingBySupplier.set(name, row);
+      } else {
+        historicalRankingRows.push(row);
+      }
+    });
+  });
   const liveBySupplier = new Map(liveQuotations.map((row) => [supplierName(row), row]));
   const candidateNames = new Set(recipientCandidates.map(supplierName));
   const liveNames = new Set(liveQuotations.map(supplierName));
-  // 후보/실시간 견적과 병합되는 공급사(대표 행 하나로 합쳐짐)에 한해서만
-  // "나머지 차수" 행을 별도로 보충한다. 후보/실시간에 없는 공급사는 아래
-  // 세 번째 항목(ranking.filter)에서 이미 차수별로 전부 개별 행으로
-  // 들어가므로 여기서 또 추가하면 중복된다.
-  const extraRankingRows = Array.from(rankingGroupsBySupplier.entries())
-    .filter(([name, group]) => group.length > 1 && (candidateNames.has(name) || liveNames.has(name)))
-    .flatMap(([, group]) => group.slice(0, -1));
-  const source = [
-    ...recipientCandidates.map((candidate) => ({
-      ...candidate,
-      ...(rankingBySupplier.get(supplierName(candidate)) ?? {}),
-      ...(liveBySupplier.get(supplierName(candidate)) ?? {}),
-    })),
-    ...liveQuotations.filter((quotation) => !candidateNames.has(supplierName(quotation))),
-    ...ranking.filter((ranked) => (
+  type BuiltRow = { data: Record<string, unknown>; responded: boolean; aiEvaluated: boolean };
+  const built: BuiltRow[] = [];
+  recipientCandidates.forEach((candidate) => {
+    const name = supplierName(candidate);
+    const currentRanked = currentRankingBySupplier.get(name);
+    const live = liveBySupplier.get(name);
+    built.push({
+      data: { ...candidate, ...(currentRanked ?? {}), ...(live ?? {}) },
+      responded: Boolean(currentRanked) || Boolean(live),
+      aiEvaluated: Boolean(currentRanked),
+    });
+  });
+  liveQuotations
+    .filter((quotation) => !candidateNames.has(supplierName(quotation)))
+    .forEach((quotation) => built.push({ data: quotation, responded: true, aiEvaluated: false }));
+  ranking
+    .filter((ranked) => (
       !candidateNames.has(supplierName(ranked))
       && !liveNames.has(supplierName(ranked))
       && (sentSupplierNames.size === 0 || sentSupplierNames.has(supplierName(ranked)))
-    )),
-    ...extraRankingRows,
-  ];
-  return source.map((row, index) => {
+      && currentRankingBySupplier.get(supplierName(ranked)) === ranked
+    ))
+    .forEach((ranked) => built.push({ data: ranked, responded: true, aiEvaluated: true }));
+  // 지난 라운드 견적은 이번 라운드 수신자 명단(sentSupplierNames)에 없어도 - 그
+  // 공급사가 이번 차수엔 다시 초대되지 않았더라도 - 최종선정 후보로는 여전히
+  // 유효하므로 무조건 노출한다.
+  historicalRankingRows.forEach((ranked) => built.push({ data: ranked, responded: true, aiEvaluated: true }));
+  return built.map(({ data: row, responded, aiEvaluated }, index) => {
     const name = supplierName(row);
-    const responded = liveBySupplier.has(name) || rankingBySupplier.has(name);
-    const aiEvaluated = rankingBySupplier.has(name);
     const quotationItems = rows(row.items);
     const quotationItem = quotationItems.find((item) => (
       !entry.item_code || text(item.item_code) === entry.item_code

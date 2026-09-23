@@ -51,9 +51,23 @@ const VENDOR_COLUMNS: readonly TableColumnDefinition<VendorColumnKey>[] = [
 
 type VendorRangeFilters = Partial<Record<VendorColumnKey, TableColumnRangeFilter>>;
 
+// 재비딩으로 지난 라운드 견적도 group.quotations에 함께 들어있을 수 있어,
+// "이번 RFQ 건 회신율"을 구할 때는 그 중 지금 진행 중인 라운드에 해당하는
+// 행(또는 아직 견적을 안 낸 후보라 rfqName이 없는 행)만 세야 한다. 지난
+// 라운드 행(rfqName이 지금 라운드와 다름)을 섞으면 이미 다 끝난 옛날
+// 회신율이 이번 라운드 것처럼 보인다.
+const isCurrentRoundQuotation = (group: VendorSelectionGroup, quotation: SupplierQuotation): boolean => (
+  !quotation.rfqName || !group.rfqName || quotation.rfqName === group.rfqName
+);
+
+const currentRoundQuotations = (group: VendorSelectionGroup): SupplierQuotation[] => (
+  group.quotations.filter((quotation) => isCurrentRoundQuotation(group, quotation))
+);
+
 const responsePercent = (group: VendorSelectionGroup): number => {
-  const responded = group.quotations.filter((quotation) => quotation.isResponded).length;
-  return group.quotations.length > 0 ? Math.round((responded / group.quotations.length) * 100) : 0;
+  const current = currentRoundQuotations(group);
+  const responded = current.filter((quotation) => quotation.isResponded).length;
+  return current.length > 0 ? Math.round((responded / current.length) * 100) : 0;
 };
 
 // "차수"는 재비딩으로 이미 마감된 지난 RFQ 라운드의 개수다 - 첫 RFQ를
@@ -1035,19 +1049,21 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
           </thead>
           <tbody>
             {visibleVendorGroups.map((group, rowIndex) => {
-              const respondedCount = group.quotations.filter((q) => q.isResponded).length;
+              // 이번 라운드 회신율이므로 지난 라운드 견적 행은 분모/분자에서 뺀다.
+              const currentRound = currentRoundQuotations(group);
+              const respondedCount = currentRound.filter((q) => q.isResponded).length;
               const cachedManualSuppliers = selectedGroup?.mrNo === group.mrNo
                 ? rfqManualSuppliers
                 : readRfqDraftCache(group.mrNo)?.manualSuppliers ?? [];
               const existingSupplierNames = new Set(
-                group.quotations.map((quotation) => quotation.supplierName.trim()),
+                currentRound.map((quotation) => quotation.supplierName.trim()),
               );
               const manualSupplierCount = new Set(
                 cachedManualSuppliers
                   .map((name) => name.trim())
                   .filter((name) => name && !existingSupplierNames.has(name)),
               ).size;
-              const totalSuppliers = group.quotations.length + manualSupplierCount;
+              const totalSuppliers = currentRound.length + manualSupplierCount;
               const percent = totalSuppliers > 0 ? Math.round((respondedCount / totalSuppliers) * 100) : 0;
               const selectedQuotation = group.quotations.find((q) => q.supplierId === group.selectedSupplierId);
               const hasSelection = Boolean(group.selectedSupplierId);
