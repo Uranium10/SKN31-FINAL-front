@@ -3,6 +3,7 @@ import type {
   MaterialRequest,
   MaterialRequestAttachment,
   POItem,
+  QuotationAiEvaluation,
   RfqRoundHistoryEntry,
   RfqRoundSnapshot,
   SupplierQuotation,
@@ -487,6 +488,13 @@ const supplierName = (row: Record<string, unknown>): string => (
   text(row.supplier) || text(row.supplier_name) || text(row.name) || '협력사 미지정'
 );
 
+// supplierQuotations()는 "지금 진행 중인 라운드"만 다룬다. 지난 라운드
+// 견적은 quotation_ranking(다차수 평가 결과)에 섞여 들어올 수 있어
+// 불안정한 소스라 - AI 분석을 한 번도 안 돌렸으면 지난 라운드 데이터가
+// 아예 없거나, 라운드 사이(재비딩 직후 rfq_name 리셋) 타이밍엔 옛 데이터가
+// "방금 회신"처럼 보이는 사고가 났었다. 지난 라운드는 ERPNext를 그때그때
+// 직접 다시 조회하는 전용 엔드포인트(fetchRfqRoundQuotations, "차수" 팝업과
+// 최종선정 모달이 함께 씀)로만 가져오고, 여기서는 절대 섞지 않는다.
 const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   const values = valuesOf(entry);
   const ranking = rows(values.quotation_ranking);
@@ -504,39 +512,17 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   const recipientCandidates = sentSupplierNames.size > 0
     ? candidates.filter((candidate) => sentSupplierNames.has(supplierName(candidate)))
     : candidates;
-  // 재비딩으로 같은 공급사가 여러 차수에 걸쳐 견적을 낼 수 있어, quotation_ranking에는
-  // 지금 라운드와 지난 라운드 견적이 함께 들어있을 수 있다(재평가 전이면 지난 라운드
-  // 것만 있을 수도 있다). 공급사 이름 하나로 뭉뚱그리면 지난 라운드 견적이 "지금
-  // 라운드에 방금 회신한 견적"으로 잘못 둔갑해서, 회신율/상세비교 둘 다 엉뚱한
-  // 데이터를 보여주는 버그가 생긴다 - rfq_name이 지금 라운드와 일치하는 행만
-  // "이번 라운드 응답"으로 후보/실시간 견적에 병합하고, 그 외(지난 라운드) 행은
-  // 항상 독립된 행으로 그대로 노출한다.
-  const rankingGroupsBySupplier = new Map<string, Array<Record<string, unknown>>>();
-  ranking.forEach((row) => {
-    const name = supplierName(row);
-    const group = rankingGroupsBySupplier.get(name) ?? [];
-    group.push(row);
-    rankingGroupsBySupplier.set(name, group);
-  });
+  // ranking에는 지난 라운드 행이 섞여 있을 수 있으므로, rfq_name이 지금
+  // 라운드와 정확히 일치하는 행만 "이번 라운드 AI 평가"로 쓴다. 활성
+  // 라운드가 없으면(currentRfqName 비어있음, 재비딩 직후 등) 어떤 행도
+  // 이번 라운드로 취급하지 않는다.
   const currentRankingBySupplier = new Map<string, Record<string, unknown>>();
-  const historicalRankingRows: Array<Record<string, unknown>> = [];
-  rankingGroupsBySupplier.forEach((group) => {
-    group.forEach((row) => {
-      const rowRfqName = text(row.rfq_name);
-      // currentRfqName이 비어있다는 건 재비딩으로 방금 rfq_name이 리셋되고
-      // 아직 새 RFQ 대상 선택/발송이 끝나지 않은 "라운드 사이" 상태다 - 이때
-      // 모든 ranking 행을 "현재 라운드"로 잘못 취급하면, 지난 라운드에
-      // 회신했던 협력사가 마치 지금 막 회신한 것처럼 후보 행에 병합되어
-      // 보인다(회신 상태/AI 평가가 옛날 데이터인데 최신인 것처럼 뜸).
-      // 활성 라운드가 없으면 어떤 행도 "현재"로 취급하지 않는다.
-      const isCurrentRound = Boolean(currentRfqName) && (!rowRfqName || rowRfqName === currentRfqName);
-      const name = supplierName(row);
-      if (isCurrentRound && !currentRankingBySupplier.has(name)) {
-        currentRankingBySupplier.set(name, row);
-      } else {
-        historicalRankingRows.push(row);
-      }
-    });
+  ranking.forEach((row) => {
+    if (!currentRfqName || text(row.rfq_name) !== currentRfqName) return;
+    const name = supplierName(row);
+    if (!currentRankingBySupplier.has(name)) {
+      currentRankingBySupplier.set(name, row);
+    }
   });
   const liveBySupplier = new Map(liveQuotations.map((row) => [supplierName(row), row]));
   const candidateNames = new Set(recipientCandidates.map(supplierName));
@@ -564,10 +550,6 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       && currentRankingBySupplier.get(supplierName(ranked)) === ranked
     ))
     .forEach((ranked) => built.push({ data: ranked, responded: true, aiEvaluated: true }));
-  // 지난 라운드 견적은 이번 라운드 수신자 명단(sentSupplierNames)에 없어도 - 그
-  // 공급사가 이번 차수엔 다시 초대되지 않았더라도 - 최종선정 후보로는 여전히
-  // 유효하므로 무조건 노출한다.
-  historicalRankingRows.forEach((ranked) => built.push({ data: ranked, responded: true, aiEvaluated: true }));
   return built.map(({ data: row, responded, aiEvaluated }, index) => {
     const name = supplierName(row);
     const quotationItems = rows(row.items);
@@ -653,6 +635,38 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   });
 };
 
+// quotation_ranking은 여러 라운드가 섞여 있을 수 있어 supplierQuotations()의
+// "이번 라운드" 목록에는 못 넣지만, AI가 그 견적을 실제로 평가했었는지/
+// 평가 결과가 뭔지는 quotationId로 조회할 수 있어야 한다 - 최종선정
+// 모달이 지난 라운드 견적(직접 다시 조회해온)에 이 정보를 매칭해서
+// "AI 분석 완료 여부"와 순위/사유를 보여주는 데 쓴다.
+const quotationAiEvaluations = (entry: ProcurementCaseDTO): QuotationAiEvaluation[] => {
+  const values = valuesOf(entry);
+  const ranking = rows(values.quotation_ranking);
+  const evaluations: QuotationAiEvaluation[] = [];
+  const seen = new Set<string>();
+  ranking.forEach((row) => {
+    const quotationId = text(row.quotation_id ?? row.name);
+    if (!quotationId || seen.has(quotationId)) return;
+    seen.add(quotationId);
+    const overallScore = row.overall_score ?? row.score ?? row.ai_score;
+    evaluations.push({
+      quotationId,
+      aiRank: numberValue(row.rank),
+      aiScore: numberValue(overallScore),
+      aiReason: text(row.reason ?? row.ai_reason),
+      numericScore: row.numeric_score != null ? numberValue(row.numeric_score) : undefined,
+      specificationScore: row.specification_score != null ? numberValue(row.specification_score) : undefined,
+      overallScore: overallScore != null ? numberValue(overallScore) : undefined,
+      evaluationSource: text(row.evaluation_source) || undefined,
+      specMatch: typeof row.spec_match === 'boolean' ? row.spec_match : undefined,
+      fulfillsQuantity: typeof row.fulfills_qty === 'boolean' ? row.fulfills_qty : undefined,
+      aiIssues: Array.isArray(row.issues) ? row.issues.map((issue) => text(issue)).filter(Boolean) : [],
+    });
+  });
+  return evaluations;
+};
+
 const dateMinusDays = (value: string, days: number): string => {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
@@ -724,6 +738,7 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     rfqRounds,
     prSent: false,
     quotations,
+    quotationAiEvaluations: quotationAiEvaluations(entry),
     selectedSupplierId: selected || undefined,
   };
 };

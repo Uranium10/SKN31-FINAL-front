@@ -218,6 +218,23 @@ export interface SupplierQuotation {
   evaluationCount?: number;
 }
 
+/** ranking(quotation_ranking)에 있는 AI 평가 결과 1건 - 지난 라운드
+ * 견적을 최종선정 모달에 보여줄 때, quotationId로 매칭해서 AI 평가
+ * 정보를 보강하는 데 쓴다(그 견적이 "AI 분석"으로 이미 평가됐다면). */
+export interface QuotationAiEvaluation {
+  quotationId: string;
+  aiRank: number;
+  aiScore: number;
+  aiReason: string;
+  numericScore?: number;
+  specificationScore?: number;
+  overallScore?: number;
+  evaluationSource?: string;
+  specMatch?: boolean;
+  fulfillsQuantity?: boolean;
+  aiIssues: string[];
+}
+
 export interface VendorSelectionHistoryEntry {
   id: string;
   round: number;
@@ -302,6 +319,9 @@ export interface VendorSelectionGroup {
    * rfqRounds.length + (rfqName이 있으면 1)입니다. */
   rfqRounds?: RfqRoundHistoryEntry[];
   quotations: SupplierQuotation[];
+  /** quotation_ranking 전체(라운드 무관)의 AI 평가 결과 - 최종선정 모달이
+   * 지난 라운드 견적(별도로 직접 조회해온)에 AI 평가를 매칭해 보여줄 때 쓴다. */
+  quotationAiEvaluations?: QuotationAiEvaluation[];
   selectedSupplierId?: string;
   supplierApprovalStatus?: 'approved' | 'rejected' | 'pending';
   selectionRound?: number;

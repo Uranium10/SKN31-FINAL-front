@@ -3,7 +3,9 @@ import type {
   VendorSelectionGroup,
   MaterialRequest,
   RfqRoundSnapshot,
+  RfqRoundQuotation,
   SupplierQuotation,
+  QuotationAiEvaluation,
   POScorecardScores,
   SupplierRecommendation,
   StageMovePlaceholder,
@@ -838,8 +840,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const handleConfirmSupplierSelection = async () => {
     if (!selectedGroup || !selectedSupplierForApproval || selectingSupplierId) return;
     const selectedQuotation = selectedQuotationKey
-      ? selectedGroup.quotations.find((quotation) => quotationRowKey(quotation) === selectedQuotationKey)
-      : selectedGroup.quotations.find((quotation) => quotation.supplierId === selectedSupplierForApproval);
+      ? allSelectableQuotations.find((quotation) => quotationRowKey(quotation) === selectedQuotationKey)
+      : allSelectableQuotations.find((quotation) => quotation.supplierId === selectedSupplierForApproval);
     if (!selectedQuotation?.isResponded) {
       setResultModal({
         title: '회신된 견적을 선택해주세요',
@@ -976,9 +978,117 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     }
   };
 
+  // 8. 최종선정 모달("상세보기/업체선정")은 가장 최근 RFQ(이번 라운드)
+  // 견적을 기본으로 보여주되, 지난 라운드들의 SQ도 추가로 보여줘야 한다
+  // ("차수별로 받은 sq도 추가적으로 보여주는거야"). 이번 라운드 견적은
+  // group.quotations로 이미 내려오지만, 지난 라운드는 이미 있는
+  // "차수별 견적 조회" 전용 엔드포인트(onFetchRfqRoundQuotations)로 직접
+  // 다시 불러온다 - AI 분석 여부와 무관하게 항상 정확하기 때문이다.
+  // roundSnapshotCache는 "차수별 견적 조회" 팝업과 공유해서 중복 요청을
+  // 피한다.
+  useEffect(() => {
+    if (!showQuotationModal || !selectedGroup || !onFetchRfqRoundQuotations || !selectedGroup.backendCaseId) return;
+    const caseId = selectedGroup.backendCaseId;
+    const rounds = selectedGroup.rfqRounds ?? [];
+    let cancelled = false;
+    rounds.forEach((round) => {
+      if (roundSnapshotCache[round.rfqName]) return;
+      setRoundSnapshotCache((prev) => (prev[round.rfqName] ? prev : { ...prev, [round.rfqName]: 'loading' }));
+      onFetchRfqRoundQuotations(caseId, round.rfqName)
+        .then((snapshot) => {
+          if (cancelled) return;
+          setRoundSnapshotCache((prev) => ({ ...prev, [round.rfqName]: snapshot }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setRoundSnapshotCache((prev) => ({ ...prev, [round.rfqName]: 'error' }));
+        });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showQuotationModal, selectedGroup, onFetchRfqRoundQuotations]);
+
+  // quotation_ranking(라운드 무관 전체)에서 quotationId로 AI 평가 결과를
+  // 찾기 위한 조회용 Map. 지난 라운드 견적도 "AI 분석"을 실행하면
+  // evaluate_quotations_for_rfqs가 모든 라운드를 합쳐 평가하므로, 이미
+  // 평가된 지난 라운드 견적은 여기서 매칭되어 선택 가능해진다.
+  const aiEvaluationByQuotationId = useMemo(() => {
+    const map = new Map<string, QuotationAiEvaluation>();
+    (selectedGroup?.quotationAiEvaluations ?? []).forEach((evalRow) => {
+      if (evalRow.quotationId) map.set(evalRow.quotationId, evalRow);
+    });
+    return map;
+  }, [selectedGroup?.quotationAiEvaluations]);
+
+  // 차수 팝업과 같은 RfqRoundQuotation 모양을, 상세 비교표가 쓰는
+  // SupplierQuotation 모양으로 바꾼다. AI 평가가 이미 있으면 붙이고,
+  // 없으면 "AI 미평가"로 남겨 선택을 막는다(백엔드가 quotation_ranking에
+  // 없는 견적은 최종선정에서 거부하기 때문).
+  const toHistoricalSupplierQuotation = (
+    q: RfqRoundQuotation,
+    round: { round: number; rfqName: string },
+    itemCode: string | undefined,
+  ): SupplierQuotation => {
+    const matchedItem = q.items.find((item) => !itemCode || item.itemCode === itemCode) ?? q.items[0];
+    const aiEval = aiEvaluationByQuotationId.get(q.name);
+    return {
+      quotationId: q.name,
+      rfqName: round.rfqName,
+      rfqRound: round.round,
+      validTill: q.validTill,
+      supplierId: q.supplier,
+      supplierName: q.supplier,
+      quoteUnitPrice: matchedItem?.rate ?? 0,
+      quoteTotalPrice: matchedItem?.amount ?? q.grandTotal ?? 0,
+      leadTimeDays: matchedItem?.leadTimeDays ?? 0,
+      expectedDeliveryDate: matchedItem?.expectedDeliveryDate,
+      isResponded: true,
+      resContent: aiEval?.aiReason || '지난 라운드에 제출된 견적입니다.',
+      resAttachments: [],
+      aiRank: aiEval?.aiRank ?? 0,
+      aiScore: aiEval?.aiScore ?? 0,
+      aiReason: aiEval?.aiReason ?? '',
+      numericScore: aiEval?.numericScore,
+      specificationScore: aiEval?.specificationScore,
+      overallScore: aiEval?.overallScore,
+      evaluationSource: aiEval?.evaluationSource,
+      aiEvaluated: Boolean(aiEval),
+      specMatch: aiEval?.specMatch,
+      fulfillsQuantity: aiEval?.fulfillsQuantity,
+      aiIssues: aiEval?.aiIssues,
+      isSelected: false,
+    };
+  };
+
+  // 이번 라운드(selectedGroup.quotations)와 겹치지 않는, 지난 라운드들의
+  // SQ 목록. rfqRounds에 있는 라운드 수만큼 roundSnapshotCache에서 꺼내 합친다.
+  const historicalQuotations = useMemo((): SupplierQuotation[] => {
+    if (!selectedGroup) return [];
+    const currentIds = new Set(
+      selectedGroup.quotations.map((q) => q.quotationId).filter((id): id is string => Boolean(id)),
+    );
+    const out: SupplierQuotation[] = [];
+    (selectedGroup.rfqRounds ?? []).forEach((round) => {
+      const snapshot = roundSnapshotCache[round.rfqName];
+      if (!snapshot || snapshot === 'loading' || snapshot === 'error') return;
+      snapshot.quotations.forEach((q) => {
+        if (currentIds.has(q.name)) return;
+        out.push(toHistoricalSupplierQuotation(q, round, selectedGroup.itemCode));
+      });
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGroup, roundSnapshotCache, aiEvaluationByQuotationId]);
+
+  // 상세 비교표/최종선정에서 실제로 고를 수 있는 전체 목록(이번 라운드 +
+  // 지난 라운드). 라디오 선택, 선택 확정 검증 모두 이 목록 기준으로 찾는다.
+  const allSelectableQuotations = useMemo((): SupplierQuotation[] => (
+    selectedGroup ? [...selectedGroup.quotations, ...historicalQuotations] : []
+  ), [selectedGroup, historicalQuotations]);
+
   const selectedApprovalQuotation = selectedQuotationKey
-    ? selectedGroup?.quotations.find((quotation) => quotationRowKey(quotation) === selectedQuotationKey)
-    : selectedGroup?.quotations.find((quotation) => quotation.supplierId === selectedSupplierForApproval);
+    ? allSelectableQuotations.find((quotation) => quotationRowKey(quotation) === selectedQuotationKey)
+    : allSelectableQuotations.find((quotation) => quotation.supplierId === selectedSupplierForApproval);
   const selectedApprovalHasAiEvaluation = selectedApprovalQuotation
     ? hasQuotationAiEvaluation(selectedApprovalQuotation)
     : false;
@@ -989,7 +1099,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const canAnalyzeSelectedGroup = Boolean(
     selectedGroup?.workflowStage === 'QUOTATION_COLLECTION'
     && !quotationAnalysisRunning
-    && selectedGroup.quotations.some((quotation) => quotation.isResponded),
+    && allSelectableQuotations.some((quotation) => quotation.isResponded),
   );
 
   return (
@@ -2234,7 +2344,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {[...selectedGroup.quotations]
+                    {[...selectedGroup.quotations, ...historicalQuotations]
                       .sort((a, b) => {
                         // 회신 여부가 AI 순위보다 우선이다. 미회신 업체에 과거
                         // 후보 순위가 남아 있어도 상세 비교표의 맨 아래로 보낸다.
@@ -2250,6 +2360,17 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         ? selectedQuotationKey === rowKey
                         : selectedSupplierForApproval === q.supplierId;
                       const expired = isQuotationExpired(q);
+                      // 이번 라운드가 아니라 지난 라운드에서 가져온 행인지 - 지난
+                      // 라운드 견적은 "AI 분석"으로 아직 평가되지 않았으면
+                      // quotation_ranking에 없어서 백엔드가 최종선정을 거부한다.
+                      const isHistoricalRow = !selectedGroup.quotations.some((cur) => quotationRowKey(cur) === rowKey);
+                      const needsAiEvaluation = isHistoricalRow && !hasQuotationAiEvaluation(q);
+                      const selectionDisabled = !q.isResponded || expired || needsAiEvaluation;
+                      const disabledTitle = expired
+                        ? `유효기간(${q.validTill})이 지난 만료된 견적서입니다.`
+                        : needsAiEvaluation
+                          ? '지난 라운드 견적입니다. 상단의 AI 분석 버튼을 눌러 평가를 마쳐야 선택할 수 있습니다.'
+                          : undefined;
 
                       return (
                         <tr key={rowKey} style={{ backgroundColor: isChecked ? 'var(--success-bg)' : 'transparent' }}>
@@ -2258,14 +2379,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                             <input
                               type="radio"
                               name="selected_supplier_radio"
-                              disabled={!q.isResponded || expired}
+                              disabled={selectionDisabled}
                               checked={isChecked}
                               onChange={() => {
                                 setSelectedSupplierForApproval(q.supplierId);
                                 setSelectedQuotationKey(rowKey);
                               }}
-                              style={{ width: '16px', height: '16px', cursor: q.isResponded && !expired ? 'pointer' : 'not-allowed' }}
-                              title={expired ? `유효기간(${q.validTill})이 지난 만료된 견적서입니다.` : undefined}
+                              style={{ width: '16px', height: '16px', cursor: selectionDisabled ? 'not-allowed' : 'pointer' }}
+                              title={disabledTitle}
                             />
                           </td>
                           {/* 협력사명 */}
@@ -2274,6 +2395,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                             <span className="badge badge-blue" style={{ marginLeft: '6px', fontSize: '10px' }}>
                               {q.rfqRound ?? 0}차
                             </span>
+                            {isHistoricalRow && (
+                              <span className="badge" style={{ marginLeft: '6px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                                지난 라운드
+                              </span>
+                            )}
                             {expired && (
                               <span className="badge badge-red" style={{ marginLeft: '6px', fontSize: '10px' }} title={`유효기간: ${q.validTill}`}>
                                 만료된 견적서입니다
