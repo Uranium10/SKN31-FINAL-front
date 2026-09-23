@@ -501,6 +501,12 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   const liveQuotations = rows(entry.quotation_snapshot?.quotations);
   const candidates = rows(values.supplier_candidates ?? values.existing_supplier_candidates);
   const currentRfqName = text(values.rfq_name);
+  // 0차/1차... 번호 매기기 규칙: 지금 라운드 번호는 "지금까지 재비딩한
+  // 횟수"와 같다(= 지난 라운드 이력 개수). 아직 견적을 안 낸 후보는
+  // ranking/실시간 견적 어디에도 rfq_round가 없어서, 이 값을 지금 라운드
+  // 번호로 채워 넣지 않으면 아래에서 `rfqRound ?? 0`으로 "0차"처럼 잘못
+  // 보인다(실제로는 최근 라운드인데도).
+  const currentRoundNumber = rows(values.rfq_rounds).length;
   const sentSupplierNames = new Set(
     (Array.isArray(values.selected_suppliers) ? values.selected_suppliers : [])
       .map((value) => text(value))
@@ -578,7 +584,7 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
     return {
       quotationId: text(row.quotation_id ?? row.name) || undefined,
       rfqName: text(row.rfq_name) || undefined,
-      rfqRound: row.rfq_round != null ? numberValue(row.rfq_round) : undefined,
+      rfqRound: row.rfq_round != null ? numberValue(row.rfq_round) : currentRoundNumber,
       validTill: text(row.valid_till ?? row.valid_until) || undefined,
       supplierId: name,
       supplierName: name,
@@ -706,9 +712,15 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
   // workflow_snapshot.values.rfq_rounds에 쌓아준다. 지금 진행 중인
   // 라운드(rfq_name)는 이 목록에 없고 별도 필드로 내려온다 - 총 차수는
   // rfqRounds.length + (rfqName이 있으면 1)이다.
+  // ⚠️ row.round(백엔드가 저장해둔 값)는 신뢰하지 않는다. 0차/1차 번호
+  // 매기기 규칙을 0-based로 고치기 전 체크포인트에는 옛 값(1부터 시작)이
+  // 그대로 남아있을 수 있어서, 그 값을 쓰면 새로 쌓이는 라운드와 번호가
+  // 겹친다 - 실제로 두 라운드가 전부 "1차"로 겹쳐 보이는 버그로 나타났다.
+  // rfq_rounds 배열은 재비딩이 일어난 순서대로 이력이 쌓이므로, 배열 안
+  // 위치(index)가 항상 진짜 차수다.
   const rfqRounds: RfqRoundHistoryEntry[] = rows(values.rfq_rounds)
     .map((row, index) => ({
-      round: numberValue(row.round) || index + 1,
+      round: index,
       rfqName: text(row.rfq_name),
       deadline: text(row.deadline) || undefined,
       closedAt: text(row.closed_at) || undefined,
