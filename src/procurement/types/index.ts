@@ -1,4 +1,4 @@
-export type NavigationTab = 'dashboard' | 'item-register' | 'mr-list' | 'vendor-select' | 'po-manage';
+export type NavigationTab = 'dashboard' | 'item-register' | 'mr-list' | 'vendor-select' | 'po-manage' | 'company-policy' | 'ai-decision-log';
 
 export type ItemSpecificationValue = string | number | boolean | null;
 
@@ -176,6 +176,15 @@ export interface SupplierQuotation {
   aiRank: number;
   aiScore: number;
   aiReason: string;
+  /** quotation_ranker의 가격·납기 규칙 점수(0~100). */
+  numericScore?: number;
+  /** quotation_ranker의 규격 적합도 점수(0~100). */
+  specificationScore?: number;
+  /** 두 점수를 환경변수 가중치로 합산한 최종 점수(0~100). */
+  overallScore?: number;
+  /** 규격 평가에 실제 사용된 모델명. */
+  evaluationSource?: string;
+  currency?: string;
   /** 현재 SQ 집계본에 실제 AI 견적 평가 결과가 결합됐는지 여부입니다. */
   aiEvaluated?: boolean;
   /** AI가 확인한 규격 일치 여부입니다. 평가 전에는 undefined입니다. */
@@ -192,7 +201,9 @@ export interface SupplierQuotation {
   sourceUrl?: string;
   /** ERPNext, 나라장터, 웹 검색 등 후보가 유입된 경로입니다. */
   source?: string;
-  scores?: SupplierScores;
+  scores?: POScorecardScores;
+  recommendationScore?: number;
+  evaluationCount?: number;
 }
 
 export interface VendorSelectionHistoryEntry {
@@ -289,7 +300,9 @@ export interface VendorSelectionGroup {
   backendCaseId?: string;
   pendingTaskId?: string;
   pendingTask?: PendingHumanTask;
+  workflowStatus?: string;
   workflowStage?: string;
+  workflowError?: string;
   orderStarted?: boolean;
   transitionPhase?: WorkflowTransitionPhase;
 }
@@ -299,6 +312,14 @@ export interface POProcessingIssue {
   title: string;
   detail: string;
   failedAt: string;
+}
+
+export type POScorecardScores = Omit<SupplierScores, 'price'> & { price?: number };
+
+export interface SupplierRecommendation {
+  scores: POScorecardScores;
+  average_score: number;
+  evaluation_count: number;
 }
 
 export interface POItem {
@@ -336,7 +357,11 @@ export interface POItem {
   // PO 발주 후 입고 확인 및 Supplier Scorecard 평가
   arrived?: boolean;
   arrivedDate?: string;
-  scorecardScores?: SupplierScores;
+  scorecardScores?: POScorecardScores;
+  automaticScorecard?: {
+    scores: Partial<Pick<SupplierScores, 'leadTime' | 'price'>>;
+    reasons: Partial<Record<'leadTime' | 'price', string>>;
+  };
   scorecardCompleted?: boolean;
   backendCaseId?: string;
   pendingTaskId?: string;

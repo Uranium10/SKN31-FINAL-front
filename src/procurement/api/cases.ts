@@ -6,6 +6,7 @@ import type {
   RfqRoundHistoryEntry,
   RfqRoundSnapshot,
   SupplierQuotation,
+  SupplierRecommendation,
   VendorSelectionGroup,
 } from '../types';
 
@@ -19,6 +20,11 @@ export interface ProcurementCaseDTO {
   item_code?: string | null;
   item_name?: string | null;
   summary?: Record<string, unknown>;
+  supplier_recommendations?: Record<string, {
+    scores: NonNullable<SupplierQuotation['scores']>;
+    average_score: number;
+    evaluation_count: number;
+  }>;
   workflow_snapshot?: Record<string, unknown>;
   quotation_snapshot?: {
     rfq_name?: string;
@@ -54,6 +60,7 @@ export interface ProcurementCaseDTO {
     full_receipt_date?: string;
     scorecard_status?: 'LOCKED' | 'AVAILABLE' | 'COMPLETED';
     scorecard?: Record<string, unknown> | null;
+    automatic_scorecard?: POItem['automaticScorecard'];
     invoice_count?: number;
     latest_invoice_name?: string;
     invoice_total?: number | string;
@@ -164,13 +171,13 @@ export const answerProcurementTask = async (
   taskId: string,
   answer: Record<string, unknown>,
   version?: number,
-): Promise<void> => {
+): Promise<Record<string, unknown>> => {
   const response = await fetchWithAuth(`/api/procurement/tasks/${encodeURIComponent(taskId)}/answer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ answer, version }),
   });
-  await parseJson(response);
+  return parseJson<Record<string, unknown>>(response);
 };
 
 // 차수(라운드) 팝업 전용 - 지난(또는 현재) 라운드 RFQ 하나에 실제로 제출된
@@ -229,6 +236,7 @@ export interface SupplierSearchResult {
   supplierName: string;
   email: string | null;
   phone: string | null;
+  recommendation?: SupplierRecommendation | null;
 }
 
 interface SupplierSearchResponse {
@@ -237,6 +245,7 @@ interface SupplierSearchResponse {
     supplier_name?: string;
     email?: string | null;
     phone?: string | null;
+    recommendation?: SupplierRecommendation | null;
   }>;
 }
 
@@ -260,7 +269,18 @@ export const searchSuppliers = async (
     supplierName: row.supplier_name || row.name || '',
     email: row.email ?? null,
     phone: row.phone ?? null,
+    recommendation: row.recommendation,
   }));
+};
+
+export const getSupplierEvaluations = async (names: string[]): Promise<Record<string, SupplierRecommendation>> => {
+  const response = await fetchWithAuth('/api/procurement/suppliers/evaluations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ names }),
+  });
+  const body = await parseJson<{ items: Record<string, SupplierRecommendation> }>(response);
+  return body.items;
 };
 
 const text = (value: unknown, fallback = ''): string => (
@@ -504,7 +524,18 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
     const name = supplierName(row);
     const responded = liveBySupplier.has(name) || rankingBySupplier.has(name);
     const aiEvaluated = rankingBySupplier.has(name);
-    const unitPrice = numberValue(row.rate ?? row.unit_price ?? row.net_rate ?? row.quote_unit_price);
+    const quotationItems = rows(row.items);
+    const quotationItem = quotationItems.find((item) => (
+      !entry.item_code || text(item.item_code) === entry.item_code
+    )) ?? quotationItems[0] ?? {};
+    const unitPrice = numberValue(
+      row.rate
+      ?? row.unit_price
+      ?? row.net_rate
+      ?? row.quote_unit_price
+      ?? quotationItem.rate
+      ?? quotationItem.net_rate,
+    );
     const totalPrice = numberValue(
       row.total_amount
       ?? row.grand_total
@@ -512,26 +543,47 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       ?? row.amount
       ?? row.net_amount
       ?? row.total
-      ?? row.total_price,
+      ?? row.total_price
+      ?? quotationItem.amount
+      ?? quotationItem.net_amount,
     ) || unitPrice;
     return {
       supplierId: name,
       supplierName: name,
+      scores: entry.supplier_recommendations?.[name]?.scores,
+      recommendationScore: entry.supplier_recommendations?.[name]?.average_score,
+      evaluationCount: entry.supplier_recommendations?.[name]?.evaluation_count,
       quoteUnitPrice: unitPrice,
       quoteTotalPrice: totalPrice,
       leadTimeDays: numberValue(row.lead_time_days ?? row.lead_time),
       expectedDeliveryDate: text(
-        row.expected_delivery_date ?? row.schedule_date ?? row.delivery_date,
+        row.expected_delivery_date
+        ?? row.schedule_date
+        ?? row.delivery_date
+        ?? quotationItem.expected_delivery_date
+        ?? quotationItem.schedule_date
+        ?? quotationItem.delivery_date,
       ) || undefined,
       isResponded: responded,
       resContent: text(
-        row.response_summary ?? row.remarks ?? row.supplier_response,
+        row.response_summary ?? row.remarks ?? row.supplier_response ?? row.terms,
         responded ? '견적 단가와 제시 납기 정보를 수신했습니다.' : '아직 견적을 회신하지 않았습니다.',
       ),
       resAttachments: [],
       aiRank: numberValue(row.rank) || index + 1,
-      aiScore: numberValue(row.score ?? row.ai_score),
+      aiScore: numberValue(row.overall_score ?? row.score ?? row.ai_score),
       aiReason: aiEvaluated ? text(row.reason ?? row.ai_reason) : '',
+      numericScore: aiEvaluated && row.numeric_score != null
+        ? numberValue(row.numeric_score)
+        : undefined,
+      specificationScore: aiEvaluated && row.specification_score != null
+        ? numberValue(row.specification_score)
+        : undefined,
+      overallScore: aiEvaluated && (row.overall_score ?? row.score ?? row.ai_score) != null
+        ? numberValue(row.overall_score ?? row.score ?? row.ai_score)
+        : undefined,
+      evaluationSource: aiEvaluated ? text(row.evaluation_source) || undefined : undefined,
+      currency: text(row.currency) || undefined,
       aiEvaluated,
       specMatch: typeof row.spec_match === 'boolean' ? row.spec_match : undefined,
       fulfillsQuantity: typeof row.fulfills_qty === 'boolean' ? row.fulfills_qty : undefined,
@@ -603,7 +655,9 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     backendCaseId: entry.case_id,
     pendingTaskId: entry.pending_task?.task_id,
     pendingTask: pendingTask(entry),
+    workflowStatus: entry.status,
     workflowStage: entry.stage,
+    workflowError: friendlyWorkflowError(entry.last_error),
     orderStarted: ['PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED'].includes(entry.stage),
     mrNo: entry.mr_name,
     itemName: request.itemName,
@@ -656,12 +710,12 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
   );
   const fullReceipt = delivery?.delivery_status === 'FULL';
   const scorecard = delivery?.scorecard;
-  const scorecardScores = scorecard && ['quality', 'leadTime', 'price', 'service', 'communication']
+  const scorecardScores = scorecard && ['quality', 'leadTime', 'service', 'communication']
     .every((key) => typeof scorecard[key] === 'number')
     ? {
       quality: scorecard.quality as number,
       leadTime: scorecard.leadTime as number,
-      price: scorecard.price as number,
+      price: typeof scorecard.price === 'number' ? scorecard.price : undefined,
       service: scorecard.service as number,
       communication: scorecard.communication as number,
     }
@@ -708,6 +762,7 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     fullReceiptDate: delivery?.full_receipt_date,
     scorecardCompleted: delivery?.scorecard_status === 'COMPLETED',
     scorecardScores,
+    automaticScorecard: delivery?.automatic_scorecard,
     invoiceCount: numberValue(delivery?.invoice_count),
     latestInvoiceName: delivery?.latest_invoice_name,
     invoiceTotal: numberValue(delivery?.invoice_total),

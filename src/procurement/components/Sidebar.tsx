@@ -9,11 +9,14 @@ import {
   LogOut,
   ChevronLeft,
   PanelLeftOpen,
+  Settings,
+  BrainCircuit,
 } from 'lucide-react';
 import SailboatIcon from '../../components/common/SailboatIcon';
 import type { NavigationTab } from '../types';
 
 interface SidebarProps {
+  canManagePolicy?: boolean;
   currentTab: NavigationTab;
   setCurrentTab: (tab: NavigationTab) => void;
   pendingCount: number;
@@ -40,6 +43,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
+  canManagePolicy = false,
   currentTab,
   setCurrentTab,
   pendingCount,
@@ -167,6 +171,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           )}
         </li>
+        {canManagePolicy && <li>
+          <button type="button" className={`nav-item ${currentTab === 'ai-decision-log' ? 'active' : ''}`}
+            style={{ width: '100%', border: 0, textAlign: 'left', font: 'inherit' }}
+            onClick={() => setCurrentTab('ai-decision-log')} title="AI 판단 근거 감사 로그">
+            <div className="nav-item-left"><BrainCircuit size={18} /><span>AI 판단 로그</span></div>
+          </button>
+        </li>}
       </ul>
 
       {/* Process Stages Mini Indicator inside Sidebar */}
@@ -201,22 +212,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </>
       )}
 
-      {/* User Info Footer */}
-      <div className="sidebar-user">
-        <div className="user-avatar">{initial}</div>
-        <div className="user-info">
-          <h4 title={displayName}>{displayName}</h4>
-          <p title={accountLabel}>{accountLabel}</p>
+      {/* Keep administrator settings next to the account, outside task navigation. */}
+      <div className="sidebar-account-footer">
+        {canManagePolicy && (
+          <button
+            type="button"
+            className={`sidebar-policy-link ${currentTab === 'company-policy' ? 'is-active' : ''}`}
+            onClick={() => setCurrentTab('company-policy')}
+            aria-label="회사 구매 정책"
+            aria-current={currentTab === 'company-policy' ? 'page' : undefined}
+            title="관리자 환경설정 · 회사 구매 정책"
+          >
+            <Settings size={17} aria-hidden="true" />
+            <span>회사 구매 정책</span>
+          </button>
+        )}
+        {/* User Info Footer */}
+        <div className="sidebar-user">
+          <div className="user-avatar">{initial}</div>
+          <div className="user-info">
+            <h4 title={displayName}>{displayName}</h4>
+            <p title={accountLabel}>{accountLabel}</p>
+          </div>
+          <button
+            type="button"
+            className="sidebar-logout"
+            onClick={() => void onLogout()}
+            title="로그아웃"
+            aria-label="로그아웃"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
-        <button
-          type="button"
-          className="sidebar-logout"
-          onClick={() => void onLogout()}
-          title="로그아웃"
-          aria-label="로그아웃"
-        >
-          <LogOut size={16} />
-        </button>
       </div>
     </aside>
   );

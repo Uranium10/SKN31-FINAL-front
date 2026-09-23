@@ -10,6 +10,9 @@ import { ItemRegistrationView } from './views/ItemRegistrationView';
 import { MRListView } from './views/MRListView';
 import { VendorSelectionView } from './views/VendorSelectionView';
 import { POManagementView } from './views/POManagementView';
+import { CompanyPolicyView } from './views/CompanyPolicyView';
+import { AiDecisionLogView } from './views/AiDecisionLogView';
+import { getPolicyCapabilities } from './api/companyPolicy';
 
 import type {
   NavigationTab,
@@ -18,7 +21,7 @@ import type {
   MaterialRequestAttachment,
   VendorSelectionGroup,
   POItem,
-  SupplierScores,
+  POScorecardScores,
   ProcurementNotification,
   GlobalSearchResult,
   StageMovePlaceholder,
@@ -44,6 +47,7 @@ import {
   listProcurementCases,
   rejectProcurementCase,
   searchSuppliers,
+  getSupplierEvaluations,
   startProcurementCase,
   syncDraftProcurementCases,
   type ProcurementDataMode,
@@ -116,6 +120,8 @@ function DashboardDatabaseLoader() {
 }
 
 const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
+  'company-policy': { title: '회사 구매 정책', detail: '관리자가 구매 기준과 AI 보조 판단 지침을 변경하고 게시합니다.' },
+  'ai-decision-log': { title: 'AI 판단 로그', detail: '구매 자동화 과정에서 기록된 AI 판단 단계와 근거를 조회합니다.' },
   dashboard: {
     title: '구매 대시보드',
     detail: '승인 대기, 견적 회신, 협력사 승인과 PO 생성 현황을 확인합니다.',
@@ -264,6 +270,27 @@ function ProcurementWorkspaceComponent({
 }: ProcurementWorkspaceProps) {
   // Navigation & Search
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
+  const [canManagePolicy, setCanManagePolicy] = useState(false);
+  const [policyRoles, setPolicyRoles] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setCanManagePolicy(false);
+    setPolicyRoles([]);
+    const refreshAccess = () => {
+      getPolicyCapabilities().then(result => {
+        if (alive) {
+          setCanManagePolicy(result.can_manage);
+          setPolicyRoles(result.roles || []);
+        }
+      }).catch(() => {
+        // An unavailable ERP role lookup must not leave stale privileges visible.
+        if (alive) { setCanManagePolicy(false); setPolicyRoles([]); }
+      });
+    };
+    refreshAccess();
+    window.addEventListener('focus', refreshAccess);
+    return () => { alive = false; window.removeEventListener('focus', refreshAccess); };
+  }, [currentUser?.id, currentUser?.email]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.localStorage.getItem('biddingflow.sidebar.collapsed') === 'true'
@@ -307,16 +334,14 @@ function ProcurementWorkspaceComponent({
   const uniqueRequests = useMemo(() => uniqueByMrNo(requests), [requests]);
   const mrQueueRequests = useMemo(
     () => uniqueRequests.filter((request) => {
-      // 반려 건은 사유 확인을 위해 MR 목록에 남기되, 대체품 선택 등으로
-      // 정상 취소된 건과 완료 건은 다음 단계 목록에서 숨긴다.
-      if (request.workflowStatus === 'REJECTED') return true;
-      // 009-03 이전에 urgent_no_supplier_cancelled가 CANCELLED로 저장된
-      // 기존 케이스도 반려 사유가 있으면 같은 방식으로 복구 표시한다.
-      if (request.workflowStatus === 'CANCELLED' && request.rejectReason) return true;
-      if (request.workflowStatus && ['COMPLETED', 'CANCELLED'].includes(request.workflowStatus)) {
+      // 반려·취소·완료 건은 MR 목록 화면(BiddingFlow)에 더 이상 남기지
+      // 않는다. ERPNext에서 MR이 삭제되어 대사 과정에서 CANCELLED로
+      // 종료된 케이스도 여기서 함께 숨겨야 삭제된 MR이 반려 배지로
+      // 계속 화면에 남는 문제가 재발하지 않는다.
+      if (request.workflowStatus && ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(request.workflowStatus)) {
         return false;
       }
-      if (!request.workflowStage) return request.status !== '승인';
+      if (!request.workflowStage) return request.status !== '승인' && request.status !== '반려';
       return ['MR_REVIEW', 'ITEM_CHECK', 'SUBSTITUTE_DECISION', 'HUMAN_REVIEW'].includes(
         request.workflowStage
       );
@@ -1213,13 +1238,15 @@ function ProcurementWorkspaceComponent({
       return false;
     }
     try {
-      await answerProcurementTask(
+      const result = await answerProcurementTask(
         group.pendingTaskId,
         { decision: 'check' },
         group.pendingTask?.version,
       );
       clearNotificationsForMR(group.mrNo);
-      showToast(`${group.mrNo} 공급사 견적 AI 분석과 순위 산정이 완료되었습니다.`);
+      showToast(result.accepted === true
+        ? `${group.mrNo} 공급사 견적 AI 분석을 시작했습니다. 완료되면 화면에 자동 반영됩니다.`
+        : `${group.mrNo} 공급사 견적 AI 분석과 순위 산정이 완료되었습니다.`);
       await loadMRsFromApi(false);
       return true;
     } catch (error) {
@@ -2002,7 +2029,7 @@ function ProcurementWorkspaceComponent({
   };
 
   // Supplier Scorecard 평가 제출 -> 해당 PO 건 발주 프로세스 종료
-  const handleSubmitScorecard = async (poId: string, scores: SupplierScores) => {
+  const handleSubmitScorecard = async (poId: string, scores: POScorecardScores) => {
     const targetPO = poItems.find((item) => item.id === poId);
     if (!targetPO) return;
 
@@ -2014,7 +2041,7 @@ function ProcurementWorkspaceComponent({
       try {
         await answerProcurementTask(
           targetPO.pendingTaskId,
-          { ...scores },
+          { quality: scores.quality, service: scores.service, communication: scores.communication },
           targetPO.pendingTask?.version,
         );
         clearNotificationsForMR(targetPO.mrNo);
@@ -2045,6 +2072,7 @@ function ProcurementWorkspaceComponent({
     <div className="procurement-shell">
       {/* 1. 왼쪽 사이드바 */}
       <Sidebar
+        canManagePolicy={canManagePolicy}
         currentTab={currentTab}
         setCurrentTab={handleSidebarNavigation}
         pendingCount={pendingCount}
@@ -2075,6 +2103,10 @@ function ProcurementWorkspaceComponent({
         {/* Content Body (Full Width) */}
         <div className="content-body">
           <main className="view-content">
+            {canManagePolicy && <div hidden={currentTab !== 'company-policy'}><CompanyPolicyView roles={policyRoles} active={currentTab === 'company-policy'} /></div>}
+            {!canManagePolicy && currentTab === 'company-policy' && <p role="alert">ERPNext의 정책 관리 권한을 확인할 수 없습니다. 권한 변경 후 화면을 새로고침해주세요.</p>}
+            {canManagePolicy && <div hidden={currentTab !== 'ai-decision-log'}><AiDecisionLogView active={currentTab === 'ai-decision-log'} /></div>}
+            {!canManagePolicy && currentTab === 'ai-decision-log' && <p role="alert">AI 판단 로그를 조회할 관리자 권한이 없습니다.</p>}
             {/* Screen 2: 대시보드 */}
             {currentTab === 'dashboard' && (
               <section
@@ -2157,6 +2189,7 @@ function ProcurementWorkspaceComponent({
                 onCheckQuotations={handleCheckQuotations}
                 onDownloadAttachment={(attachment) => void handleDownloadAttachment(attachment)}
                 onSearchSuppliers={handleSearchSuppliers}
+                onLoadSupplierEvaluations={apiDataEnabled ? getSupplierEvaluations : undefined}
                 onFetchRfqRoundQuotations={handleFetchRfqRoundQuotations}
               />
             )}

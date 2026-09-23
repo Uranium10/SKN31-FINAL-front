@@ -4,7 +4,8 @@ import type {
   MaterialRequest,
   RfqRoundSnapshot,
   SupplierQuotation,
-  SupplierScores,
+  POScorecardScores,
+  SupplierRecommendation,
   StageMovePlaceholder,
 } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
@@ -121,6 +122,7 @@ interface VendorSelectionViewProps {
    * 이메일만 대조된 결과). 안 넘기면 드롭다운 없이 지금처럼 순수 텍스트
    * 입력으로 동작한다. */
   onSearchSuppliers?: (query: string, field: 'name' | 'email') => Promise<ManualSupplierSuggestion[]>;
+  onLoadSupplierEvaluations?: (names: string[]) => Promise<Record<string, SupplierRecommendation>>;
   /** 차수(라운드) 팝업에서 특정 RFQ 1건에 실제로 제출된 견적을 다시
    * 조회한다. 재비딩해도 지난 RFQ를 취소하지 않고 그대로 두기 때문에
    * 언제든 조회 가능하다. */
@@ -132,11 +134,12 @@ export interface ManualSupplierSuggestion {
   supplierName: string;
   email: string | null;
   phone: string | null;
+  recommendation?: SupplierRecommendation | null;
 }
 
 interface RfqCandidateRow extends Omit<SupplierQuotation, 'scores'> {
-  scores: SupplierScores | null;
-  count5: number | null;
+  scores: POScorecardScores | null;
+  averageScore: number | null;
   rank: number | null;
   isManual: boolean;
 }
@@ -207,23 +210,6 @@ const hasQuotationAiEvaluation = (quotation: SupplierQuotation): boolean => (
   quotation.aiEvaluated ?? Boolean(quotation.aiReason.trim())
 );
 
-// AI 5대 항목 평가 점수 생성 헬퍼 함수 (납기, 품질, 가격, 응대, 의사소통 각 5점 만점)
-const getSupplierScores = (quotation: SupplierQuotation): SupplierScores => {
-  if (quotation.scores) return quotation.scores;
-  if (quotation.aiRank === 1) {
-    return { leadTime: 5, quality: 5, price: 5, service: 4, communication: 5 };
-  } else if (quotation.aiRank === 2) {
-    return { leadTime: 5, quality: 4, price: 4, service: 5, communication: 5 };
-  } else {
-    return { leadTime: 4, quality: 5, price: 4, service: 4, communication: 5 };
-  }
-};
-
-// 5점 만점 개수 산출 헬퍼
-const getCountOf5 = (scores: SupplierScores): number => {
-  return Object.values(scores).filter((v) => v === 5).length;
-};
-
 const formatExpectedDelivery = (quotation: SupplierQuotation): string => {
   if (quotation.expectedDeliveryDate) {
     const date = new Date(`${quotation.expectedDeliveryDate.slice(0, 10)}T00:00:00`);
@@ -271,6 +257,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onCheckQuotations,
   onDownloadAttachment,
   onSearchSuppliers,
+  onLoadSupplierEvaluations,
   onFetchRfqRoundQuotations,
 }) => {
   // 모달 상태
@@ -308,6 +295,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const [rfqDeadlineTime, setRfqDeadlineTime] = useState<string>('18:00');
   const [rfqSupplierEmails, setRfqSupplierEmails] = useState<Record<string, string>>({});
   const [rfqManualSuppliers, setRfqManualSuppliers] = useState<string[]>([]);
+  const [manualEvaluations, setManualEvaluations] = useState<Record<string, SupplierRecommendation>>({});
+  const [manualEvaluationError, setManualEvaluationError] = useState(false);
   const [rfqManualSupplierName, setRfqManualSupplierName] = useState('');
   const [rfqManualSupplierEmail, setRfqManualSupplierEmail] = useState('');
   const [manualSupplierSuggestions, setManualSupplierSuggestions] = useState<ManualSupplierSuggestion[]>([]);
@@ -504,8 +493,23 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     };
   }, [rfqManualSupplierEmail, onSearchSuppliers]);
 
+  useEffect(() => {
+    if (!showRfqModal || !onLoadSupplierEvaluations || !rfqManualSuppliers.length) return;
+    let cancelled = false;
+    setManualEvaluationError(false);
+    onLoadSupplierEvaluations(rfqManualSuppliers).then((evaluations) => {
+      if (!cancelled) setManualEvaluations(evaluations);
+    }).catch(() => {
+      if (!cancelled) setManualEvaluationError(true);
+    });
+    return () => { cancelled = true; };
+  }, [rfqManualSuppliers, showRfqModal, onLoadSupplierEvaluations]);
+
   const handlePickSupplierSuggestion = (suggestion: ManualSupplierSuggestion) => {
-    setRfqManualSupplierName(suggestion.supplierName);
+    setRfqManualSupplierName(suggestion.name);
+    if (suggestion.recommendation) {
+      setManualEvaluations((previous) => ({ ...previous, [suggestion.name]: suggestion.recommendation! }));
+    }
     setRfqManualSupplierEmail(suggestion.email || '');
     setShowSupplierSuggestions(false);
     setShowEmailSuggestions(false);
@@ -543,15 +547,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     if (!selectedGroup) return [];
     const ranked = [...selectedGroup.quotations]
       .map((quotation) => {
-        const scores = getSupplierScores(quotation);
-        return { quotation, scores, count5: getCountOf5(scores) };
+        const scores = quotation.scores ?? null;
+        return { quotation, scores, averageScore: quotation.recommendationScore ?? null };
       })
-      .sort((left, right) => right.count5 - left.count5)
-      .map(({ quotation, scores, count5 }, index) => ({
+      .sort((left, right) => (right.averageScore ?? -1) - (left.averageScore ?? -1))
+      .map(({ quotation, scores, averageScore }, _index, sorted) => ({
         ...quotation,
         scores,
-        count5,
-        rank: index + 1,
+        averageScore,
+        rank: averageScore == null ? null : sorted.findIndex((row) => row.averageScore === averageScore) + 1,
         isManual: false,
       }));
     const manual = rfqManualSuppliers.map((name) => ({
@@ -569,13 +573,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       isSelected: false,
       email: rfqSupplierEmails[name] || undefined,
       source: 'manual',
-      scores: null,
-      count5: null,
+      scores: manualEvaluations[name]?.scores ?? null,
+      averageScore: manualEvaluations[name]?.average_score ?? null,
+      evaluationCount: manualEvaluations[name]?.evaluation_count,
       rank: null,
       isManual: true,
     } satisfies RfqCandidateRow));
-    return [...ranked, ...manual];
-  }, [rfqManualSuppliers, rfqSupplierEmails, selectedGroup]);
+    const combined = [...ranked, ...manual].sort((left, right) => (right.averageScore ?? -1) - (left.averageScore ?? -1));
+    return combined.map((row) => ({ ...row, rank: row.averageScore == null ? null : combined.findIndex((candidate) => candidate.averageScore === row.averageScore) + 1 }));
+  }, [rfqManualSuppliers, rfqSupplierEmails, selectedGroup, manualEvaluations]);
 
   // 이 MR(선택된 그룹) 안에서 과거 라운드에 수주 접수를 거절한 협력사 -
   // id와 name 둘 다로 대조한다(직접 입력한 협력사는 RFQ 후보 쪽에서
@@ -918,8 +924,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const selectedApprovalHasAiEvaluation = selectedApprovalQuotation
     ? hasQuotationAiEvaluation(selectedApprovalQuotation)
     : false;
+  const quotationAnalysisRunning = selectedGroup?.workflowStatus === 'RUNNING';
   const canAnalyzeSelectedGroup = Boolean(
     selectedGroup?.workflowStage === 'QUOTATION_COLLECTION'
+    && !quotationAnalysisRunning
     && selectedGroup.quotations.some((quotation) => quotation.isResponded),
   );
 
@@ -1678,7 +1686,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   }}
                 >
                   <Sparkles size={14} style={{ display: 'inline', marginRight: '6px' }} />
-                  AI가 <strong>납기, 품질, 가격, 응대, 의사소통</strong> 5개 항목을 5점 만점으로 평가하여 <strong>5점이 많은 순위</strong>대로 랭킹을 산출했습니다. RFQ를 발송할 업체를 체크해 주세요.
+                  비딩플로우에서 완료한 <strong>PO별 평가 평균을 다시 평균</strong>하여 높은 점수 순으로 추천합니다. 제외된 가격은 해당 평가의 평균에서 제외하며, 항목별 점수는 평가 이력의 평균입니다. 평가 이력이 없는 협력사는 미평가로 표시합니다. RFQ를 발송할 업체를 체크해 주세요.
                 </div>
 
                 <div className="rfq-selection-toolbar">
@@ -1712,6 +1720,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </div>
                 )}
 
+                {manualEvaluationError && <p role="alert" style={{ color: 'var(--accent)' }}>직접 추가한 협력사의 평가 이력을 불러오지 못했습니다. 창을 다시 열어 확인해주세요.</p>}
                 {/* 5대 항목 평가표 (Table) */}
                 <div className="table-container rfq-candidate-list">
                   <table className="custom-table rfq-candidate-table">
@@ -1720,12 +1729,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         <th style={{ width: '40px', textAlign: 'center' }}>선택</th>
                         <th style={{ width: '60px', textAlign: 'center' }}>순위</th>
                         <th>협력사 정보</th>
+                        <th style={{ textAlign: 'center', width: '90px' }}>평균 점수</th>
                         <th style={{ textAlign: 'center' }}>납기 (5점)</th>
                         <th style={{ textAlign: 'center' }}>품질 (5점)</th>
                         <th style={{ textAlign: 'center' }}>가격 (5점)</th>
                         <th style={{ textAlign: 'center' }}>응대 (5점)</th>
                         <th style={{ textAlign: 'center' }}>의사소통 (5점)</th>
-                        <th style={{ textAlign: 'center', width: '90px' }}>5점 개수</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1759,7 +1768,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   <span className={`rank-badge rank-${rank}`} style={{ display: 'inline-block', width: '22px', height: '22px', lineHeight: '22px', fontSize: '11px' }}>
                                     {rank}
                                   </span>
-                                ) : <span className="badge badge-gray">직접</span>}
+                                ) : <span className="badge badge-gray">{q.isManual ? '직접' : '미평가'}</span>}
                               </td>
                               {/* 협력사명·이메일·연락처·출처 URL */}
                               <td className="rfq-supplier-info-cell">
@@ -1767,7 +1776,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   <span>
                                     {q.supplierName}
                                     {rank === 1 && (
-                                      <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 최우수]</span>
+                                      <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[평가 평균 1위]</span>
                                     )}
                                     {isRejected && (
                                       <span
@@ -1832,33 +1841,33 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   ) : <span className="rfq-supplier-source-link">출처 URL: 없음</span>}
                                 </div>
                               </td>
+                              {/* 5개 평가 항목 평균 */}
+                              <td style={{ textAlign: 'center' }}>
+                                {q.averageScore != null ? (
+                                  <span className="badge badge-purple" style={{ fontWeight: 700 }} title={`완료된 PO 평가 ${q.evaluationCount ?? 0}건 평균`}>
+                                    {q.averageScore.toFixed(1)}점
+                                  </span>
+                                ) : '—'}
+                              </td>
                               {/* 납기 */}
                               <td style={{ textAlign: 'center', color: q.scores?.leadTime === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.leadTime === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.leadTime}점` : '—'}
+                                {q.scores?.leadTime != null ? `⭐ ${q.scores.leadTime.toFixed(1)}점` : '—'}
                               </td>
                               {/* 품질 */}
                               <td style={{ textAlign: 'center', color: q.scores?.quality === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.quality === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.quality}점` : '—'}
+                                {q.scores?.quality != null ? `⭐ ${q.scores.quality.toFixed(1)}점` : '—'}
                               </td>
                               {/* 가격 */}
                               <td style={{ textAlign: 'center', color: q.scores?.price === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.price === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.price}점` : '—'}
+                                {q.scores?.price != null ? `⭐ ${q.scores.price.toFixed(1)}점` : '—'}
                               </td>
                               {/* 응대 */}
                               <td style={{ textAlign: 'center', color: q.scores?.service === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.service === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.service}점` : '—'}
+                                {q.scores?.service != null ? `⭐ ${q.scores.service.toFixed(1)}점` : '—'}
                               </td>
                               {/* 의사소통 */}
                               <td style={{ textAlign: 'center', color: q.scores?.communication === 5 ? 'var(--accent)' : 'var(--text-main)', fontWeight: q.scores?.communication === 5 ? 700 : 400 }}>
-                                {q.scores ? `⭐ ${q.scores.communication}점` : '—'}
-                              </td>
-                              {/* 5점 개수 */}
-                              <td style={{ textAlign: 'center' }}>
-                                {q.count5 === null ? '—' : (
-                                  <span className="badge badge-purple" style={{ fontWeight: 700 }}>
-                                    {q.count5}개 보유
-                                  </span>
-                                )}
+                                {q.scores?.communication != null ? `⭐ ${q.scores.communication.toFixed(1)}점` : '—'}
                               </td>
                             </tr>
                           );
@@ -1936,6 +1945,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               }}
                             >
                               <div style={{ fontWeight: 600 }}>{suggestion.supplierName}</div>
+                              <div>{suggestion.recommendation ? `평가 평균 ${suggestion.recommendation.average_score.toFixed(1)}점 · ${suggestion.recommendation.evaluation_count}건` : '평가 이력 없음'}</div>
                               <div style={{ color: 'var(--text-muted)' }}>
                                 {suggestion.email || '이메일 없음'}{suggestion.phone ? ` · ${suggestion.phone}` : ''}
                               </div>
@@ -2003,6 +2013,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               }}
                             >
                               <div style={{ fontWeight: 600 }}>{suggestion.email || '이메일 없음'}</div>
+                              <div>{suggestion.recommendation ? `평가 평균 ${suggestion.recommendation.average_score.toFixed(1)}점 · ${suggestion.recommendation.evaluation_count}건` : '평가 이력 없음'}</div>
                               <div style={{ color: 'var(--text-muted)' }}>
                                 {suggestion.supplierName}{suggestion.phone ? ` · ${suggestion.phone}` : ''}
                               </div>
@@ -2092,6 +2103,20 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
             </div>
 
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {selectedGroup.workflowError && !quotationAnalysisRunning && (
+                <div
+                  role="alert"
+                  style={{
+                    padding: '12px 14px',
+                    border: '1px solid var(--danger)',
+                    borderRadius: '8px',
+                    color: 'var(--danger)',
+                    background: 'var(--danger-bg)',
+                  }}
+                >
+                  AI 분석 실패: {selectedGroup.workflowError}
+                </div>
+              )}
               {/* 회신 현황 상세 표 (Table) */}
               <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflowX: 'visible' }}>
                 <table className="custom-table" style={{ fontSize: '12px', width: '100%', minWidth: 0, tableLayout: 'fixed' }}>
@@ -2117,7 +2142,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               : '견적 수집 단계에서 회신된 견적이 있을 때 분석할 수 있습니다.'}
                             style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
                           >
-                            {isAnalyzingQuotations
+                            {isAnalyzingQuotations || quotationAnalysisRunning
                               ? <><LoaderCircle size={12} className="spin-icon" /> 분석 중...</>
                               : <><Sparkles size={12} /> AI 분석</>}
                           </button>
@@ -2202,7 +2227,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                             {q.resContent}
                             {q.isResponded && !hasQuotationAiEvaluation(q) && (
                               <div style={{ marginTop: '4px', color: 'var(--text-dim)' }}>
-                                AI 분석 전 · 상단의 AI 분석 버튼을 눌러주세요.
+                                {quotationAnalysisRunning
+                                  ? 'AI가 규격 적합도와 순위를 분석하고 있습니다.'
+                                  : 'AI 분석 전 · 상단의 AI 분석 버튼을 눌러주세요.'}
                               </div>
                             )}
                             {hasQuotationAiEvaluation(q) && (
@@ -2223,7 +2250,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                 )}
                                 {q.aiReason && (
                                   <div style={{ color: 'var(--primary-hover)', marginTop: '4px', fontWeight: 500 }}>
-                                    💡 AI {q.aiRank}위 · {q.aiReason}
+                                    💡 AI {q.aiRank}위
+                                    {q.overallScore !== undefined && (
+                                      <> · 종합 {q.overallScore.toFixed(2)}점</>
+                                    )}
+                                    {q.numericScore !== undefined && q.specificationScore !== undefined && (
+                                      <>: 가격·납기 {q.numericScore.toFixed(2)}점, 규격 {q.specificationScore.toFixed(2)}점</>
+                                    )}
+                                    {' · '}{q.aiReason}
                                   </div>
                                 )}
                                 {q.aiIssues && q.aiIssues.length > 0 && (
