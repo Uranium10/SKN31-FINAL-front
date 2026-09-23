@@ -503,10 +503,32 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   const recipientCandidates = sentSupplierNames.size > 0
     ? candidates.filter((candidate) => sentSupplierNames.has(supplierName(candidate)))
     : candidates;
-  const rankingBySupplier = new Map(ranking.map((row) => [supplierName(row), row]));
+  // 재비딩으로 같은 공급사가 여러 차수에 걸쳐 견적을 낼 수 있어, 공급사
+  // 이름 하나로 ranking 행을 묶으면 마지막 차수 견적만 남고 이전 차수
+  // 견적은 조용히 사라진다(이전 차수도 최종선정 가능해야 하므로 문제).
+  // 차수별 ranking 행을 모두 모아두고, 후보/실시간 견적과 병합할 "대표"
+  // 행(가장 최근 차수)만 rankingBySupplier에 남긴 뒤, 나머지 차수 행은
+  // extraRankingRows로 별도 행으로 추가한다.
+  const rankingGroupsBySupplier = new Map<string, Array<Record<string, unknown>>>();
+  ranking.forEach((row) => {
+    const name = supplierName(row);
+    const group = rankingGroupsBySupplier.get(name) ?? [];
+    group.push(row);
+    rankingGroupsBySupplier.set(name, group);
+  });
+  const rankingBySupplier = new Map(
+    Array.from(rankingGroupsBySupplier.entries()).map(([name, group]) => [name, group[group.length - 1]]),
+  );
   const liveBySupplier = new Map(liveQuotations.map((row) => [supplierName(row), row]));
   const candidateNames = new Set(recipientCandidates.map(supplierName));
   const liveNames = new Set(liveQuotations.map(supplierName));
+  // 후보/실시간 견적과 병합되는 공급사(대표 행 하나로 합쳐짐)에 한해서만
+  // "나머지 차수" 행을 별도로 보충한다. 후보/실시간에 없는 공급사는 아래
+  // 세 번째 항목(ranking.filter)에서 이미 차수별로 전부 개별 행으로
+  // 들어가므로 여기서 또 추가하면 중복된다.
+  const extraRankingRows = Array.from(rankingGroupsBySupplier.entries())
+    .filter(([name, group]) => group.length > 1 && (candidateNames.has(name) || liveNames.has(name)))
+    .flatMap(([, group]) => group.slice(0, -1));
   const source = [
     ...recipientCandidates.map((candidate) => ({
       ...candidate,
@@ -519,6 +541,7 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       && !liveNames.has(supplierName(ranked))
       && (sentSupplierNames.size === 0 || sentSupplierNames.has(supplierName(ranked)))
     )),
+    ...extraRankingRows,
   ];
   return source.map((row, index) => {
     const name = supplierName(row);
@@ -548,6 +571,10 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       ?? quotationItem.net_amount,
     ) || unitPrice;
     return {
+      quotationId: text(row.quotation_id ?? row.name) || undefined,
+      rfqName: text(row.rfq_name) || undefined,
+      rfqRound: row.rfq_round != null ? numberValue(row.rfq_round) : undefined,
+      validTill: text(row.valid_till ?? row.valid_until) || undefined,
       supplierId: name,
       supplierName: name,
       scores: entry.supplier_recommendations?.[name]?.scores,

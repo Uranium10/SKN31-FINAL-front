@@ -1431,9 +1431,17 @@ function ProcurementWorkspaceComponent({
     });
   };
 
-  const handleSelectSupplier = async (groupId: string, supplierId: string) => {
+  const handleSelectSupplier = async (groupId: string, supplierId: string, quotationId?: string) => {
     const selectedGroup = vendorGroups.find((group) => group.id === groupId);
-    const selectedSupplier = selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId);
+    // 재비딩으로 같은 공급사가 여러 차수에 걸쳐 견적을 냈을 수 있어,
+    // quotationId가 넘어오면 그 견적을 정확히 짚어서 선택한다 - 단순히
+    // supplierId로만 찾으면 그 공급사의 아무 차수 견적이나 잡힐 수 있다.
+    const selectedSupplier = quotationId
+      ? (
+        selectedGroup?.quotations.find((quotation) => quotation.quotationId === quotationId)
+        ?? selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId)
+      )
+      : selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId);
     if (!selectedGroup || !selectedSupplier) return false;
 
     if (apiDataEnabled) {
@@ -1448,12 +1456,20 @@ function ProcurementWorkspaceComponent({
         showToast('견적을 회신한 협력사만 최종 선정할 수 있습니다.');
         return false;
       }
+      const resolvedQuotationId = quotationId ?? selectedSupplier.quotationId;
       try {
         await answerProcurementTask(
           selectedGroup.pendingTaskId,
           selectedGroup.workflowStage === 'QUOTATION_COLLECTION'
-            ? { decision: 'finalize', supplier: selectedSupplier.supplierName }
-            : { supplier: selectedSupplier.supplierName },
+            ? {
+                decision: 'finalize',
+                supplier: selectedSupplier.supplierName,
+                ...(resolvedQuotationId ? { quotation_id: resolvedQuotationId } : {}),
+              }
+            : {
+                supplier: selectedSupplier.supplierName,
+                ...(resolvedQuotationId ? { quotation_id: resolvedQuotationId } : {}),
+              },
           selectedGroup.pendingTask?.version,
         );
         clearNotificationsForMR(selectedGroup.mrNo);

@@ -169,8 +169,12 @@ export interface SupplierQuotation {
   quotationId?: string;
   /** 이 견적이 제출된 RFQ 문서명. */
   rfqName?: string;
-  /** 이 견적이 몇 차 RFQ에서 나왔는지 (재비딩 이력 배지 표시용). */
+  /** 이 견적이 몇 차 RFQ에서 나왔는지 (재비딩 이력 배지 표시용). 한 번도
+   * 재비딩하지 않은 최초 라운드가 0차입니다. */
   rfqRound?: number;
+  /** 협력사가 견적서에 제시한 유효기간(YYYY-MM-DD). 지나면 최종 선정에
+   * 쓸 수 없습니다. */
+  validTill?: string;
   supplierId: string;
   supplierName: string;
   quoteUnitPrice: number;

@@ -98,7 +98,7 @@ interface VendorSelectionViewProps {
   onDismissMovePlaceholder?: (id: string) => void;
   onNavigateMovePlaceholder?: (placeholder: StageMovePlaceholder) => void;
   requests?: MaterialRequest[];
-  onSelectSupplier: (groupId: string, supplierId: string) => Promise<boolean> | boolean;
+  onSelectSupplier: (groupId: string, supplierId: string, quotationId?: string) => Promise<boolean> | boolean;
   onSendPO: (groupId: string) => void;
   onWithdrawSupplierSelection: (groupId: string, reason: string) => void;
   /** 견적 마감이 지났는데 아직 업체를 선정하지 않은 상태에서 'MR 취소'를 선택했을 때. */
@@ -311,6 +311,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // 3. 견적 회신율 퍼센트 클릭 시 회신 상세 & 업체 선정 모달
   const [showQuotationModal, setShowQuotationModal] = useState<boolean>(false);
   const [selectedSupplierForApproval, setSelectedSupplierForApproval] = useState<string | null>(null);
+  // 같은 공급사가 재비딩으로 여러 차수에 걸쳐 견적을 냈을 수 있어
+  // supplierId만으로는 어떤 견적을 고른 건지 특정할 수 없다 - 행별로
+  // 고유한 key(quotationId, 없으면 supplierId+차수)로 정확히 어느
+  // 견적인지 기억해둔다.
+  const [selectedQuotationKey, setSelectedQuotationKey] = useState<string | null>(null);
   const [isAnalyzingQuotations, setIsAnalyzingQuotations] = useState(false);
 
   // 4. 마감시간 연장 모달
@@ -780,12 +785,29 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     });
   };
 
+  // 재비딩으로 같은 공급사가 여러 차수 견적을 낼 수 있어, 상세 비교표
+  // 행의 key/선택 상태는 supplierId가 아니라 견적 1건 단위로 잡는다.
+  const quotationRowKey = (q: SupplierQuotation): string => (
+    q.quotationId ?? `${q.supplierId}-${q.rfqRound ?? 0}`
+  );
+
+  // 협력사가 견적서에 제시한 유효기간이 지났는지 확인한다. validTill이
+  // 없는 견적(레거시 데이터 등)은 만료 여부를 판단할 근거가 없으므로
+  // 만료로 취급하지 않는다.
+  const isQuotationExpired = (q: SupplierQuotation): boolean => {
+    if (!q.validTill) return false;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return q.validTill < todayStr;
+  };
+
   // 3. 견적 회신율(%) 클릭 처리 (상세사항 확인 & 체크박스 업체 선정)
   const handleOpenQuotationModal = (group: VendorSelectionGroup) => {
     setSelectedGroup(group);
     // AI 1위도 자동 선택하지 않는다. 순위는 추천이며 최종 선택은 사람의
     // 명시적인 라디오 선택으로만 결정한다.
     setSelectedSupplierForApproval(group.selectedSupplierId || null);
+    const preselected = group.quotations.find((q) => q.supplierId === group.selectedSupplierId);
+    setSelectedQuotationKey(preselected ? quotationRowKey(preselected) : null);
     setShowQuotationModal(true);
   };
 
@@ -801,9 +823,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
   const handleConfirmSupplierSelection = async () => {
     if (!selectedGroup || !selectedSupplierForApproval || selectingSupplierId) return;
-    const selectedQuotation = selectedGroup.quotations.find(
-      (quotation) => quotation.supplierId === selectedSupplierForApproval,
-    );
+    const selectedQuotation = selectedQuotationKey
+      ? selectedGroup.quotations.find((quotation) => quotationRowKey(quotation) === selectedQuotationKey)
+      : selectedGroup.quotations.find((quotation) => quotation.supplierId === selectedSupplierForApproval);
     if (!selectedQuotation?.isResponded) {
       setResultModal({
         title: '회신된 견적을 선택해주세요',
@@ -812,14 +834,23 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       });
       return;
     }
+    if (isQuotationExpired(selectedQuotation)) {
+      setResultModal({
+        title: '만료된 견적서입니다',
+        message: `이 견적의 유효기간(${selectedQuotation.validTill})이 지났습니다. 다른 견적을 선택하거나 재비딩해 주세요.`,
+        tone: 'warning',
+      });
+      return;
+    }
 
     const groupId = selectedGroup.id;
     const supplierId = selectedSupplierForApproval;
+    const quotationId = selectedQuotation.quotationId;
 
     setSelectingSupplierId(supplierId);
 
     await new Promise((resolve) => window.setTimeout(resolve, 350));
-    const selected = await onSelectSupplier(groupId, supplierId);
+    const selected = await onSelectSupplier(groupId, supplierId, quotationId);
     if (selected) {
       setSelectedGroup((current) => {
         if (!current || current.id !== groupId) return current;
@@ -903,12 +934,17 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     }
   };
 
-  // 6. 마감 지남 + 미선정 상태 - '재비딩' 처리 (지금까지 받은 견적은 버리고
-  // 새 마감일로 RFQ 대상 선택 화면으로 되돌아간다)
+  // 마감 전(적극 수집 중)이든 마감 지남 + 미선정 상태든 공통으로 쓰는
+  // '재비딩' 처리. 지금까지 받은 견적은 버리지 않고 rfq_rounds 이력으로
+  // 남긴 채, 새 마감일의 RFQ를 추가로 보내는 새 차수로 넘어간다 - 최종
+  // 선정 때는 이전 차수 견적도 후보 풀에 그대로 남아있다.
   const handleRebid = async (group: VendorSelectionGroup) => {
-    const confirmed = window.confirm(
-      `${group.mrNo} 건: 지금까지 들어온 견적을 모두 버리고 새 마감일로 RFQ를 다시 보냅니다. 계속할까요?`,
-    );
+    const unrespondedCount = group.quotations.filter((quotation) => !quotation.isResponded).length;
+    const baseMessage = `${group.mrNo} 건: 지금까지 들어온 견적은 그대로 후보로 유지하고, 새 마감일로 RFQ를 추가로 보냅니다.`;
+    const confirmMessage = unrespondedCount > 0
+      ? `${baseMessage}\n\n아직 ${unrespondedCount}개 협력사가 견적을 회신하지 않았습니다. 아직 다 견적을 받지 못했는데, 정말 재비딩하시겠어요?`
+      : `${baseMessage} 계속할까요?`;
+    const confirmed = window.confirm(confirmMessage);
     if (!confirmed) return;
     setIsRebidding(group.id);
     try {
@@ -918,11 +954,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     }
   };
 
-  const selectedApprovalQuotation = selectedGroup?.quotations.find(
-    (quotation) => quotation.supplierId === selectedSupplierForApproval,
-  );
+  const selectedApprovalQuotation = selectedQuotationKey
+    ? selectedGroup?.quotations.find((quotation) => quotationRowKey(quotation) === selectedQuotationKey)
+    : selectedGroup?.quotations.find((quotation) => quotation.supplierId === selectedSupplierForApproval);
   const selectedApprovalHasAiEvaluation = selectedApprovalQuotation
     ? hasQuotationAiEvaluation(selectedApprovalQuotation)
+    : false;
+  const selectedApprovalExpired = selectedApprovalQuotation
+    ? isQuotationExpired(selectedApprovalQuotation)
     : false;
   const quotationAnalysisRunning = selectedGroup?.workflowStatus === 'RUNNING';
   const canAnalyzeSelectedGroup = Boolean(
@@ -1217,7 +1256,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   disabled={isRebidding === group.id}
                                   onClick={() => handleRebid(group)}
                                   style={{ fontSize: '10px', padding: '3px 8px' }}
-                                  title="지금까지 들어온 견적을 버리고 새 마감일로 RFQ를 다시 보냅니다."
+                                  title="지금까지 들어온 견적은 유지한 채 새 마감일로 RFQ를 추가로 보냅니다."
                                 >
                                   {isRebidding === group.id ? '처리 중...' : '재비딩'}
                                 </button>
@@ -1279,14 +1318,20 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       </span>
                     </button>
                     {group.workflowStage === 'QUOTATION_COLLECTION' && (
-                      <button
-                        type="button"
-                        className="btn-sm btn-outline"
-                        onClick={() => onCheckQuotations(group.id)}
-                        style={{ marginTop: '5px', fontSize: '10px' }}
-                      >
-                        <LoaderCircle size={11} /> 회신 새로 확인
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '5px' }}>
+                        <button
+                          type="button"
+                          className="btn-sm btn-outline"
+                          onClick={() => onCheckQuotations(group.id)}
+                          style={{ fontSize: '10px' }}
+                        >
+                          <LoaderCircle size={11} /> 회신 새로 확인
+                        </button>
+                        {/* 재비딩은 "공급사 견적 상세 비교 및 최종 업체
+                            선정" 창(위 [상세보기 & 업체선정] 클릭) 안에서
+                            진행한다 - 마감 전/후 상태에 상관없이 한 곳에서
+                            처리한다. */}
+                      </div>
                     )}
                   </td>
 
@@ -2097,9 +2142,23 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </span>
                 </div>
               </div>
-              <button type="button" className="icon-btn" onClick={() => setShowQuotationModal(false)}>
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {selectedGroup.workflowStage === 'QUOTATION_COLLECTION' && (
+                  <button
+                    type="button"
+                    className="btn-sm btn-outline"
+                    disabled={isRebidding === selectedGroup.id}
+                    onClick={() => handleRebid(selectedGroup)}
+                    style={{ fontSize: '11px' }}
+                    title="지금까지 들어온 견적은 유지한 채 새 RFQ 차수를 추가로 보냅니다."
+                  >
+                    {isRebidding === selectedGroup.id ? '처리 중...' : '재비딩'}
+                  </button>
+                )}
+                <button type="button" className="icon-btn" onClick={() => setShowQuotationModal(false)}>
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
@@ -2162,27 +2221,40 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         return aEvaluated && bEvaluated ? a.aiRank - b.aiRank : 0;
                       })
                       .map((q) => {
-                      const isChecked = selectedSupplierForApproval === q.supplierId;
+                      const rowKey = quotationRowKey(q);
+                      const isChecked = selectedQuotationKey
+                        ? selectedQuotationKey === rowKey
+                        : selectedSupplierForApproval === q.supplierId;
+                      const expired = isQuotationExpired(q);
 
                       return (
-                        <tr key={q.quotationId ?? `${q.supplierId}-${q.rfqRound ?? 1}`} style={{ backgroundColor: isChecked ? 'var(--success-bg)' : 'transparent' }}>
+                        <tr key={rowKey} style={{ backgroundColor: isChecked ? 'var(--success-bg)' : 'transparent' }}>
                           {/* 라디오/체크박스 */}
                           <td style={{ textAlign: 'center' }}>
                             <input
                               type="radio"
                               name="selected_supplier_radio"
-                              disabled={!q.isResponded}
+                              disabled={!q.isResponded || expired}
                               checked={isChecked}
-                              onChange={() => setSelectedSupplierForApproval(q.supplierId)}
-                              style={{ width: '16px', height: '16px', cursor: q.isResponded ? 'pointer' : 'not-allowed' }}
+                              onChange={() => {
+                                setSelectedSupplierForApproval(q.supplierId);
+                                setSelectedQuotationKey(rowKey);
+                              }}
+                              style={{ width: '16px', height: '16px', cursor: q.isResponded && !expired ? 'pointer' : 'not-allowed' }}
+                              title={expired ? `유효기간(${q.validTill})이 지난 만료된 견적서입니다.` : undefined}
                             />
                           </td>
                           {/* 협력사명 */}
                           <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                             {q.supplierName}
                             <span className="badge badge-blue" style={{ marginLeft: '6px', fontSize: '10px' }}>
-                              {q.rfqRound ?? 1}차
+                              {q.rfqRound ?? 0}차
                             </span>
+                            {expired && (
+                              <span className="badge badge-red" style={{ marginLeft: '6px', fontSize: '10px' }} title={`유효기간: ${q.validTill}`}>
+                                만료된 견적서입니다
+                              </span>
+                            )}
                             {q.isResponded && hasQuotationAiEvaluation(q) && q.aiRank === 1 && (
                               <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px' }}>[AI 1위 추천]</span>
                             )}
@@ -2289,13 +2361,16 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 disabled={
                   !selectedSupplierForApproval
                   || !selectedApprovalHasAiEvaluation
+                  || selectedApprovalExpired
                   || Boolean(selectingSupplierId)
                   || isAnalyzingQuotations
                 }
                 onClick={handleConfirmSupplierSelection}
-                title={!selectedApprovalHasAiEvaluation
-                  ? 'AI 분석을 완료한 뒤 회신 업체를 선택해주세요.'
-                  : undefined}
+                title={selectedApprovalExpired
+                  ? '유효기간이 지난 견적입니다. 다른 견적을 선택해주세요.'
+                  : !selectedApprovalHasAiEvaluation
+                    ? 'AI 분석을 완료한 뒤 회신 업체를 선택해주세요.'
+                    : undefined}
               >
                 {selectingSupplierId ? (
                   <>
