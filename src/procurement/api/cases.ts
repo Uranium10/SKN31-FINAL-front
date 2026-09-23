@@ -725,6 +725,8 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     backendCaseId: entry.case_id,
     pendingTaskId: entry.pending_task?.task_id,
     pendingTask: pendingTask(entry),
+    workflowStage: entry.stage,
+    workflowError: friendlyWorkflowError(entry.last_error),
     prNo: poName || '발주 승인 대기',
     mrNo: entry.mr_name,
     itemName: request.itemName,

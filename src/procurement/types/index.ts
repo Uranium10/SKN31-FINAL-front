@@ -366,6 +366,11 @@ export interface POItem {
   backendCaseId?: string;
   pendingTaskId?: string;
   pendingTask?: PendingHumanTask;
+  // PO 생성 실패(po_creation_failed) 등 워크플로 예외 상태를 PO 관리
+  // 화면에서도 보여주기 위한 필드. caseToMaterialRequest의 workflowError와
+  // 동일하게 friendlyWorkflowError(last_error)로 채워진다.
+  workflowStage?: string;
+  workflowError?: string;
   approvalStatus?: 'pending' | 'approved' | 'rejected';
   orderedQty?: number;
   receivedQty?: number;

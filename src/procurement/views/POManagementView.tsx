@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { POItem, POScorecardScores, SupplierScores, StageMovePlaceholder } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
+import { WorkflowInterruptForm } from '../components/WorkflowInterruptForm';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
 import {
   matchesTableRange,
@@ -57,6 +58,7 @@ interface POManagementViewProps {
   onCancelMR: (poId: string) => void;
   onMarkArrived: (poId: string) => void;
   onSubmitScorecard: (poId: string, scores: POScorecardScores) => void;
+  onAnswerTask?: (taskId: string, answer: Record<string, unknown>, version?: number) => Promise<void> | void;
   isApiMode?: boolean;
 }
 
@@ -72,6 +74,9 @@ const getScoreAverage = (scores: POScorecardScores) => (
 );
 
 const getOverallProgress = (item: POItem) => {
+  if (item.pendingTask?.taskType === 'po_creation_failed') {
+    return { label: 'PO 생성 실패 · 확인 필요', className: 'badge-red' };
+  }
   if (item.pendingTask?.taskType === 'order_start') {
     return { label: '긴급발주 · 발주 시작 대기', className: 'badge-yellow' };
   }
@@ -134,9 +139,19 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onCancelMR,
   onMarkArrived,
   onSubmitScorecard,
+  onAnswerTask,
   isApiMode = false,
 }) => {
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
+  // MRListView와 동일하게, 에러문구 클릭하면 펼쳐서 전체 보이게 (요청별 토글).
+  const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+  const toggleErrorExpanded = (id: string) => {
+    setExpandedErrors((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   const [selectedRejectReason, setSelectedRejectReason] = useState<POItem | null>(null);
   const [showReselectList, setShowReselectList] = useState<boolean>(false);
   const [emailModalItem, setEmailModalItem] = useState<POItem | null>(null);
@@ -425,6 +440,30 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         </span>
                       );
                     })()}
+                    {item.pendingTask?.taskType === 'po_creation_failed' && (
+                      <>
+                        {item.workflowError && (
+                          <span
+                            className={`mr-workflow-error is-clickable${expandedErrors.has(item.id) ? ' is-expanded' : ''}`}
+                            title={item.workflowError}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleErrorExpanded(item.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                toggleErrorExpanded(item.id);
+                              }
+                            }}
+                          >
+                            {item.workflowError}
+                          </span>
+                        )}
+                        {onAnswerTask && (
+                          <WorkflowInterruptForm task={item.pendingTask} onSubmit={onAnswerTask} />
+                        )}
+                      </>
+                    )}
                     {!item.poCreated && item.pendingTask?.taskType === 'order_start' && (
                       <button className="btn-sm btn-primary" onClick={() => onStartOrder(item.id)}>
                         <Send size={14} />

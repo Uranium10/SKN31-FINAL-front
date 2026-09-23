@@ -784,7 +784,7 @@ function ProcurementWorkspaceComponent({
         visibleCases
           .filter((entry) => [
             'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED',
-            'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED',
+            'PO_CREATION', 'PO_CREATION_FAILED', 'DELIVERY', 'SCORECARD', 'COMPLETED',
           ].includes(entry.stage) || isDirectPurchaseOrderStart(entry))
           .map(caseToPOItem)
       );
@@ -2210,6 +2210,7 @@ function ProcurementWorkspaceComponent({
                 onCancelMR={handleCancelMR}
                 onMarkArrived={handleMarkPOArrived}
                 onSubmitScorecard={handleSubmitScorecard}
+                onAnswerTask={handleAnswerWorkflowTask}
                 isApiMode={apiDataEnabled}
               />
             )}
