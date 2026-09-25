@@ -28,7 +28,7 @@ import {
   Send,
 } from 'lucide-react';
 
-type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'supplier' | 'amount' | 'promisedDate' | 'receivedDate' | 'payment' | 'status';
+type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'supplier' | 'amount' | 'promisedDate' | 'receivedDate' | 'payment' | 'status' | 'action';
 
 const PO_COLUMNS: readonly TableColumnDefinition<POColumnKey>[] = [
   { key: 'poNo', label: 'PO 번호', defaultWidth: 175, minWidth: 130 },
@@ -39,7 +39,13 @@ const PO_COLUMNS: readonly TableColumnDefinition<POColumnKey>[] = [
   { key: 'promisedDate', label: '약정 납기일', defaultWidth: 145, minWidth: 115, filterMode: 'date-range' },
   { key: 'receivedDate', label: '실제 수령일', defaultWidth: 145, minWidth: 115, filterMode: 'date-range' },
   { key: 'payment', label: '대금결제', defaultWidth: 165, minWidth: 130 },
-  { key: 'status', label: '진행상태', defaultWidth: 265, minWidth: 190 },
+  { key: 'status', label: '현재 단계', defaultWidth: 190, minWidth: 150 },
+  // ⚠️ 예전엔 이 컬럼 자리에 배지랑 버튼이 한꺼번에 쌓여 있었다(구매팀
+  // 피드백: "컬럼에 너무 많은 정보"). 바이어가 실제로 클릭하는 버튼만
+  // 이 별도 컬럼으로 분리한다 - 입고 확인/대금결제는 ERPNext 웹훅으로
+  // 자동 갱신되고 버튼이 없으므로(아래 표 본문 참고) 이 컬럼에도
+  // 나타나지 않는다.
+  { key: 'action', label: '다음 행동', defaultWidth: 200, minWidth: 160, filterMode: 'none' },
 ] as const;
 
 type PORangeFilters = Partial<Record<POColumnKey, TableColumnRangeFilter>>;
@@ -104,6 +110,12 @@ const getOverallProgress = (item: POItem) => {
   return { label: '구매 업무 완료', className: 'badge-green' };
 };
 
+// 진행중/완료 탭 분리 기준: getOverallProgress()가 내려주는 마지막 상태
+// ('구매 업무 완료' - PO 생성+입고+결제+평가가 전부 끝난 상태)를 그대로
+// 재사용한다. 새 판정 로직이 아니라 이미 있는 상태 계산을 탭 분리에도
+// 그대로 쓰는 것.
+const isPoComplete = (item: POItem): boolean => getOverallProgress(item).label === '구매 업무 완료';
+
 const paymentLabel = (item: POItem): string => ({
   PAID: '결제 완료',
   PARTIALLY_PAID: '부분 결제',
@@ -122,6 +134,7 @@ const poFilterValue = (item: POItem, key: POColumnKey): string | number => {
     case 'receivedDate': return item.fullReceiptDate ?? item.arrivedDate ?? item.firstReceiptDate ?? '-';
     case 'payment': return paymentLabel(item);
     case 'status': return getOverallProgress(item).label;
+    case 'action': return '';
   }
 };
 
@@ -167,6 +180,9 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   );
   const [sortColumn, setSortColumn] = useState<POColumnKey>('mrNo');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  // 진행중/완료 탭 - 결제·평가까지 다 끝난(구매 업무 완료) 건을 목록에서
+  // 분리해서, 아직 바이어가 볼 일이 있는 건만 기본으로 보이게 한다.
+  const [activeTab, setActiveTab] = useState<'progress' | 'completed'>('progress');
 
   const poFilterOptions = useMemo(() => Object.fromEntries(PO_COLUMNS.map((column) => [
     column.key,
@@ -197,6 +213,13 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         : String(leftValue).localeCompare(String(rightValue), 'ko-KR', { numeric: true });
       return sortDirection === 'asc' ? compared : -compared;
     }), [poItems, rangeFilters, sortColumn, sortDirection, tableState.filters]);
+
+  const progressCount = useMemo(() => poItems.filter((item) => !isPoComplete(item)).length, [poItems]);
+  const completedCount = useMemo(() => poItems.filter((item) => isPoComplete(item)).length, [poItems]);
+  const tabFilteredPOItems = useMemo(
+    () => visiblePOItems.filter((item) => (activeTab === 'completed' ? isPoComplete(item) : !isPoComplete(item))),
+    [visiblePOItems, activeTab],
+  );
 
   const openScorecard = (item: POItem) => {
     setScorecardItem(item);
@@ -285,6 +308,42 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         </span>
       </div>
 
+      {/* 진행중 / 완료 탭 */}
+      <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--border)' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('progress')}
+          style={{
+            padding: '10px 18px',
+            fontSize: '14px',
+            fontWeight: 700,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: activeTab === 'progress' ? 'var(--primary)' : 'var(--text-dim)',
+            borderBottom: activeTab === 'progress' ? '2px solid var(--primary)' : '2px solid transparent',
+          }}
+        >
+          진행중 &nbsp;{progressCount}
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('completed')}
+          style={{
+            padding: '10px 18px',
+            fontSize: '14px',
+            fontWeight: 700,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: activeTab === 'completed' ? 'var(--primary)' : 'var(--text-dim)',
+            borderBottom: activeTab === 'completed' ? '2px solid var(--primary)' : '2px solid transparent',
+          }}
+        >
+          완료 &nbsp;{completedCount}
+        </button>
+      </div>
+
       {/* PO Management Table */}
       <SmartTableContainer>
         <table
@@ -325,7 +384,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
             </tr>
           </thead>
           <tbody>
-            {visiblePOItems.map((item, rowIndex) => (
+            {tabFilteredPOItems.map((item, rowIndex) => (
               <React.Fragment key={item.id}>
                 {movePlaceholders
                   .filter((placeholder) => placeholder.index === rowIndex)
@@ -333,7 +392,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                     <StageMovePlaceholderRow
                       key={placeholder.id}
                       placeholder={placeholder}
-                      colSpan={9}
+                      colSpan={10}
                       onNavigate={onNavigateMovePlaceholder}
                       onDismiss={onDismissMovePlaceholder}
                     />
@@ -429,7 +488,9 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                     </span>
                   )}
                 </td>
-                {/* 최종 승인 -> PO -> 입고 -> 결제 -> Scorecard */}
+                {/* 현재 단계 - 상태 배지/에러만. 실제로 클릭하는 버튼은 전부
+                    바로 다음 '다음 행동' 컬럼으로 옮겼다(예전엔 이 셀 하나에
+                    배지+버튼이 전부 쌓여 있었음 - 구매팀 피드백). */}
                 <td>
                   <div className="mr-stage-cell">
                     {(() => {
@@ -440,29 +501,50 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         </span>
                       );
                     })()}
-                    {item.pendingTask?.taskType === 'po_creation_failed' && (
-                      <>
-                        {item.workflowError && (
-                          <span
-                            className={`mr-workflow-error is-clickable${expandedErrors.has(item.id) ? ' is-expanded' : ''}`}
-                            title={item.workflowError}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => toggleErrorExpanded(item.id)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault();
-                                toggleErrorExpanded(item.id);
-                              }
-                            }}
-                          >
-                            {item.workflowError}
-                          </span>
-                        )}
-                        {onAnswerTask && (
-                          <WorkflowInterruptForm task={item.pendingTask} onSubmit={onAnswerTask} />
-                        )}
-                      </>
+                    {item.pendingTask?.taskType === 'po_creation_failed' && item.workflowError && (
+                      <span
+                        className={`mr-workflow-error is-clickable${expandedErrors.has(item.id) ? ' is-expanded' : ''}`}
+                        title={item.workflowError}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleErrorExpanded(item.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            toggleErrorExpanded(item.id);
+                          }
+                        }}
+                      >
+                        {item.workflowError}
+                      </span>
+                    )}
+                    {item.poCreated && !item.arrived && (
+                      <span className={item.deliveryStatus === 'PARTIAL' ? 'badge badge-yellow' : 'badge badge-gray'}>
+                        <Clock size={12} /> {item.deliveryStatus === 'PARTIAL'
+                          ? `부분 입고 ${item.receivedQty ?? 0}/${item.orderedQty ?? 0}`
+                          : 'Purchase Receipt 입고 대기'}
+                      </span>
+                    )}
+                    {item.scorecardCompleted && (
+                      <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle2 size={12} /> 평가 완료
+                        {item.scorecardScores && ` · 평균 ${getScoreAverage(item.scorecardScores).toFixed(1)}점`}
+                        {item.scorecardScores && item.scorecardScores.price == null && ' (가격 제외)'}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                {/* 다음 행동 - 바이어가 실제로 클릭해서 처리하는 것만 여기
+                    있다. 입고 확인/대금결제는 ERPNext(Purchase Receipt,
+                    Purchase Invoice, Payment Entry) 웹훅으로 자동 갱신되고
+                    이 화면에서 직접 처리하는 버튼이 없으므로(위 배너 문구
+                    그대로) 여기에도 나타나지 않는다 - "목업: 입고 웹훅 수신"
+                    버튼은 실제 서비스(isApiMode)에서는 아예 렌더링되지 않는
+                    데모 전용 버튼이다. */}
+                <td>
+                  <div className="mr-stage-cell">
+                    {item.pendingTask?.taskType === 'po_creation_failed' && onAnswerTask && (
+                      <WorkflowInterruptForm task={item.pendingTask} onSubmit={onAnswerTask} />
                     )}
                     {!item.poCreated && item.pendingTask?.taskType === 'order_start' && (
                       <button className="btn-sm btn-primary" onClick={() => onStartOrder(item.id)}>
@@ -476,21 +558,15 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         <span>PR 요청</span>
                       </button>
                     )}
-                    {/* ⚠️ 바로 위에서 getOverallProgress()가 이미 'PR 요청 · 수주접수
-                        대기' 배지를 보여주고 있어서, 여기서 같은 문구의 배지를
-                        또 띄우면 화면에 똑같은 문구가 두 번 나온다(스크린샷으로
-                        지적됨). 이 자리에는 그 상태에서 취할 수 있는 액션
-                        (이메일/수주접수 버튼)만 추가한다. */}
+                    {/* ⚠️ 위 '현재 단계' 컬럼이 이미 'PR 요청 · 수주접수 대기'
+                        배지를 보여주고 있으므로, 여기서는 그 상태에서 취할 수
+                        있는 액션(이메일/수주접수 버튼)만 보여준다. */}
                     {!item.poCreated && (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') && !isApiMode && (
                       <button className="btn-sm btn-outline" onClick={() => setEmailModalItem(item)}>
                         <Mail size={12} />
                         <span>이메일/수주접수</span>
                       </button>
                     )}
-                    {/* ACCEPTED 상태도 마찬가지 - '수주접수 · PO 생성 중'은 이미
-                        위 요약 배지에 나오고, 이 단계는 버이어가 취할 별도
-                        액션이 없어(자동으로 PO 생성 진행) 여기 더 보여줄 게
-                        없다. */}
                     {!item.poCreated && (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') && (
                       <button
                         className="btn-sm btn-reject"
@@ -506,35 +582,17 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         <span>PO 발송 최종 승인</span>
                       </button>
                     )}
-                    {item.poCreated && !item.arrived && (
-                      <>
-                        <span className={item.deliveryStatus === 'PARTIAL' ? 'badge badge-yellow' : 'badge badge-gray'}>
-                          <Clock size={12} /> {item.deliveryStatus === 'PARTIAL'
-                            ? `부분 입고 ${item.receivedQty ?? 0}/${item.orderedQty ?? 0}`
-                            : 'Purchase Receipt 입고 대기'}
-                        </span>
-                        {!isApiMode && (
-                          <button className="btn-sm btn-outline" onClick={() => onMarkArrived(item.id)}>
-                            <PackageCheck size={14} />
-                            <span>목업: 입고 웹훅 수신</span>
-                          </button>
-                        )}
-                      </>
+                    {item.poCreated && !item.arrived && !isApiMode && (
+                      <button className="btn-sm btn-outline" onClick={() => onMarkArrived(item.id)}>
+                        <PackageCheck size={14} />
+                        <span>목업: 입고 웹훅 수신</span>
+                      </button>
                     )}
                     {item.poCreated && item.arrived && !item.scorecardCompleted && (
-                      <>
-                        <button className="btn-sm btn-primary" onClick={() => openScorecard(item)}>
-                          <ClipboardList size={14} />
-                          <span>Supplier Scorecard 작성</span>
-                        </button>
-                      </>
-                    )}
-                    {item.scorecardCompleted && (
-                      <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        <CheckCircle2 size={12} /> 평가 완료
-                        {item.scorecardScores && ` · 평균 ${getScoreAverage(item.scorecardScores).toFixed(1)}점`}
-                        {item.scorecardScores && item.scorecardScores.price == null && ' (가격 제외)'}
-                      </span>
+                      <button className="btn-sm btn-primary" onClick={() => openScorecard(item)}>
+                        <ClipboardList size={14} />
+                        <span>Supplier Scorecard 작성</span>
+                      </button>
                     )}
                   </div>
                 </td>
@@ -542,20 +600,20 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               </React.Fragment>
             ))}
             {movePlaceholders
-              .filter((placeholder) => placeholder.index >= visiblePOItems.length)
+              .filter((placeholder) => placeholder.index >= tabFilteredPOItems.length)
               .map((placeholder) => (
                 <StageMovePlaceholderRow
                   key={placeholder.id}
                   placeholder={placeholder}
-                  colSpan={9}
+                  colSpan={10}
                   onNavigate={onNavigateMovePlaceholder}
                   onDismiss={onDismissMovePlaceholder}
                 />
               ))}
-            {visiblePOItems.length === 0 && movePlaceholders.length === 0 && (
+            {tabFilteredPOItems.length === 0 && movePlaceholders.length === 0 && (
               <tr>
-                <td colSpan={9} className="table-empty-state">
-                  발주 시작 또는 입고 진행 중인 건이 없습니다.
+                <td colSpan={10} className="table-empty-state">
+                  {activeTab === 'completed' ? '완료된 건이 없습니다.' : '발주 시작 또는 입고 진행 중인 건이 없습니다.'}
                 </td>
               </tr>
             )}
