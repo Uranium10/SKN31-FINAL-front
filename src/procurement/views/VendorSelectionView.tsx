@@ -48,7 +48,7 @@ const VENDOR_COLUMNS: readonly TableColumnDefinition<VendorColumnKey>[] = [
   { key: 'deadline', label: '마감시간 (마감연장)', defaultWidth: 225, minWidth: 175, filterMode: 'date-range' },
   { key: 'response', label: '견적 회신율 (%)', defaultWidth: 185, minWidth: 145, align: 'center' },
   { key: 'status', label: '진행상태', defaultWidth: 175, minWidth: 135 },
-  { key: 'order', label: '발주 시작', defaultWidth: 155, minWidth: 120, filterMode: 'none' },
+  { key: 'order', label: '다음 행동', defaultWidth: 190, minWidth: 140, filterMode: 'none' },
 ] as const;
 
 type VendorRangeFilters = Partial<Record<VendorColumnKey, TableColumnRangeFilter>>;
@@ -1321,7 +1321,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     })()}
                   </td>
 
-                  {/* 4. 마감시간 (마감연장도 가능한) - RFQ 발송 전에는 흐리게 비활성화 */}
+                  {/* 4. 마감시간 - 날짜/배지만. 연장·재비딩·이대로 선정
+                      진행·MR 취소 버튼은 전부 '다음 행동' 컬럼으로
+                      옮겼다(예전엔 이 셀 하나에 날짜+배지+버튼 2~3개가
+                      같이 쌓여 있었음 - 구매팀 피드백). */}
                   <td>
                     <div
                       style={{
@@ -1330,7 +1333,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         gap: '8px',
                         flexWrap: 'wrap',
                         opacity: rfqActive ? 1 : 0.4,
-                        pointerEvents: rfqActive ? 'auto' : 'none',
                       }}
                       title={rfqActive ? undefined : 'RFQ 발송 후 이용할 수 있습니다.'}
                     >
@@ -1339,90 +1341,25 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           <CheckCircle2 size={11} /> 마감 완료
                         </span>
                       ) : group.deadlineDDay <= 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
-                          <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column' }}>
-                            <span>{group.deadlineDate} {group.deadlineTime}</span>
-                            <span className="badge badge-red" style={{ fontSize: '11px', fontWeight: 600, width: 'fit-content' }}>
-                              마감 지남
-                            </span>
-                          </div>
-                          {group.workflowStage === 'QUOTATION_COLLECTION' && (
-                            isPastTargetDueDate ? (
-                              // 납기요청일까지 이미 지나버리면 더 손쓸 도리가
-                              // 없는 건이므로 재비딩/이대로 선정 진행 같은
-                              // 선택지는 다 없애고 MR 취소만 남긴다.
-                              <button
-                                type="button"
-                                className="btn-sm btn-reject"
-                                disabled={isCancellingOverdue === group.id}
-                                onClick={() => handleConfirmOverdueCancel(group)}
-                                style={{ fontSize: '10px', padding: '3px 8px' }}
-                                title={`납기요청일(${group.targetDueDate})이 지나 더 이상 진행할 수 없습니다. 확인을 누르면 이 MR을 취소합니다.`}
-                              >
-                                {isCancellingOverdue === group.id ? '취소 처리 중...' : '확인 · MR 취소'}
-                              </button>
-                            ) : (
-                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                {respondedCount === 0 ? (
-                                  <button
-                                    type="button"
-                                    className="btn-sm btn-reject"
-                                    onClick={() => { setCancellingGroup(group); setCancelMrReason(''); }}
-                                    style={{ fontSize: '10px', padding: '3px 8px' }}
-                                    title="제출된 견적이 없어 이 MR을 취소합니다."
-                                  >
-                                    MR 취소
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="btn-sm btn-primary"
-                                    onClick={() => handleOpenQuotationModal(group)}
-                                    style={{ fontSize: '10px', padding: '3px 8px' }}
-                                    title="지금까지 들어온 견적으로 업체 선정을 진행합니다."
-                                  >
-                                    이대로 선정 진행
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  className="btn-sm btn-outline"
-                                  disabled={isRebidding === group.id}
-                                  onClick={() => handleRebid(group)}
-                                  style={{ fontSize: '10px', padding: '3px 8px' }}
-                                  title="지금까지 들어온 견적은 유지한 채 새 마감일로 RFQ를 추가로 보냅니다."
-                                >
-                                  {isRebidding === group.id ? '처리 중...' : '재비딩'}
-                                </button>
-                              </div>
-                            )
-                          )}
+                        <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column' }}>
+                          <span>{group.deadlineDate} {group.deadlineTime}</span>
+                          <span className="badge badge-red" style={{ fontSize: '11px', fontWeight: 600, width: 'fit-content' }}>
+                            마감 지남
+                          </span>
                         </div>
                       ) : (
-                        <>
-                          <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column' }}>
-                            <span>{group.deadlineDate} {group.deadlineTime}</span>
-                            <span style={{ fontSize: '11px', color: 'var(--warning)', fontWeight: 600 }}>
-                              (D-{group.deadlineDDay}일 마감)
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn-sm btn-warning"
-                            disabled={!rfqActive}
-                            onClick={() => handleOpenExtendModal(group)}
-                            style={{ fontSize: '11px', padding: '3px 8px', height: '26px' }}
-                            title="협력사 메일 재발송 없이 견적 마감시간만 연장합니다."
-                          >
-                            <Calendar size={11} />
-                            <span>연장</span>
-                          </button>
-                        </>
+                        <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column' }}>
+                          <span>{group.deadlineDate} {group.deadlineTime}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--warning)', fontWeight: 600 }}>
+                            (D-{group.deadlineDDay}일 마감)
+                          </span>
+                        </div>
                       )}
                     </div>
                   </td>
 
-                  {/* 5. 견적 회신율(%) (클릭 시 상세사항 확인 및 체크박스 업체 선정) - RFQ 발송 전에는 흐리게 비활성화 */}
+                  {/* 5. 견적 회신율(%) - 클릭 시 상세사항 확인 및 업체 선정.
+                      '회신 새로 확인' 버튼은 '다음 행동' 컬럼으로 옮겼다. */}
                   <td style={{ textAlign: 'center' }}>
                     <button
                       type="button"
@@ -1451,25 +1388,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         [상세보기 & 업체선정]
                       </span>
                     </button>
-                    {group.workflowStage === 'QUOTATION_COLLECTION' && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '5px' }}>
-                        <button
-                          type="button"
-                          className="btn-sm btn-outline"
-                          onClick={() => onCheckQuotations(group.id)}
-                          style={{ fontSize: '10px' }}
-                        >
-                          <LoaderCircle size={11} /> 회신 새로 확인
-                        </button>
-                        {/* 재비딩은 "공급사 견적 상세 비교 및 최종 업체
-                            선정" 창(위 [상세보기 & 업체선정] 클릭) 안에서
-                            진행한다 - 마감 전/후 상태에 상관없이 한 곳에서
-                            처리한다. */}
-                      </div>
-                    )}
                   </td>
 
-                  {/* 6. 진행상태 (RFQ 진행 중이면 견적 요청상태, 업체 선정 완료면 업체 선정완료) */}
+                  {/* 6. 진행상태 - 배지/공급사명만. '선정 변경' 버튼은
+                      '다음 행동' 컬럼으로 옮겼다. */}
                   <td>
                     {selectedQuotation ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1479,36 +1401,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                           {selectedQuotation.supplierName}
                         </span>
-                        {group.supplierApprovalStatus === 'pending' && (
-                          <button
-                            type="button"
-                            className="btn-outline"
-                            style={{ fontSize: '10px', padding: '2px 6px', marginTop: '2px', width: 'fit-content' }}
-                            onClick={() => {
-                              setChangingGroup(group);
-                              setChangeReason('');
-                            }}
-                          >
-                            선정 변경
-                          </button>
-                        )}
                       </div>
                     ) : isOverdueUnsentRfq ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', width: 'fit-content' }}>
-                          <AlertTriangle size={11} /> 납기 초과 · RFQ 미발송
-                        </span>
-                        <button
-                          type="button"
-                          className="btn-sm btn-reject"
-                          disabled={isCancellingOverdue === group.id}
-                          onClick={() => handleConfirmOverdueCancel(group)}
-                          style={{ fontSize: '10px', padding: '3px 8px', width: 'fit-content' }}
-                          title={`납기요청일(${group.targetDueDate})이 지났고 RFQ도 보내지 않아 자동 취소 대상입니다. 확인을 누르면 이 MR을 취소합니다.`}
-                        >
-                          {isCancellingOverdue === group.id ? '취소 처리 중...' : '확인 · MR 취소'}
-                        </button>
-                      </div>
+                      <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', width: 'fit-content' }}>
+                        <AlertTriangle size={11} /> 납기 초과 · RFQ 미발송
+                      </span>
                     ) : !rfqActive ? (
                       <span className="badge badge-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
                         <Clock size={11} /> RFQ 미발송
@@ -1520,24 +1417,125 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     )}
                   </td>
 
-                  {/* 7. 발주 시작 (업체 선정이 완료된 건만 가능) */}
+                  {/* 7. 다음 행동 - 예전엔 이 버튼들이 마감시간/견적회신율/
+                      진행상태 3개 셀에 나뉘어 있었다(구매팀 피드백: 셀 하나에
+                      정보가 너무 많음). 새 버튼은 없고, 있던 버튼들을 전부
+                      이 컬럼 한 곳으로 모았을 뿐이다 - 조건/핸들러는 원래
+                      있던 것 그대로다. */}
                   <td>
-                    {canStartOrder ? (
-                      <button
-                        type="button"
-                        className="btn-sm btn-primary"
-                        onClick={() => handleSendPOClick(group)}
-                        style={{ fontSize: '11px', padding: '5px 10px' }}
-                        title="선정 결과를 확정하고 PO 관리의 발송 전 최종 승인 단계로 넘깁니다."
-                      >
-                        <Send size={12} />
-                        <span>발주 시작</span>
-                      </button>
-                    ) : (
-                      <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                        -
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                      {isOverdueUnsentRfq && (
+                        <button
+                          type="button"
+                          className="btn-sm btn-reject"
+                          disabled={isCancellingOverdue === group.id}
+                          onClick={() => handleConfirmOverdueCancel(group)}
+                          style={{ fontSize: '10px', padding: '3px 8px' }}
+                          title={`납기요청일(${group.targetDueDate})이 지났고 RFQ도 보내지 않아 자동 취소 대상입니다. 확인을 누르면 이 MR을 취소합니다.`}
+                        >
+                          {isCancellingOverdue === group.id ? '취소 처리 중...' : '확인 · MR 취소'}
+                        </button>
+                      )}
+                      {hasSelection && group.supplierApprovalStatus === 'pending' && (
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          style={{ fontSize: '10px', padding: '2px 6px' }}
+                          onClick={() => {
+                            setChangingGroup(group);
+                            setChangeReason('');
+                          }}
+                        >
+                          선정 변경
+                        </button>
+                      )}
+                      {!hasSelection && group.deadlineDDay <= 0 && group.workflowStage === 'QUOTATION_COLLECTION' && (
+                        isPastTargetDueDate ? (
+                          // 납기요청일까지 이미 지나버리면 더 손쓸 도리가
+                          // 없는 건이므로 재비딩/이대로 선정 진행 같은
+                          // 선택지는 다 없애고 MR 취소만 남긴다.
+                          <button
+                            type="button"
+                            className="btn-sm btn-reject"
+                            disabled={isCancellingOverdue === group.id}
+                            onClick={() => handleConfirmOverdueCancel(group)}
+                            style={{ fontSize: '10px', padding: '3px 8px' }}
+                            title={`납기요청일(${group.targetDueDate})이 지나 더 이상 진행할 수 없습니다. 확인을 누르면 이 MR을 취소합니다.`}
+                          >
+                            {isCancellingOverdue === group.id ? '취소 처리 중...' : '확인 · MR 취소'}
+                          </button>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                            {respondedCount === 0 ? (
+                              <button
+                                type="button"
+                                className="btn-sm btn-reject"
+                                onClick={() => { setCancellingGroup(group); setCancelMrReason(''); }}
+                                style={{ fontSize: '10px', padding: '3px 8px' }}
+                                title="제출된 견적이 없어 이 MR을 취소합니다."
+                              >
+                                MR 취소
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn-sm btn-primary"
+                                onClick={() => handleOpenQuotationModal(group)}
+                                style={{ fontSize: '10px', padding: '3px 8px' }}
+                                title="지금까지 들어온 견적으로 업체 선정을 진행합니다."
+                              >
+                                이대로 선정 진행
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn-sm btn-outline"
+                              disabled={isRebidding === group.id}
+                              onClick={() => handleRebid(group)}
+                              style={{ fontSize: '10px', padding: '3px 8px' }}
+                              title="지금까지 들어온 견적은 유지한 채 새 마감일로 RFQ를 추가로 보냅니다."
+                            >
+                              {isRebidding === group.id ? '처리 중...' : '재비딩'}
+                            </button>
+                          </div>
+                        )
+                      )}
+                      {!hasSelection && group.deadlineDDay > 0 && (
+                        <button
+                          type="button"
+                          className="btn-sm btn-warning"
+                          disabled={!rfqActive}
+                          onClick={() => handleOpenExtendModal(group)}
+                          style={{ fontSize: '11px', padding: '3px 8px', height: '26px' }}
+                          title="협력사 메일 재발송 없이 견적 마감시간만 연장합니다."
+                        >
+                          <Calendar size={11} />
+                          <span>연장</span>
+                        </button>
+                      )}
+                      {group.workflowStage === 'QUOTATION_COLLECTION' && (
+                        <button
+                          type="button"
+                          className="btn-sm btn-outline"
+                          onClick={() => onCheckQuotations(group.id)}
+                          style={{ fontSize: '10px' }}
+                        >
+                          <LoaderCircle size={11} /> 회신 새로 확인
+                        </button>
+                      )}
+                      {canStartOrder && (
+                        <button
+                          type="button"
+                          className="btn-sm btn-primary"
+                          onClick={() => handleSendPOClick(group)}
+                          style={{ fontSize: '11px', padding: '5px 10px' }}
+                          title="선정 결과를 확정하고 PO 관리의 발송 전 최종 승인 단계로 넘깁니다."
+                        >
+                          <Send size={12} />
+                          <span>발주 시작</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                   </tr>
                 </React.Fragment>
