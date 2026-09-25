@@ -142,11 +142,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <li
           className={`nav-item ${currentTab === 'vendor-select' ? 'active' : ''} ${flashingStages.vendor ? 'has-new-work' : ''}`}
           onClick={() => setCurrentTab('vendor-select')}
-          title="협력사 선정"
+          title="RFQ·협력사 선정"
         >
           <div className="nav-item-left">
             <Users size={18} />
-            <span>협력사 선정</span>
+            <span>RFQ·협력사 선정</span>
           </div>
           {stageTaskCounts.vendor > 0 && (
             <span className="nav-badge" aria-label={`협력사 선정 새 작업 ${stageTaskCounts.vendor}건`}>

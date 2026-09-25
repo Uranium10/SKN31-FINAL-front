@@ -25,7 +25,7 @@ const tabTitles: Record<NavigationTab, string> = {
   dashboard: '대시보드',
   'item-register': '아이템 목록',
   'mr-list': 'MR 목록',
-  'vendor-select': '협력사 선정 (견적 비교 & AI 추천)',
+  'vendor-select': 'RFQ 발송·협력사 선정 (견적 비교 & AI 추천)',
   'po-manage': 'PO 관리',
 };
 

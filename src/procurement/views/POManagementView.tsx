@@ -28,16 +28,17 @@ import {
   Send,
 } from 'lucide-react';
 
-type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'supplier' | 'amount' | 'promisedDate' | 'receivedDate' | 'payment' | 'status' | 'action';
+type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'supplier' | 'payment' | 'status' | 'action';
 
 const PO_COLUMNS: readonly TableColumnDefinition<POColumnKey>[] = [
   { key: 'poNo', label: 'PO 번호', defaultWidth: 175, minWidth: 130 },
   { key: 'mrNo', label: 'MR 번호', defaultWidth: 175, minWidth: 135 },
   { key: 'item', label: '품목명 및 아이템코드', defaultWidth: 250, minWidth: 180 },
   { key: 'supplier', label: '협력사', defaultWidth: 190, minWidth: 140 },
-  { key: 'amount', label: '발주금액', defaultWidth: 145, minWidth: 110, align: 'right', filterMode: 'number-range' },
-  { key: 'promisedDate', label: '약정 납기일', defaultWidth: 145, minWidth: 115, filterMode: 'date-range' },
-  { key: 'receivedDate', label: '실제 수령일', defaultWidth: 145, minWidth: 115, filterMode: 'date-range' },
+  // 발주금액/약정납기일/실제수령일은 여기서 컬럼으로 안 보여주고 '품목명 및
+  // 아이템코드' 클릭 시 뜨는 'MR 및 발주 상세 내역' 패널로 옮겼다(구매팀
+  // 피드백: 컬럼에 정보가 너무 많음). 데이터가 없어진 게 아니라 위치만
+  // 옮긴 것 - 상세 패널 쪽 내용은 아래 selectedMRDetail 모달 참고.
   { key: 'payment', label: '대금결제', defaultWidth: 165, minWidth: 130 },
   { key: 'status', label: '현재 단계', defaultWidth: 190, minWidth: 150 },
   // ⚠️ 예전엔 이 컬럼 자리에 배지랑 버튼이 한꺼번에 쌓여 있었다(구매팀
@@ -131,9 +132,6 @@ const poFilterValue = (item: POItem, key: POColumnKey): string | number => {
     case 'mrNo': return item.mrNo;
     case 'item': return `${item.itemName} · ${item.itemCode}`;
     case 'supplier': return item.selectedSupplier || '협력사 미지정';
-    case 'amount': return item.totalAmount;
-    case 'promisedDate': return item.promisedDeliveryDate ?? item.dueDate;
-    case 'receivedDate': return item.fullReceiptDate ?? item.arrivedDate ?? item.firstReceiptDate ?? '-';
     case 'payment': return paymentLabel(item);
     case 'status': return getOverallProgress(item).label;
     case 'action': return '';
@@ -186,11 +184,12 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   // 분리해서, 아직 바이어가 볼 일이 있는 건만 기본으로 보이게 한다.
   const [activeTab, setActiveTab] = useState<'progress' | 'completed'>('progress');
 
+  // 발주금액(amount) 컬럼은 상세 패널로 옮기면서 PO_COLUMNS에서 빠졌으므로
+  // 통화 포맷 특수 처리도 같이 제거 - 이제 모든 컬럼이 poFilterValue를
+  // 그대로 문자열화한다.
   const poFilterOptions = useMemo(() => Object.fromEntries(PO_COLUMNS.map((column) => [
     column.key,
-    poItems.map((item) => column.key === 'amount'
-      ? `₩${item.totalAmount.toLocaleString()}`
-      : String(poFilterValue(item, column.key))),
+    poItems.map((item) => String(poFilterValue(item, column.key))),
   ])) as Record<POColumnKey, string[]>, [poItems]);
 
   const visiblePOItems = useMemo(() => poItems
@@ -394,7 +393,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                     <StageMovePlaceholderRow
                       key={placeholder.id}
                       placeholder={placeholder}
-                      colSpan={10}
+                      colSpan={7}
                       onNavigate={onNavigateMovePlaceholder}
                       onDismiss={onDismissMovePlaceholder}
                     />
@@ -426,13 +425,16 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   <button
                     className="spec-clickable-btn"
                     onClick={() => setSelectedMRDetail(item)}
-                    title="클릭 시 요청부서, 선정 협력사, 발주 금액 등 상세 확인"
+                    title="클릭 시 발주금액·약정납기일·실제수령일·수량 등 상세 확인"
                   >
                     <FileText size={13} />
                     <span>
                       {item.itemName} ({item.itemCode})
                     </span>
                   </button>
+                  <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: '3px' }}>
+                    상세보기 (금액·납기·수령일·수량)
+                  </div>
                 </td>
                 {/* 협력사 (선정된 공급사명 + 이메일) */}
                 <td>
@@ -446,20 +448,6 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                       </span>
                     )}
                   </div>
-                </td>
-                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
-                  {item.totalAmount > 0 ? `₩${item.totalAmount.toLocaleString()}` : '금액 확인 중'}
-                </td>
-                <td>
-                  <span style={{ fontWeight: 600 }}>{item.promisedDeliveryDate ?? item.dueDate}</span>
-                </td>
-                <td>
-                  {item.fullReceiptDate ?? item.arrivedDate ?? item.firstReceiptDate ?? '-'}
-                  {item.deliveryStatus === 'PARTIAL' && item.firstReceiptDate && (
-                    <div style={{ marginTop: '3px', fontSize: '10px', color: 'var(--warning)' }}>
-                      부분 입고 시작일
-                    </div>
-                  )}
                 </td>
                 <td>
                   {item.paymentStatus === 'PAID' ? (
@@ -607,14 +595,14 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 <StageMovePlaceholderRow
                   key={placeholder.id}
                   placeholder={placeholder}
-                  colSpan={10}
+                  colSpan={7}
                   onNavigate={onNavigateMovePlaceholder}
                   onDismiss={onDismissMovePlaceholder}
                 />
               ))}
             {tabFilteredPOItems.length === 0 && movePlaceholders.length === 0 && (
               <tr>
-                <td colSpan={10} className="table-empty-state">
+                <td colSpan={7} className="table-empty-state">
                   {activeTab === 'completed' ? '완료된 건이 없습니다.' : '발주 시작 또는 입고 진행 중인 건이 없습니다.'}
                 </td>
               </tr>
@@ -770,6 +758,8 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   요청부서: {selectedMRDetail.department} | 약정 납기일: {selectedMRDetail.dueDate}
+                  {selectedMRDetail.orderedQty != null
+                    && ` | 수량: ${selectedMRDetail.receivedQty ?? 0}/${selectedMRDetail.orderedQty}`}
                 </div>
               </div>
               {selectedMRDetail.poCreated && (

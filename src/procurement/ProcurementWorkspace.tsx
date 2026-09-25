@@ -135,8 +135,8 @@ const tabContext: Record<NavigationTab, { title: string; detail: string }> = {
     detail: '납기 순으로 구매 요청을 검색하고 승인 또는 반려합니다.',
   },
   'vendor-select': {
-    title: '협력사 선정',
-    detail: '견적 회신과 AI 추천 근거를 비교한 뒤 최종 협력사를 선택합니다.',
+    title: 'RFQ 발송·협력사 선정',
+    detail: 'RFQ 발송부터 견적 회신 확인, AI 추천 근거 비교, 최종 협력사 선정까지 관리합니다.',
   },
   'po-manage': {
     title: 'PO 관리',
@@ -410,7 +410,7 @@ function ProcurementWorkspaceComponent({
       .forEach(([tab, entries]) => entries.forEach((entry) => destinationByMr.set(entry.mrNo, tab)));
     const labels: Record<WorkflowStageTab, string> = {
       'mr-list': 'MR 목록',
-      'vendor-select': '협력사 선정',
+      'vendor-select': 'RFQ 발송·협력사 선정',
       'po-manage': 'PO 관리',
     };
     // 로컬 선반영으로 원본 행이 먼저 사라지고 API 재조회 후 목적지 행이

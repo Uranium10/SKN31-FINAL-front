@@ -1120,7 +1120,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       >
         <Sparkles size={20} color="var(--accent)" />
         <span>
-          <strong>협력사 선정 및 비교 관리 (표 형식)</strong>: 
+          <strong>RFQ 발송·협력사 선정 관리 (표 형식)</strong>: 
           MR 번호 클릭 시 <strong>MR 상세정보 확인</strong>, RFQ 협력사 클릭 시 <strong>AI 5대 평가표 및 마감일 설정</strong>, 
           회신율 클릭 시 <strong>견적 상세비교 및 체크박스 업체 선정</strong>이 가능합니다.
         </span>
