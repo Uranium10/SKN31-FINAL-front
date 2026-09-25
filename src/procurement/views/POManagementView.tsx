@@ -110,11 +110,13 @@ const getOverallProgress = (item: POItem) => {
   return { label: '구매 업무 완료', className: 'badge-green' };
 };
 
-// 진행중/완료 탭 분리 기준: getOverallProgress()가 내려주는 마지막 상태
-// ('구매 업무 완료' - PO 생성+입고+결제+평가가 전부 끝난 상태)를 그대로
-// 재사용한다. 새 판정 로직이 아니라 이미 있는 상태 계산을 탭 분리에도
-// 그대로 쓰는 것.
-const isPoComplete = (item: POItem): boolean => getOverallProgress(item).label === '구매 업무 완료';
+// 진행중/완료 탭 분리 기준: 대금결제는 ERPNext Payment Entry 웹훅으로
+// 자동 처리되고 구매팀이 직접 처리/확인하는 일이 아니므로(위 배너 문구
+// 그대로) 완료 판정에서 제외한다. 구매팀 입장에서 "우리 쪽 일이 끝났다"는
+// 건 물품이 입고되고 협력사 평가(스코어카드)까지 작성된 시점이다 -
+// getOverallProgress()의 최종 라벨('구매 업무 완료')은 결제완료까지
+// 요구해서 탭 분리 기준으로 쓰기엔 안 맞아 별도 조건으로 분리했다.
+const isPoComplete = (item: POItem): boolean => !!item.poCreated && !!item.arrived && !!item.scorecardCompleted;
 
 const paymentLabel = (item: POItem): string => ({
   PAID: '결제 완료',
