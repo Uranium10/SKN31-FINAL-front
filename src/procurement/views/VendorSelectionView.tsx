@@ -38,7 +38,7 @@ import {
   Award
 } from 'lucide-react';
 
-type VendorColumnKey = 'mr' | 'dueDate' | 'suppliers' | 'round' | 'deadline' | 'response' | 'status' | 'order';
+type VendorColumnKey = 'mr' | 'dueDate' | 'suppliers' | 'round' | 'deadline' | 'response' | 'status' | 'detail' | 'order';
 
 const VENDOR_COLUMNS: readonly TableColumnDefinition<VendorColumnKey>[] = [
   { key: 'mr', label: 'MR 번호', defaultWidth: 205, minWidth: 150 },
@@ -48,6 +48,12 @@ const VENDOR_COLUMNS: readonly TableColumnDefinition<VendorColumnKey>[] = [
   { key: 'deadline', label: '마감시간 (마감연장)', defaultWidth: 225, minWidth: 175, filterMode: 'date-range' },
   { key: 'response', label: '견적 회신율 (%)', defaultWidth: 185, minWidth: 145, align: 'center' },
   { key: 'status', label: '진행상태', defaultWidth: 175, minWidth: 135 },
+  // 와이어프레임의 '상세보기 패널' 아이디어 - MR번호/차수/회신율 클릭으로
+  // 나뉘어 있던 기존 상세 정보(기본정보/RFQ 협력사 현황/마감정보/차수이력)를
+  // 한 화면에서 요약해서 보여주는 통합 패널을 여는 버튼. 기존 3개 모달은
+  // 그대로 남겨두고(각자 실제 조작 기능이 있어서 제거하지 않음), 빠르게
+  // 훑어보기용 요약 + 각 상세 모달로 바로가기를 추가한 것.
+  { key: 'detail', label: '상세', defaultWidth: 90, minWidth: 70, align: 'center', filterMode: 'none' },
   { key: 'order', label: '다음 행동', defaultWidth: 190, minWidth: 140, filterMode: 'none' },
 ] as const;
 
@@ -89,6 +95,7 @@ const vendorFilterValue = (group: VendorSelectionGroup, key: VendorColumnKey): s
     case 'deadline': return !group.rfqSent ? 'RFQ 발송 전' : selected ? '마감 완료' : `${group.deadlineDate} ${group.deadlineTime}`;
     case 'response': return responsePercent(group) >= 50 ? '50% 이상' : '50% 미만';
     case 'status': return selected ? '업체 선정완료' : '견적 요청상태';
+    case 'detail': return '';
     case 'order': return selected && (!group.workflowStage || group.workflowStage === 'ORDER_START') ? '발주 가능' : '대기';
   }
 };
@@ -326,6 +333,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
   // 3. 견적 회신율 퍼센트 클릭 시 회신 상세 & 업체 선정 모달
   const [showQuotationModal, setShowQuotationModal] = useState<boolean>(false);
+  // 와이어프레임 '상세보기 패널' 요약 모달 - MR번호/차수/회신율 각각에
+  // 흩어져 있던 정보를 한 곳에서 훑어보기용으로 요약. 실제 조작(선정 변경,
+  // RFQ 설정 등)은 기존 모달들이 그대로 담당하므로 이 상태는 읽기전용이다.
+  const [detailGroup, setDetailGroup] = useState<VendorSelectionGroup | null>(null);
   const [selectedSupplierForApproval, setSelectedSupplierForApproval] = useState<string | null>(null);
   // 같은 공급사가 재비딩으로 여러 차수에 걸쳐 견적을 냈을 수 있어
   // supplierId만으로는 어떤 견적을 고른 건지 특정할 수 없다 - 행별로
@@ -1211,7 +1222,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       <StageMovePlaceholderRow
                         key={placeholder.id}
                         placeholder={placeholder}
-                        colSpan={8}
+                        colSpan={9}
                         onNavigate={onNavigateMovePlaceholder}
                         onDismiss={onDismissMovePlaceholder}
                       />
@@ -1384,6 +1395,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       >
                         {percent}% ({respondedCount}/{totalSuppliers}개사)
                       </span>
+                      <div style={{ width: '84px', height: '5px', borderRadius: '3px', backgroundColor: 'var(--border-color)', overflow: 'hidden', marginTop: '4px' }}>
+                        <div
+                          style={{
+                            width: `${percent}%`,
+                            height: '100%',
+                            backgroundColor: percent === 100 ? 'var(--success)' : percent > 0 ? 'var(--primary)' : 'var(--warning)',
+                          }}
+                        />
+                      </div>
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>
                         [상세보기 & 업체선정]
                       </span>
@@ -1415,6 +1435,22 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         <Clock size={11} /> 견적 요청상태
                       </span>
                     )}
+                  </td>
+
+                  {/* 6.5. 상세 - MR번호/차수/회신율 클릭으로 나뉘어 있던 정보를
+                      한 화면에서 요약해서 보여주는 통합 패널. 와이어프레임의
+                      '상세보기' 버튼에 대응한다. */}
+                  <td style={{ textAlign: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn-outline btn-sm"
+                      onClick={() => setDetailGroup(group)}
+                      style={{ fontSize: '11px', padding: '5px 10px' }}
+                      title="기본정보·RFQ 협력사 현황·마감정보·차수이력 요약 보기"
+                    >
+                      <FileText size={12} />
+                      <span>상세</span>
+                    </button>
                   </td>
 
                   {/* 7. 다음 행동 - 예전엔 이 버튼들이 마감시간/견적회신율/
@@ -1548,7 +1584,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 <StageMovePlaceholderRow
                   key={placeholder.id}
                   placeholder={placeholder}
-                  colSpan={8}
+                  colSpan={9}
                   onNavigate={onNavigateMovePlaceholder}
                   onDismiss={onDismissMovePlaceholder}
                 />
@@ -1556,7 +1592,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
             {visibleVendorGroups.length === 0 && movePlaceholders.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
                   현재 협력사 선정 대기 건이 없습니다.
                 </td>
               </tr>
@@ -1705,6 +1741,128 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 <button type="button" className="btn-outline" onClick={() => setRoundsGroup(null)}>
                   닫기
                 </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 와이어프레임 '상세보기 패널' - MR번호/차수/회신율 클릭으로 나뉘어
+          있던 정보(기본정보/RFQ 협력사 현황/마감정보/차수이력)를 한 화면에서
+          요약해서 보여준다. 읽기 전용 요약 + 기존 상세 모달로 바로가기이고,
+          아래 기존 3개 모달(showMRModal/showRoundsModal/showQuotationModal)은
+          실제 조작 기능이 있어 그대로 남겨뒀다 - 이 패널이 그것들을
+          대체하지 않는다. */}
+      {detailGroup && (() => {
+        const dg = detailGroup;
+        const dgMatchedMR = requests.find((r) => r.mrNo === dg.mrNo) || null;
+        const dgCurrentRound = currentRoundQuotations(dg);
+        const dgRespondedCount = dgCurrentRound.filter((q) => q.isResponded).length;
+        const dgCachedDraft = readRfqDraftCache(dg.mrNo);
+        const dgExistingNames = new Set(dgCurrentRound.map((q) => q.supplierName.trim()));
+        const dgManualNames = [...new Set(
+          (dgCachedDraft?.manualSuppliers ?? [])
+            .map((name) => name.trim())
+            .filter((name) => name && !dgExistingNames.has(name)),
+        )];
+        const dgRounds = dg.rfqRounds ?? [];
+        return (
+          <div className="modal-overlay" onClick={() => setDetailGroup(null)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '640px' }}>
+              <div className="modal-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <FileText size={20} color="var(--primary)" />
+                  <h3 style={{ margin: 0 }}>RFQ 상세 요약 ({dg.mrNo})</h3>
+                </div>
+                <button type="button" className="icon-btn" onClick={() => setDetailGroup(null)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>기본 정보</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: 'var(--bg-input)', padding: '12px 14px', borderRadius: '8px', fontSize: '13px' }}>
+                    <div><span style={{ color: 'var(--text-muted)' }}>품목</span><div style={{ fontWeight: 600 }}>{dg.itemName}</div></div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>수량</span><div style={{ fontWeight: 600 }}>{dg.quantity} {dg.unit}</div></div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>약정 납기일</span><div style={{ fontWeight: 600 }}>{dg.targetDueDate}</div></div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>요청부서</span><div style={{ fontWeight: 600 }}>{dg.department}{dgMatchedMR?.requester ? ` · ${dgMatchedMR.requester}` : ''}</div></div>
+                    {dgMatchedMR && (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>참고 단가 / 총액</span>
+                        <div style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                          ₩{dgMatchedMR.unitPrice.toLocaleString()} / EA · 총 ₩{dgMatchedMR.totalPrice.toLocaleString()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>
+                    RFQ 협력사 현황 ({closedRoundCount(dg) + (dg.rfqSent ? 1 : 0)}차 기준)
+                  </div>
+                  {dgCurrentRound.length === 0 && dgManualNames.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>아직 RFQ 대상이 정해지지 않았습니다.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {dgCurrentRound.map((q) => (
+                        <div key={q.quotationId ?? q.supplierId} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '13px' }}>
+                          <span>{q.supplierName}</span>
+                          <span className={`badge ${q.isResponded ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: '11px' }}>
+                            {q.isResponded ? '회신완료' : '미회신'}
+                          </span>
+                        </div>
+                      ))}
+                      {dgManualNames.map((name) => (
+                        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '13px' }}>
+                          <span>{name}</span>
+                          <span className="badge badge-gray" style={{ fontSize: '11px' }}>대상 등록됨 · 미발송</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>마감 정보</div>
+                  <div style={{ padding: '10px 14px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>마감시간</span>
+                    <span style={{ fontWeight: 600 }}>
+                      {dg.rfqSent ? `${dg.deadlineDate} ${dg.deadlineTime}${dg.isExtended ? ' (연장됨)' : ''}` : 'RFQ 발송 전'}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>차수 이력</div>
+                  {dgRounds.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>재비딩 이력이 없습니다 (0차).</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {dgRounds.map((r) => (
+                        <div key={r.rfqName} style={{ fontSize: '12px', color: 'var(--text-main)' }}>
+                          {r.round}차 · {r.rfqName}{r.deadline ? ` · 마감 ${r.deadline}` : ''}{r.closedAt ? ` · 종료 ${r.closedAt}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {dg.rfqSent && (
+                    <div style={{ fontSize: '12px', color: 'var(--primary)', fontWeight: 600, marginTop: '6px' }}>
+                      {closedRoundCount(dg) + 1}차 · {dg.rfqName ?? '진행중'} · 진행중 (회신 {dgRespondedCount}/{dgCurrentRound.length}건)
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer" style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" className="btn-outline" onClick={() => { setDetailGroup(null); handleOpenMRDetail(dg); }}>
+                  MR 상세 내역 열기
+                </button>
+                {closedRoundCount(dg) > 0 && (
+                  <button type="button" className="btn-outline" onClick={() => { setDetailGroup(null); handleOpenRoundsModal(dg); }}>
+                    차수 이력 열기
+                  </button>
+                )}
+                <button type="button" className="btn-primary" onClick={() => setDetailGroup(null)}>닫기</button>
               </div>
             </div>
           </div>
