@@ -9,7 +9,11 @@ import type {
   SupplierQuotation,
   SupplierRecommendation,
   VendorSelectionGroup,
-  QuotationExclusion,} from '../types';
+  QuotationExclusion,
+  QuotationIntakeFailure,
+  QuotationRankingMeta,
+  QuotationScoreBreakdown,
+} from '../types';
 
 export type ProcurementDataMode = 'mock' | 'hybrid' | 'api';
 
@@ -38,6 +42,9 @@ export interface ProcurementCaseDTO {
   };
   last_error?: string | null;
   quotation_deadline_at?: string | null;
+  /** 견적 도착(웹훅)·견적 확인·마감 잡이 갱신하는 실시간 순위. 그래프 밖에 저장된다. */
+  live_quotation_ranking?: Record<string, unknown> | null;
+  live_quotation_ranking_at?: string | null;
   pending_task_count?: number;
   pending_task?: {
     task_id: string;
@@ -272,18 +279,44 @@ export interface QuotationValidationRow {
    * 이 값이 false다(= 규격 평가가 아직/실패로 없음). */
   spec_evaluated?: boolean | null;
   evaluation_source?: string | null;
+  /** 'candidate'(순위 대상) / 'parse_failed'(견적서를 읽지 못함) / 'rfq_mismatch' */
+  kind?: string;
+  penalties?: Array<{ code: string; label?: string; points: number; requires_confirmation?: boolean; evidence?: string[] }>;
+  penalty_points?: number;
+  requires_confirmation?: boolean;
+  warnings?: string[];
+}
+
+export interface QuotationValidationResult {
+  items: QuotationValidationRow[];
+  /** 견적서가 왔지만 읽지 못해 Supplier Quotation을 만들지 못한 건. */
+  intakeFailures: QuotationIntakeFailure[];
 }
 
 /** 견적별 '순위 진입 가능 여부'와 차단 사유. RunPod 평가나 워크플로 실행
  * 없이 결정적 검증만 다시 돌린 결과라 비교 팝업을 열 때 바로 부를 수 있다. */
 export const fetchQuotationValidation = async (
   caseId: string,
-): Promise<QuotationValidationRow[]> => {
+): Promise<QuotationValidationResult> => {
   const response = await fetchWithAuth(
     `/api/procurement/cases/${encodeURIComponent(caseId)}/quotations/validation`,
   );
-  const payload = await parseJson<{ items?: QuotationValidationRow[] }>(response);
-  return payload.items ?? [];
+  const payload = await parseJson<{
+    items?: QuotationValidationRow[];
+    intake_failures?: Array<Record<string, unknown>>;
+  }>(response);
+  return {
+    items: payload.items ?? [],
+    intakeFailures: rows(payload.intake_failures).map((row) => ({
+      rfqName: text(row.rfq_name),
+      supplierId: text(row.supplier_id) || undefined,
+      supplierName: text(row.supplier_name) || undefined,
+      sourceFilename: text(row.source_filename) || undefined,
+      failureKind: text(row.failure_kind, 'parse'),
+      error: text(row.error) || undefined,
+      createdAt: text(row.received_at ?? row.created_at) || undefined,
+    })),
+  };
 };
 
 export interface SupplierSearchResult {
@@ -450,11 +483,7 @@ export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialReques
       .map((value) => text(value))
       .filter(Boolean),
   );
-  const quotationRows = Array.isArray(rawValues.quotation_ranking)
-    ? rawValues.quotation_ranking.filter(
-      (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object',
-    )
-    : [];
+  const quotationRows = rankingSource(entry).ranking;
   const liveQuotationRows = Array.isArray(entry.quotation_snapshot?.quotations)
     ? entry.quotation_snapshot.quotations
     : null;
@@ -542,6 +571,125 @@ const supplierName = (row: Record<string, unknown>): string => (
   text(row.supplier) || text(row.supplier_name) || text(row.name) || '협력사 미지정'
 );
 
+const optionalNumber = (value: unknown): number | undefined => {
+  if (value == null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const stringList = (value: unknown): string[] => (
+  Array.isArray(value) ? value.map((item) => text(item)).filter(Boolean) : []
+);
+
+// 순위 행(ranking[])에서 4항목 점수 내역과 페널티를 꺼낸다. 예전 형식의
+// 순위(2항목 점수)에는 이 필드들이 없으므로 undefined를 돌려준다.
+const scoreBreakdownOf = (row: Record<string, unknown>): QuotationScoreBreakdown | undefined => {
+  if (row.price_score === undefined && row.applied_weights === undefined && row.penalties === undefined) {
+    return undefined;
+  }
+  const weights: Record<string, number> = {};
+  if (row.applied_weights && typeof row.applied_weights === 'object') {
+    Object.entries(row.applied_weights as Record<string, unknown>).forEach(([key, value]) => {
+      const parsed = optionalNumber(value);
+      if (parsed !== undefined) weights[key] = parsed;
+    });
+  }
+  const penalties = rows(row.penalties).map((penalty) => ({
+    code: text(penalty.code),
+    label: text(penalty.label, text(penalty.code)),
+    points: numberValue(penalty.points),
+    requiresConfirmation: penalty.requires_confirmation === true,
+    evidence: stringList(penalty.evidence),
+  }));
+  return {
+    priceScore: optionalNumber(row.price_score),
+    deliveryScore: optionalNumber(row.delivery_score),
+    specificationScore: optionalNumber(row.specification_score),
+    scorecardScore: optionalNumber(row.scorecard_score),
+    scorecardCount: optionalNumber(row.scorecard_count),
+    baseScore: optionalNumber(row.base_score),
+    penaltyPoints: numberValue(row.penalty_points),
+    appliedWeights: weights,
+    missingFactors: rows(row.missing_factors).map((missing) => ({
+      factor: text(missing.factor),
+      reason: text(missing.reason),
+    })),
+    penalties,
+    requiresConfirmation: row.requires_confirmation === true
+      || penalties.some((penalty) => penalty.requiresConfirmation),
+    warnings: stringList(row.warnings),
+  };
+};
+
+const exclusionOf = (row: Record<string, unknown>): QuotationExclusion => ({
+  quotationId: text(row.quotation_id ?? row.name),
+  supplierName: text(row.supplier_name ?? row.supplier) || undefined,
+  status: text(row.status) || undefined,
+  kind: text(row.kind) || undefined,
+  evidence: stringList(row.evidence),
+  specificationScore: row.specification_score != null
+    ? numberValue(row.specification_score)
+    : undefined,
+  specificationReason: text(row.specification_reason) || undefined,
+});
+
+interface RankingSource {
+  ranking: Array<Record<string, unknown>>;
+  excluded: Array<Record<string, unknown>>;
+  meta: QuotationRankingMeta;
+}
+
+// 순위를 어디서 읽을지 정한다. 실시간 순위(live_quotation_ranking)는 견적이
+// 도착할 때마다, 그리고 워크플로가 순위를 계산할 때마다 함께 갱신되므로
+// 지금 라운드와 같은 RFQ 기준이면 항상 그쪽이 최신이다. 재비딩 직후처럼
+// 라운드가 바뀌어 RFQ가 다르면 옛 라운드 순위이므로 쓰지 않는다.
+const rankingSource = (entry: ProcurementCaseDTO): RankingSource => {
+  const values = valuesOf(entry);
+  const currentRfq = text(values.rfq_name);
+  const live = entry.live_quotation_ranking;
+  if (live && typeof live === 'object' && currentRfq && text(live.rfq_name) === currentRfq) {
+    const specification = live.specification_evaluation && typeof live.specification_evaluation === 'object'
+      ? live.specification_evaluation as Record<string, unknown>
+      : {};
+    return {
+      ranking: rows(live.ranking),
+      excluded: rows(live.excluded),
+      meta: {
+        source: 'live',
+        competitionCount: numberValue(live.competition_count),
+        singleBid: live.single_bid === true,
+        parseFailed: rows(live.parse_failed).map(exclusionOf).filter((row) => Boolean(row.quotationId)),
+        specificationStatus: text(specification.status) || undefined,
+        computedAt: text(live.computed_at) || entry.live_quotation_ranking_at || undefined,
+      },
+    };
+  }
+  const excluded = rows(values.quotation_excluded);
+  const rankingMeta = values.quotation_ranking_meta && typeof values.quotation_ranking_meta === 'object'
+    ? values.quotation_ranking_meta as Record<string, unknown>
+    : {};
+  const specification = rankingMeta.specification_evaluation && typeof rankingMeta.specification_evaluation === 'object'
+    ? rankingMeta.specification_evaluation as Record<string, unknown>
+    : {};
+  const ranking = rows(values.quotation_ranking);
+  return {
+    ranking,
+    excluded,
+    meta: {
+      source: 'workflow',
+      competitionCount: rankingMeta.competition_count != null
+        ? numberValue(rankingMeta.competition_count)
+        : ranking.length,
+      singleBid: rankingMeta.single_bid === true,
+      parseFailed: excluded
+        .filter((row) => text(row.kind) === 'parse_failed')
+        .map(exclusionOf)
+        .filter((row) => Boolean(row.quotationId)),
+      specificationStatus: text(specification.status) || undefined,
+    },
+  };
+};
+
 // supplierQuotations()는 "지금 진행 중인 라운드"만 다룬다. 지난 라운드
 // 견적은 quotation_ranking(다차수 평가 결과)에 섞여 들어올 수 있어
 // 불안정한 소스라 - AI 분석을 한 번도 안 돌렸으면 지난 라운드 데이터가
@@ -551,7 +699,7 @@ const supplierName = (row: Record<string, unknown>): string => (
 // 최종선정 모달이 함께 씀)로만 가져오고, 여기서는 절대 섞지 않는다.
 const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
   const values = valuesOf(entry);
-  const ranking = rows(values.quotation_ranking);
+  const { ranking } = rankingSource(entry);
   const liveQuotations = rows(entry.quotation_snapshot?.quotations);
   const candidates = rows(values.supplier_candidates ?? values.existing_supplier_candidates);
   const currentRfqName = text(values.rfq_name);
@@ -682,6 +830,7 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       aiIssues: Array.isArray(row.issues)
         ? row.issues.map((issue) => text(issue)).filter(Boolean)
         : [],
+      scoreBreakdown: aiEvaluated ? scoreBreakdownOf(row) : undefined,
       isSelected: text(values.selected_supplier) === name,
       email: text(row.email ?? row.email_id) || undefined,
       phone: text(
@@ -703,31 +852,14 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
 // 순위에 들지 못한 견적과 사유. 백엔드가 규격/정합성 검증(수량 부족, 금액
 // 불일치, 유효기간 만료, RFQ 품목 연결 실패 등)으로 제외한 견적들이며, 화면
 // 에서 '평가중'과 구분해서 사유를 그대로 보여주는 데 쓴다.
-const quotationExclusions = (entry: ProcurementCaseDTO): QuotationExclusion[] => {
-  const values = valuesOf(entry);
-  return rows(values.quotation_excluded)
-    .map((row) => {
-      const quotationId = text(row.quotation_id ?? row.name);
-      const evidence = Array.isArray(row.evidence)
-        ? row.evidence.map((item) => text(item)).filter(Boolean)
-        : [];
-      return {
-        quotationId,
-        supplierName: text(row.supplier_name ?? row.supplier) || undefined,
-        status: text(row.status) || undefined,
-        evidence,
-        specificationScore: row.specification_score != null
-          ? numberValue(row.specification_score)
-          : undefined,
-        specificationReason: text(row.specification_reason) || undefined,
-      };
-    })
-    .filter((row) => Boolean(row.quotationId));
-};
+const quotationExclusions = (entry: ProcurementCaseDTO): QuotationExclusion[] => (
+  rankingSource(entry).excluded
+    .map(exclusionOf)
+    .filter((row) => Boolean(row.quotationId))
+);
 
 const quotationAiEvaluations = (entry: ProcurementCaseDTO): QuotationAiEvaluation[] => {
-  const values = valuesOf(entry);
-  const ranking = rows(values.quotation_ranking);
+  const { ranking } = rankingSource(entry);
   const evaluations: QuotationAiEvaluation[] = [];
   const seen = new Set<string>();
   ranking.forEach((row) => {
@@ -748,6 +880,7 @@ const quotationAiEvaluations = (entry: ProcurementCaseDTO): QuotationAiEvaluatio
       specMatch: typeof row.spec_match === 'boolean' ? row.spec_match : undefined,
       fulfillsQuantity: typeof row.fulfills_qty === 'boolean' ? row.fulfills_qty : undefined,
       aiIssues: Array.isArray(row.issues) ? row.issues.map((issue) => text(issue)).filter(Boolean) : [],
+      scoreBreakdown: scoreBreakdownOf(row),
     });
   });
   return evaluations;
@@ -841,6 +974,7 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     quotations,
     quotationAiEvaluations: quotationAiEvaluations(entry),
     quotationExclusions: quotationExclusions(entry),
+    quotationRankingMeta: rankingSource(entry).meta,
     selectedSupplierId: selected || undefined,
   };
 };

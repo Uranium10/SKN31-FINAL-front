@@ -205,6 +205,8 @@ export interface SupplierQuotation {
   fulfillsQuantity?: boolean;
   /** 최종 선정 전 사람이 확인해야 할 AI 지적 사항입니다. */
   aiIssues?: string[];
+  /** 4항목 점수 내역(가격·납기·규격·평가이력)과 페널티. 순위에 든 견적만 있다. */
+  scoreBreakdown?: QuotationScoreBreakdown;
   isSelected: boolean;
   email?: string;
   /** AI/ERP 공급사 탐색에서 확인한 대표 연락처입니다. 화면에서는 읽기 전용입니다. */
@@ -216,6 +218,61 @@ export interface SupplierQuotation {
   scores?: POScorecardScores;
   recommendationScore?: number;
   evaluationCount?: number;
+}
+
+/** 순위 계산에서 깎인 점수 1건(수량 부족·유효기간 만료·금액 불일치 등). */
+export interface QuotationPenalty {
+  code: string;
+  label: string;
+  points: number;
+  /** true면 이 견적을 선정할 때 담당자 확인을 한 번 더 받는다. */
+  requiresConfirmation: boolean;
+  evidence: string[];
+}
+
+/** 순위에서 빠진 점수 항목과 이유(단독 응찰의 가격, 평가이력 없는 신규 협력사 등). */
+export interface QuotationMissingFactor {
+  factor: 'price' | 'delivery' | 'specification' | 'scorecard' | string;
+  reason: string;
+}
+
+/** 견적 종합점수 = Σ(항목 점수 × 적용 가중치) − 페널티. */
+export interface QuotationScoreBreakdown {
+  priceScore?: number;
+  deliveryScore?: number;
+  specificationScore?: number;
+  scorecardScore?: number;
+  scorecardCount?: number;
+  baseScore?: number;
+  penaltyPoints: number;
+  /** 실제 적용된 가중치(0~1). 빠진 항목은 없고 나머지로 재정규화돼 있다. */
+  appliedWeights: Record<string, number>;
+  missingFactors: QuotationMissingFactor[];
+  penalties: QuotationPenalty[];
+  requiresConfirmation: boolean;
+  warnings: string[];
+}
+
+/** 순위 계산 전체에 대한 정보(경쟁 견적 수, 단독 응찰, 파싱 실패 목록). */
+export interface QuotationRankingMeta {
+  /** 'live' = 견적 도착 때마다 갱신되는 실시간 순위, 'workflow' = 워크플로 체크포인트 값 */
+  source: 'live' | 'workflow';
+  competitionCount: number;
+  singleBid: boolean;
+  parseFailed: QuotationExclusion[];
+  specificationStatus?: string;
+  computedAt?: string;
+}
+
+/** 견적서를 받았지만 읽지 못해 Supplier Quotation조차 만들지 못한 건. */
+export interface QuotationIntakeFailure {
+  rfqName: string;
+  supplierId?: string;
+  supplierName?: string;
+  sourceFilename?: string;
+  failureKind: 'parse' | 'arithmetic' | 'extraction' | string;
+  error?: string;
+  createdAt?: string;
 }
 
 /** ranking(quotation_ranking)에 있는 AI 평가 결과 1건 - 지난 라운드
@@ -237,6 +294,7 @@ export interface QuotationAiEvaluation {
   specMatch?: boolean;
   fulfillsQuantity?: boolean;
   aiIssues: string[];
+  scoreBreakdown?: QuotationScoreBreakdown;
 }
 
 /** 규격/정합성 검증에서 순위에 들지 못한 견적과 그 사유.
@@ -247,6 +305,8 @@ export interface QuotationExclusion {
   supplierName?: string;
   /** ACCEPTED / EXCLUDED / REEXTRACT / HUMAN_REVIEW / RFQ_REWRITE 등 검토 상태 */
   status?: string;
+  /** 'parse_failed'(견적서를 읽지 못함) / 'rfq_mismatch'(다른 RFQ 견적). 이 둘만 순위에서 빠진다. */
+  kind?: string;
   /** 사람이 읽을 수 있는 탈락 근거(수량 부족, 금액 불일치, 유효기간 만료 등) */
   evidence: string[];
   specificationScore?: number;
@@ -342,6 +402,7 @@ export interface VendorSelectionGroup {
   quotationAiEvaluations?: QuotationAiEvaluation[];
   /** 순위에서 제외된 견적과 사유(quotation_excluded). */
   quotationExclusions?: QuotationExclusion[];
+  quotationRankingMeta?: QuotationRankingMeta;
   selectedSupplierId?: string;
   supplierApprovalStatus?: 'approved' | 'rejected' | 'pending';
   selectionRound?: number;

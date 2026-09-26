@@ -7,6 +7,7 @@ import type {
   SupplierQuotation,
   QuotationAiEvaluation,
   QuotationExclusion,
+  QuotationIntakeFailure,
   POScorecardScores,
   SupplierRecommendation,
   StageMovePlaceholder,
@@ -21,6 +22,7 @@ import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
 import { RowActionMenu, type RowActionMenuItem } from '../components/RowActionMenu';
+import { QuotationScoreBreakdown } from '../components/QuotationScoreBreakdown';
 import {
   matchesTableRange,
   normalizeTableFilterValue,
@@ -394,6 +396,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // 불러온다. quotation_ranking은 check_quotations가 다시 돌아야 갱신되지만
   // 이 조회는 언제든 현재 ERP 데이터 기준으로 사유를 알려준다.
   const [quotationValidation, setQuotationValidation] = useState<QuotationValidationRow[] | 'loading' | 'error'>('loading');
+  // 견적서가 왔지만 읽지 못해(파싱 실패) Supplier Quotation조차 못 만든 건.
+  // 이 협력사들은 표에서 '미회신'이 아니라 '회신됨 · 읽기 실패'로 보여준다.
+  const [intakeFailures, setIntakeFailures] = useState<QuotationIntakeFailure[]>([]);
+  // 페널티 중 '선정 시 확인'이 붙은 견적(수량 부족·RFQ 품목 불일치 등)을
+  // 고르면 한 번 더 확인받는다.
+  const [penaltyConfirm, setPenaltyConfirm] = useState<SupplierQuotation | null>(null);
   const [selectedSupplierForApproval, setSelectedSupplierForApproval] = useState<string | null>(null);
   // 같은 공급사가 재비딩으로 여러 차수에 걸쳐 견적을 냈을 수 있어
   // supplierId만으로는 어떤 견적을 고른 건지 특정할 수 없다 - 행별로
@@ -932,7 +940,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     }
   };
 
-  const handleConfirmSupplierSelection = async () => {
+  const handleConfirmSupplierSelection = async (penaltyAcknowledged = false) => {
     if (!selectedGroup || !selectedSupplierForApproval || selectingSupplierId) return;
     const selectedQuotation = selectedQuotationKey
       ? allSelectableQuotations.find((quotation) => quotationRowKey(quotation) === selectedQuotationKey)
@@ -953,6 +961,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       });
       return;
     }
+    if (!penaltyAcknowledged && selectedQuotation.scoreBreakdown?.requiresConfirmation) {
+      setPenaltyConfirm(selectedQuotation);
+      return;
+    }
+    setPenaltyConfirm(null);
 
     const groupId = selectedGroup.id;
     const supplierId = selectedSupplierForApproval;
@@ -997,12 +1010,18 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     const caseId = selectedGroup.backendCaseId;
     if (!caseId) {
       setQuotationValidation([]);
+      setIntakeFailures([]);
       return undefined;
     }
     let cancelled = false;
     setQuotationValidation('loading');
+    setIntakeFailures([]);
     fetchQuotationValidation(caseId)
-      .then((items) => { if (!cancelled) setQuotationValidation(items); })
+      .then((result) => {
+        if (cancelled) return;
+        setQuotationValidation(result.items);
+        setIntakeFailures(result.intakeFailures);
+      })
       .catch(() => { if (!cancelled) setQuotationValidation('error'); });
     return () => { cancelled = true; };
   }, [showQuotationModal, selectedGroup]);
@@ -1158,6 +1177,50 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     return map;
   }, [selectedGroup?.quotationExclusions]);
 
+  const intakeFailureBySupplier = useMemo(() => {
+    const map = new Map<string, QuotationIntakeFailure>();
+    intakeFailures.forEach((row) => {
+      [row.supplierId, row.supplierName].forEach((key) => {
+        if (key && !map.has(key)) map.set(key, row);
+      });
+    });
+    return map;
+  }, [intakeFailures]);
+
+  // 비교 팝업 맨 아래 빨간 안내에 모을 '읽지 못한 견적서' 목록. SQ는
+  // 만들어졌지만 내용이 비어 순위에서 빠진 것(parse_failed)과, 아예 SQ를
+  // 못 만든 것(intake failure)을 합친다. 파싱 실패 외의 문제(값 누락·
+  // 수량 부족 등)는 여기 오지 않고 점수 페널티로만 반영된다.
+  const parseFailureNotices = useMemo(() => {
+    const notices: { key: string; supplierName: string; detail: string }[] = [];
+    const seen = new Set<string>();
+    const push = (key: string, supplierName: string, detail: string) => {
+      if (seen.has(key)) return;
+      seen.add(key);
+      notices.push({ key, supplierName, detail });
+    };
+    if (Array.isArray(quotationValidation)) {
+      quotationValidation
+        .filter((row) => row.kind === 'parse_failed')
+        .forEach((row) => push(
+          row.quotation_id,
+          row.supplier_name || row.quotation_id,
+          `견적 ${row.quotation_id}`,
+        ));
+    }
+    (selectedGroup?.quotationRankingMeta?.parseFailed ?? []).forEach((row) => push(
+      row.quotationId,
+      row.supplierName || row.quotationId,
+      `견적 ${row.quotationId}`,
+    ));
+    intakeFailures.forEach((row) => push(
+      `intake:${row.supplierId ?? row.supplierName ?? ''}:${row.sourceFilename ?? ''}`,
+      row.supplierName || row.supplierId || '협력사 미확인',
+      row.sourceFilename ? `첨부 ${row.sourceFilename}` : '첨부 파일',
+    ));
+    return notices;
+  }, [quotationValidation, selectedGroup?.quotationRankingMeta, intakeFailures]);
+
   const validationByQuotationId = useMemo(() => {
     const map = new Map<string, QuotationValidationRow>();
     if (Array.isArray(quotationValidation)) {
@@ -1212,6 +1275,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       specMatch: aiEval?.specMatch,
       fulfillsQuantity: aiEval?.fulfillsQuantity,
       aiIssues: aiEval?.aiIssues,
+      scoreBreakdown: aiEval?.scoreBreakdown,
       isSelected: false,
     };
   };
@@ -2038,6 +2102,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
           (q) => q.quotationId && dgExcludedIds.has(q.quotationId),
         ).length;
         const dgAwaitingEvaluation = dgUnranked.length - dgExcludedCount;
+        // 제외 사유 중 '파싱 실패'만 따로 센다. 새 점수 엔진에서는 파싱 실패와
+        // 다른 RFQ 견적만 제외되고, 예전 체크포인트엔 kind 없는 옛 제외가 남아 있다.
+        const dgParseFailedIds = new Set(
+          (dg.quotationExclusions ?? []).filter((row) => row.kind === 'parse_failed').map((row) => row.quotationId),
+        );
+        const dgParseFailedCount = dgUnranked.filter(
+          (q) => q.quotationId && dgParseFailedIds.has(q.quotationId),
+        ).length;
+        const dgOtherExcludedCount = dgExcludedCount - dgParseFailedCount;
         const dgSelected = dg.quotations.find((q) => q.supplierId === dg.selectedSupplierId) ?? null;
         return (
           <div className="modal-overlay" onClick={() => setDetailGroup(null)}>
@@ -2088,9 +2161,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           · 전 차수 {dgAiTop.evaluatedCount}건 비교
                         </span>
                       </span>
-                      {dgAiTop.fromPastRound && (
-                        <span className="badge badge-purple" style={{ fontSize: '10px' }}>지난 차수 견적</span>
-                      )}
+                      <span style={{ display: 'inline-flex', gap: '4px' }}>
+                        {dg.quotationRankingMeta?.singleBid && (
+                          <span className="badge badge-yellow" style={{ fontSize: '10px' }}>단독 응찰 · 수용/재비딩 결정</span>
+                        )}
+                        {dgAiTop.fromPastRound && (
+                          <span className="badge badge-purple" style={{ fontSize: '10px' }}>지난 차수 견적</span>
+                        )}
+                      </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '8px', gap: '10px' }}>
                       <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>{dgAiTop.supplierName}</span>
@@ -2107,9 +2185,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         <LoaderCircle size={11} className="spin-icon" /> {dgAwaitingEvaluation}건 평가중... 순위는 평가가 끝나면 갱신됩니다
                       </div>
                     )}
-                    {dgExcludedCount > 0 && (
+                    {dgParseFailedCount > 0 && (
                       <div style={{ fontSize: '11px', color: 'var(--danger)', fontWeight: 600, marginTop: '4px' }}>
-                        {dgExcludedCount}건은 검증에서 순위 제외됨 (수량·금액·유효기간 등) — 사유는 견적 비교에서 확인
+                        {dgParseFailedCount}건은 견적서를 읽지 못해(파싱 실패) 순위에서 빠졌습니다 — 원본 파일 확인 필요
+                      </div>
+                    )}
+                    {dgOtherExcludedCount > 0 && (
+                      <div style={{ fontSize: '11px', color: 'var(--danger)', fontWeight: 600, marginTop: '4px' }}>
+                        {dgOtherExcludedCount}건은 순위에서 제외됨 — 사유는 견적 비교에서 확인
                       </div>
                     )}
                     <button
@@ -2134,8 +2217,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     )}
                     {dgExcludedCount > 0 && (
                       <div style={{ fontSize: '12px', color: 'var(--danger)', fontWeight: 600, marginTop: dgAwaitingEvaluation > 0 ? '8px' : 0 }}>
-                        회신 {dgExcludedCount}건은 검증에서 순위 제외됐습니다 (수량 부족·금액 불일치·유효기간 만료 등).
-                        다시 분석해도 바뀌지 않으니 견적 비교에서 사유를 확인하고 재비딩을 검토해 주세요.
+                        {dgParseFailedCount > 0
+                          ? `회신 ${dgParseFailedCount}건은 견적서를 읽지 못해(파싱 실패) 순위에서 빠졌습니다. 견적 비교 화면 하단 안내에서 협력사를 확인하고 원본 파일을 직접 확인해 주세요.`
+                          : ''}
+                        {dgOtherExcludedCount > 0
+                          ? ` 회신 ${dgOtherExcludedCount}건은 순위에서 제외됐습니다 — 사유는 견적 비교에서 확인해 주세요.`
+                          : ''}
                       </div>
                     )}
                   </div>
@@ -2152,9 +2239,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     <div><span style={{ color: 'var(--text-muted)' }}>수량</span><div style={{ fontWeight: 600 }}>{dg.quantity} {dg.unit}</div></div>
                     <div><span style={{ color: 'var(--text-muted)' }}>약정 납기일</span><div style={{ fontWeight: 600 }}>{dg.targetDueDate}</div></div>
                     <div><span style={{ color: 'var(--text-muted)' }}>요청부서</span><div style={{ fontWeight: 600 }}>{dg.department}{dgMatchedMR?.requester ? ` · ${dgMatchedMR.requester}` : ''}</div></div>
-                    {dgMatchedMR && (
+                    {/* ERPNext MR 품목의 평가단가(valuation rate)다 - 예상 단가가
+                        아니고, 거래 이력이 없는 신규 품목은 0이라 그땐 숨긴다. */}
+                    {dgMatchedMR && dgMatchedMR.unitPrice > 0 && (
                       <div style={{ gridColumn: '1 / -1' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>참고 단가 / 총액</span>
+                        <span style={{ color: 'var(--text-muted)' }}>ERP 평가단가 / 총액</span>
                         <div style={{ fontWeight: 700, color: 'var(--primary)' }}>
                           ₩{dgMatchedMR.unitPrice.toLocaleString()} / EA · 총 ₩{dgMatchedMR.totalPrice.toLocaleString()}
                         </div>
@@ -2386,15 +2475,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>요청 수량 / 단가</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>요청 수량 / ERP 평가단가</div>
                   <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                    {selectedGroup.quantity} {selectedGroup.unit} {activeMR ? `(₩${activeMR.unitPrice.toLocaleString()} / EA)` : ''}
+                    {selectedGroup.quantity} {selectedGroup.unit} {activeMR && activeMR.unitPrice > 0 ? `(₩${activeMR.unitPrice.toLocaleString()} / EA)` : ''}
                   </div>
                 </div>
                 <div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>총 금액</div>
                   <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--primary)', fontFamily: 'monospace' }}>
-                    {activeMR ? `₩${activeMR.totalPrice.toLocaleString()}` : '-'}
+                    {activeMR && activeMR.totalPrice > 0 ? `₩${activeMR.totalPrice.toLocaleString()}` : '-'}
                   </div>
                 </div>
               </div>
@@ -2928,6 +3017,35 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   AI 분석 실패: {selectedGroup.workflowError}
                 </div>
               )}
+              {/* 단독 응찰 - 비교할 경쟁 견적이 없어서 가격 점수를 뺐다. 이
+                  경우엔 '고르기'보다 '이 한 건을 받을지, 다시 입찰할지'가
+                  실제 결정이라 그 두 선택지를 맨 위에 둔다. */}
+              {selectedGroup.quotationRankingMeta?.singleBid && (
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                    padding: '12px 14px', border: '1px solid var(--warning)', borderRadius: '8px',
+                    background: 'var(--warning-bg)',
+                  }}
+                >
+                  <div style={{ fontSize: '12px', lineHeight: 1.5 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--warning)' }}>단독 응찰 — 수용 또는 재비딩을 결정해 주세요</div>
+                    <div style={{ color: 'var(--text-muted)' }}>
+                      유효한 견적이 1건뿐이라 가격을 비교할 수 없어 가격 점수를 빼고 납기·규격·평가이력만으로 평가했습니다.
+                      수용하려면 아래에서 그 견적을 선택해 선정하고, 경쟁 견적을 더 받으려면 재비딩하세요.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    style={{ flexShrink: 0 }}
+                    disabled={isRebidding === selectedGroup.id}
+                    onClick={() => { void handleRebid(selectedGroup); }}
+                  >
+                    {isRebidding === selectedGroup.id ? '재비딩 중...' : '재비딩'}
+                  </button>
+                </div>
+              )}
               {/* 회신 현황 상세 표 (Table) */}
               <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflowX: 'visible' }}>
                 <table className="custom-table" style={{ fontSize: '12px', width: '100%', minWidth: 0, tableLayout: 'fixed' }}>
@@ -3029,6 +3147,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               <span className="badge badge-green" style={{ fontSize: '11px' }}>
                                 <CheckCircle2 size={11} /> 회신완료
                               </span>
+                            ) : intakeFailureBySupplier.has(q.supplierId) ? (
+                              <span className="badge badge-red" style={{ fontSize: '11px' }} title="견적서는 받았지만 읽지 못했습니다 - 하단 안내 참조">
+                                <AlertTriangle size={11} /> 회신 · 읽기 실패
+                              </span>
                             ) : (
                               <span className="badge badge-red" style={{ fontSize: '11px' }}>
                                 <XCircle size={11} /> 미회신
@@ -3083,6 +3205,19 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               const exclusion = q.quotationId
                                 ? exclusionByQuotationId.get(q.quotationId)
                                 : undefined;
+                              if (
+                                (validation && validation.kind === 'parse_failed')
+                                || (!validation && exclusion?.kind === 'parse_failed')
+                              ) {
+                                return (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <span className="badge badge-red" style={{ fontSize: '10px' }}>파싱 실패</span>
+                                    <div style={{ marginTop: '3px', color: 'var(--danger)', fontWeight: 600 }}>
+                                      견적서 내용을 읽지 못해 순위에서 뺐습니다 — 하단 안내를 확인해 주세요.
+                                    </div>
+                                  </div>
+                                );
+                              }
                               if (validation && !validation.rankable) {
                                 const reasons = validation.blocking_issues.length > 0
                                   ? validation.blocking_issues.map((issue) => issue.evidence || issue.message)
@@ -3096,7 +3231,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                       {reasons.length > 0 ? reasons.join(' / ') : '검증에서 제외되었습니다.'}
                                     </div>
                                     <div style={{ marginTop: '2px', color: 'var(--text-dim)' }}>
-                                      AI 평가와 무관한 검증 결과라 다시 분석해도 바뀌지 않습니다 - 협력사에 견적 재요청(재비딩)이 필요합니다.
+                                      {validation.kind === 'rfq_mismatch'
+                                        ? '다른 RFQ 앞으로 온 견적이라 이번 비교 대상이 아닙니다.'
+                                        : '다시 분석해도 바뀌지 않는 검증 결과입니다.'}
                                     </div>
                                   </div>
                                 );
@@ -3119,7 +3256,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                       </div>
                                     )}
                                     <div style={{ marginTop: '2px', color: 'var(--text-dim)' }}>
-                                      이 사유는 다시 분석해도 바뀌지 않습니다 - 협력사에 견적 재요청(재비딩)이 필요합니다.
+                                      {exclusion.kind === 'rfq_mismatch'
+                                        ? '다른 RFQ 앞으로 온 견적이라 이번 비교 대상이 아닙니다.'
+                                        : '이 사유는 다시 분석해도 바뀌지 않습니다.'}
                                     </div>
                                   </div>
                                 );
@@ -3196,12 +3335,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                     {q.overallScore !== undefined && (
                                       <> · 종합 {q.overallScore.toFixed(2)}점</>
                                     )}
-                                    {q.numericScore !== undefined && q.specificationScore !== undefined && (
+                                    {!q.scoreBreakdown && q.numericScore !== undefined && q.specificationScore !== undefined && (
                                       <>: 가격·납기 {q.numericScore.toFixed(2)}점, 규격 {q.specificationScore.toFixed(2)}점</>
                                     )}
                                     {' · '}{q.aiReason}
                                   </div>
                                 )}
+                                {q.scoreBreakdown && <QuotationScoreBreakdown breakdown={q.scoreBreakdown} />}
                                 {q.aiIssues && q.aiIssues.length > 0 && (
                                   <div style={{ color: 'var(--danger)', marginTop: '3px' }}>
                                     확인 필요: {q.aiIssues.join(', ')}
@@ -3216,6 +3356,24 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </tbody>
                 </table>
               </div>
+              {/* 파싱 실패 안내 - 순위에서 빠지는 건 이것뿐이다. 값이 비었거나
+                  수량·금액이 이상한 견적은 페널티만 받고 순위에 남는다. */}
+              {parseFailureNotices.length > 0 && (
+                <div
+                  role="alert"
+                  style={{
+                    padding: '12px 14px', border: '1px solid var(--danger)', borderRadius: '8px',
+                    color: 'var(--danger)', background: 'var(--danger-bg)', fontSize: '12px', lineHeight: 1.6,
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    파싱 실패 — 견적서 {parseFailureNotices.length}건을 읽지 못했습니다. 원본 파일을 직접 확인해 주세요.
+                  </div>
+                  {parseFailureNotices.map((notice) => (
+                    <div key={notice.key}>· {notice.supplierName} ({notice.detail})</div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="modal-footer">
@@ -3232,7 +3390,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   || Boolean(selectingSupplierId)
                   || isAnalyzingQuotations
                 }
-                onClick={handleConfirmSupplierSelection}
+                onClick={() => { void handleConfirmSupplierSelection(); }}
                 title={selectedApprovalExpired
                   ? '유효기간이 지난 견적입니다. 다른 견적을 선택해주세요.'
                   : !selectedApprovalHasAiEvaluation
@@ -3461,6 +3619,54 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       )}
 
       {/* 작업 모달을 닫은 뒤 표시하는 독립 결과 모달 */}
+      {penaltyConfirm && penaltyConfirm.scoreBreakdown && (
+        <div className="modal-overlay" onClick={() => setPenaltyConfirm(null)}>
+          <div
+            className="modal-content"
+            onClick={(event) => event.stopPropagation()}
+            style={{ width: 'min(480px, calc(100vw - 32px))' }}
+          >
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <AlertTriangle size={22} color="var(--warning)" />
+                <h3 style={{ margin: 0 }}>확인이 필요한 견적입니다</h3>
+              </div>
+              <button type="button" className="icon-btn" onClick={() => setPenaltyConfirm(null)} aria-label="확인 닫기">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ lineHeight: 1.65, color: 'var(--text-muted)', fontSize: '13px' }}>
+              <div style={{ marginBottom: '8px' }}>
+                <b style={{ color: 'var(--text-main)' }}>{penaltyConfirm.supplierName}</b> 견적에 아래 문제가 있어 점수가 깎였습니다. 그래도 이 업체로 선정할까요?
+              </div>
+              {penaltyConfirm.scoreBreakdown.penalties
+                .filter((penalty) => penalty.requiresConfirmation)
+                .map((penalty) => (
+                  <div key={penalty.code} style={{ padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: '6px', marginBottom: '6px' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--danger)' }}>−{penalty.points}점 · {penalty.label}</div>
+                    {penalty.evidence.length > 0 && (
+                      <div style={{ fontSize: '12px' }}>{penalty.evidence.join(' / ')}</div>
+                    )}
+                  </div>
+                ))}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-outline" onClick={() => setPenaltyConfirm(null)}>
+                다시 고르기
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={Boolean(selectingSupplierId)}
+                onClick={() => { void handleConfirmSupplierSelection(true); }}
+              >
+                확인하고 선정
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {resultModal && (
         <div className="modal-overlay" onClick={() => setResultModal(null)}>
           <div
