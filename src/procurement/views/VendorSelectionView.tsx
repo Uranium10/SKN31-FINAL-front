@@ -2079,7 +2079,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       {deadlineHistory === 'loading' ? (
                         <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>불러오는 중...</div>
                       ) : deadlineHistory === 'error' ? (
-                        <div style={{ fontSize: '12px', color: 'var(--danger)' }}>연장 이력을 불러오지 못했습니다.</div>
+                        // 백엔드에 이력 조회가 아직 배포되지 않았거나 일시적
+                        // 실패인 경우 - 바이어가 조치할 일이 아니므로 조용히 안내.
+                        <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>연장 이력을 불러오지 못했습니다.</div>
                       ) : deadlineHistory.length === 0 ? (
                         <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>연장한 적이 없습니다.</div>
                       ) : (
