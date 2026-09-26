@@ -1005,17 +1005,30 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   };
 
   // 견적 비교 팝업이 열리면 견적별 검증 결과를 불러온다.
+  // ⚠️ selectedGroup 객체를 의존성으로 쓰면 안 된다 - 다른 MR의 워크플로가
+  // 돌고 있으면 목록이 1.8초마다 재조회되고 그때마다 selectedGroup이 새
+  // 객체로 바뀌어, 이 조회가 매번 'loading'으로 초기화됐다가 다시 채워지며
+  // 팝업 전체가 깜빡였다. 케이스 id와 '견적/순위가 실제로 바뀌었는지'만 본다.
+  const validationCaseId = showQuotationModal ? selectedGroup?.backendCaseId : undefined;
+  const validationSignature = selectedGroup
+    ? [
+        selectedGroup.rfqName ?? '',
+        selectedGroup.quotations.map((q) => `${q.quotationId ?? q.supplierId}:${q.isResponded ? 1 : 0}`).join(','),
+        selectedGroup.quotationRankingMeta?.computedAt ?? '',
+        (selectedGroup.quotationAiEvaluations ?? []).length,
+      ].join('|')
+    : '';
   useEffect(() => {
-    if (!showQuotationModal || !selectedGroup) return undefined;
-    const caseId = selectedGroup.backendCaseId;
+    if (!showQuotationModal) return undefined;
+    const caseId = validationCaseId;
     if (!caseId) {
       setQuotationValidation([]);
       setIntakeFailures([]);
       return undefined;
     }
     let cancelled = false;
-    setQuotationValidation('loading');
-    setIntakeFailures([]);
+    // 이미 결과가 있으면 다시 불러오는 동안에도 그대로 보여준다(깜빡임 방지).
+    setQuotationValidation((current) => (Array.isArray(current) ? current : 'loading'));
     fetchQuotationValidation(caseId)
       .then((result) => {
         if (cancelled) return;
@@ -1024,7 +1037,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       })
       .catch(() => { if (!cancelled) setQuotationValidation('error'); });
     return () => { cancelled = true; };
-  }, [showQuotationModal, selectedGroup]);
+  }, [showQuotationModal, validationCaseId, validationSignature]);
+
+  // 다른 케이스의 팝업을 열 때는 이전 케이스 결과가 섞이지 않게 비운다.
+  useEffect(() => {
+    setQuotationValidation('loading');
+    setIntakeFailures([]);
+  }, [validationCaseId]);
 
   // 상세 패널이 열릴 때마다 그 케이스의 마감일 연장 이력을 불러온다.
   useEffect(() => {
@@ -3332,10 +3351,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                 {q.aiReason && (
                                   <div style={{ color: 'var(--primary-hover)', marginTop: '4px', fontWeight: 500 }}>
                                     💡 AI {q.aiRank}위
-                                    {q.overallScore !== undefined && (
+                                    {/* 백엔드 사유 문장이 이미 '종합 X점 …'으로 시작하면
+                                        점수를 앞에 또 붙이지 않는다(두 번 찍히던 문제). */}
+                                    {!q.aiReason.trim().startsWith('종합') && q.overallScore !== undefined && (
                                       <> · 종합 {q.overallScore.toFixed(2)}점</>
                                     )}
-                                    {!q.scoreBreakdown && q.numericScore !== undefined && q.specificationScore !== undefined && (
+                                    {!q.aiReason.trim().startsWith('종합') && !q.scoreBreakdown
+                                      && q.numericScore !== undefined && q.specificationScore !== undefined && (
                                       <>: 가격·납기 {q.numericScore.toFixed(2)}점, 규격 {q.specificationScore.toFixed(2)}점</>
                                     )}
                                     {' · '}{q.aiReason}
@@ -3344,7 +3366,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                 {q.scoreBreakdown && <QuotationScoreBreakdown breakdown={q.scoreBreakdown} />}
                                 {q.aiIssues && q.aiIssues.length > 0 && (
                                   <div style={{ color: 'var(--danger)', marginTop: '3px' }}>
-                                    확인 필요: {q.aiIssues.join(', ')}
+                                    확인 필요: {[...new Set(q.aiIssues)].join(', ')}
                                   </div>
                                 )}
                               </>
