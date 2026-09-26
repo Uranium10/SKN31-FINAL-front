@@ -232,6 +232,27 @@ export const extendQuotationDeadline = async (caseId: string, deadlineAt: string
   await parseJson(response);
 };
 
+export interface QuotationDeadlineChange {
+  /** 연장 직전의 마감일시(ISO). 최초 마감일 설정 직후의 연장이면 값이 있고,
+   * 기존 마감일이 없던 경우 null입니다. */
+  previous_deadline_at: string | null;
+  /** 연장 후의 마감일시(ISO). */
+  deadline_at: string | null;
+  changed_by: string | null;
+  changed_at: string;
+}
+
+/** 견적 마감일 연장 이력(오래된 순). 상세 패널을 펼칠 때만 불러온다. */
+export const fetchQuotationDeadlineHistory = async (
+  caseId: string,
+): Promise<QuotationDeadlineChange[]> => {
+  const response = await fetchWithAuth(
+    `/api/procurement/cases/${encodeURIComponent(caseId)}/quotation-deadline/history`,
+  );
+  const payload = await parseJson<{ items?: QuotationDeadlineChange[] }>(response);
+  return payload.items ?? [];
+};
+
 export interface SupplierSearchResult {
   name: string;
   supplierName: string;
@@ -694,9 +715,18 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     ? new Date(entry.quotation_deadline_at)
     : null;
   const hasDeadline = deadline && !Number.isNaN(deadline.getTime());
-  const deadlineDate = hasDeadline ? deadline.toISOString().slice(0, 10) : dateMinusDays(request.dueDate, 3);
+  // ⚠️ 예전엔 toISOString()(UTC 기준)으로 날짜를 잘라내면서 시간은
+  // toLocaleTimeString(로컬/KST)으로 뽑아, 오전 9시 이전 마감은 날짜가
+  // 하루 밀려 보였다(예: 09-27 01:00 KST -> 09-26 01:00으로 표시).
+  // 날짜와 시간을 같은 기준(로컬)으로 뽑아야 한다.
+  const deadlineDate = hasDeadline
+    ? `${deadline.getFullYear()}-${String(deadline.getMonth() + 1).padStart(2, '0')}-${String(deadline.getDate()).padStart(2, '0')}`
+    : dateMinusDays(request.dueDate, 3);
+  // ko-KR + hour12:false는 자정을 '24:00'으로 돌려주는 경우가 있어
+  // <input type="time">에 그대로 넣으면 값이 비어버린다(마감 연장 모달).
+  // 날짜와 같은 기준(로컬)으로 직접 조립한다.
   const deadlineTime = hasDeadline
-    ? deadline.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+    ? `${String(deadline.getHours()).padStart(2, '0')}:${String(deadline.getMinutes()).padStart(2, '0')}`
     : '18:00';
   // ⚠️ 예전에는 실제 견적 마감시각(quotation_deadline_at)과 무관하게
   // "납기요청일 D-day - 3"으로 대충 계산해서, 마감시각이 오늘이어도

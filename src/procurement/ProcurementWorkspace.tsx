@@ -308,6 +308,10 @@ function ProcurementWorkspaceComponent({
   const [vendorGroups, setVendorGroups] = useState<VendorSelectionGroup[]>(
     procurementDataMode === 'api' ? [] : initialVendorGroups
   );
+  // 협력사 선정 '완료' 탭용 - 발주 시작을 눌러 PO 관리로 넘어간 케이스들.
+  // vendorGroups(진행중)와 섞지 않는 이유: activeVendorGroups는 전역 검색과
+  // 단계이동 안내에도 쓰여서, 발주 이후 건까지 넣으면 그쪽 동작이 바뀐다.
+  const [completedVendorGroups, setCompletedVendorGroups] = useState<VendorSelectionGroup[]>([]);
   const [poItems, setPoItems] = useState<POItem[]>(
     procurementDataMode === 'api' ? [] : initialPOItems
       .filter((item) => item.supplierApprovalStatus !== 'rejected')
@@ -777,6 +781,14 @@ function ProcurementWorkspaceComponent({
           .filter((entry) => [
             'SUPPLIER_RECOMMENDATION', 'RFQ_TARGET_SELECTION', 'RFQ_SENDING',
             'QUOTATION_COLLECTION', 'SUPPLIER_SELECTION', 'ORDER_START',
+          ].includes(entry.stage) && !isDirectPurchaseOrderStart(entry))
+          .map(caseToVendorSelectionGroup)
+      );
+      setCompletedVendorGroups(
+        visibleCases
+          .filter((entry) => [
+            'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED',
+            'PO_CREATION', 'PO_CREATION_FAILED', 'DELIVERY', 'SCORECARD', 'COMPLETED',
           ].includes(entry.stage) && !isDirectPurchaseOrderStart(entry))
           .map(caseToVendorSelectionGroup)
       );
@@ -2190,6 +2202,7 @@ function ProcurementWorkspaceComponent({
             {currentTab === 'vendor-select' && (
               <VendorSelectionView
                 vendorGroups={animatedVendorGroups}
+                completedGroups={completedVendorGroups}
                 movePlaceholders={stageMovePlaceholders.filter((item) => item.sourceTab === 'vendor-select')}
                 onDismissMovePlaceholder={dismissStageMovePlaceholder}
                 onNavigateMovePlaceholder={navigateStageMovePlaceholder}

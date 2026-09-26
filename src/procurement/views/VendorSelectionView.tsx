@@ -10,6 +10,7 @@ import type {
   SupplierRecommendation,
   StageMovePlaceholder,
 } from '../types';
+import { fetchQuotationDeadlineHistory, type QuotationDeadlineChange } from '../api/cases';
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
@@ -93,11 +94,24 @@ const responsePercent = (group: VendorSelectionGroup): number => {
 // '견적 회신율' 쪽에서 보여주고 있다.
 const closedRoundCount = (group: VendorSelectionGroup): number => group.rfqRounds?.length ?? 0;
 
-// 진행중/완료 탭 분리 기준 - '발주 시작'을 눌러 PO 관리로 넘어간 건은
-// 이 페이지에서 할 일이 끝난 것이므로 완료 탭으로 뺀다. orderStarted는
-// api/cases.ts에서 백엔드 stage가 PRE_PO_APPROVAL 이후일 때 true로
-// 내려주므로, "협력사 선정 업무가 끝났는지"와 정확히 일치한다.
-const isVendorSelectionDone = (group: VendorSelectionGroup): boolean => Boolean(group.orderStarted);
+
+// 이력 표기는 '2026-09-26 18시'까지만 - 분/초까지 붙으면 타임라인에서
+// 숫자만 길어지고 한눈에 안 들어온다는 피드백.
+const formatStampToHour = (value?: string | null): string => {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    // 'YYYY-MM-DD HH:mm' 같은 문자열이 그대로 오는 경우도 있어 앞부분만 쓴다.
+    const text = String(value).replace('T', ' ');
+    const [datePart, timePart] = text.split(' ');
+    if (!timePart) return datePart;
+    return `${datePart} ${timePart.slice(0, 2)}시`;
+  }
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${String(parsed.getHours()).padStart(2, '0')}시`;
+};
 
 const vendorFilterValue = (group: VendorSelectionGroup, key: VendorColumnKey): string | number => {
   const selected = group.quotations.find((quotation) => quotation.supplierId === group.selectedSupplierId);
@@ -129,6 +143,10 @@ const vendorSortValue = (group: VendorSelectionGroup, key: VendorColumnKey): str
 
 interface VendorSelectionViewProps {
   vendorGroups: VendorSelectionGroup[];
+  /** '완료' 탭에 보여줄 건들 - 발주 시작을 눌러 PO 관리로 넘어간 케이스.
+   * 진행중 목록(vendorGroups)은 백엔드 stage가 ORDER_START까지인 건만
+   * 담고 있어서, 선정이 끝난 건은 이 목록으로 따로 받는다. */
+  completedGroups?: VendorSelectionGroup[];
   movePlaceholders?: StageMovePlaceholder[];
   onDismissMovePlaceholder?: (id: string) => void;
   onNavigateMovePlaceholder?: (placeholder: StageMovePlaceholder) => void;
@@ -278,6 +296,7 @@ const safeExternalUrl = (value?: string): string | null => {
 
 export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   vendorGroups,
+  completedGroups = [],
   movePlaceholders = [],
   onDismissMovePlaceholder = () => undefined,
   onNavigateMovePlaceholder = () => undefined,
@@ -301,7 +320,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // RFQ 미발송 + 납기요청일 초과 건을 '확인 후 MR 취소'할 때 버튼 로딩 표시용.
   const [isCancellingOverdue, setIsCancellingOverdue] = useState<string | null>(null);
   // 오늘 날짜(YYYY-MM-DD) - targetDueDate와 사전식 비교로 납기 초과 여부를 판단.
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // 로컬(KST) 기준 오늘 - toISOString()은 UTC라서 오전 9시 이전엔 어제
+  // 날짜가 나오고, 그 값으로 납기초과(isPastTargetDueDate)를 판정하면
+  // 초과 판정이 하루 늦게 뜬다.
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }, []);
 
   const handleConfirmOverdueCancel = async (group: VendorSelectionGroup) => {
     const confirmed = window.confirm(
@@ -349,6 +374,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // 흩어져 있던 정보를 한 곳에서 훑어보기용으로 요약. 실제 조작(선정 변경,
   // RFQ 설정 등)은 기존 모달들이 그대로 담당하므로 이 상태는 읽기전용이다.
   const [detailGroup, setDetailGroup] = useState<VendorSelectionGroup | null>(null);
+  // 상세 패널의 '연장 이력' - 케이스 목록에 매번 조인을 걸지 않으려고
+  // 패널을 열 때만 따로 불러온다(차수별 견적 조회와 같은 방식).
+  const [deadlineHistory, setDeadlineHistory] = useState<QuotationDeadlineChange[] | 'loading' | 'error'>('loading');
   const [selectedSupplierForApproval, setSelectedSupplierForApproval] = useState<string | null>(null);
   // 같은 공급사가 재비딩으로 여러 차수에 걸쳐 견적을 냈을 수 있어
   // supplierId만으로는 어떤 견적을 고른 건지 특정할 수 없다 - 행별로
@@ -560,12 +588,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setShowEmailSuggestions(false);
   };
 
+  // 표에 실제로 들어갈 원본 목록 - 탭에 따라 진행중/완료 목록을 바꿔 끼운다.
+  const sourceGroups = activeTab === 'completed' ? completedGroups : vendorGroups;
+
   const vendorFilterOptions = useMemo(() => Object.fromEntries(VENDOR_COLUMNS.map((column) => [
     column.key,
-    vendorGroups.map((group) => String(vendorFilterValue(group, column.key))),
-  ])) as Record<VendorColumnKey, string[]>, [vendorGroups]);
+    sourceGroups.map((group) => String(vendorFilterValue(group, column.key))),
+  ])) as Record<VendorColumnKey, string[]>, [sourceGroups]);
 
-  const visibleVendorGroups = useMemo(() => vendorGroups
+  const visibleVendorGroups = useMemo(() => sourceGroups
     .filter((group) => VENDOR_COLUMNS.every((column) => {
       if (column.filterMode === 'number-range' || column.filterMode === 'date-range') {
         return matchesTableRange(
@@ -586,36 +617,25 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
         ? leftValue - rightValue
         : String(leftValue).localeCompare(String(rightValue), 'ko-KR', { numeric: true });
       return sortDirection === 'asc' ? compared : -compared;
-    }), [rangeFilters, sortColumn, sortDirection, tableState.filters, vendorGroups]);
+    }), [rangeFilters, sortColumn, sortDirection, tableState.filters, sourceGroups]);
 
   // 진행중 / 완료 탭 - PO 관리 페이지와 같은 방식. 발주까지 넘어간 건을
   // 목록에서 분리해서, 아직 구매팀이 손볼 게 남은 건만 기본으로 보인다.
-  const progressCount = useMemo(
-    () => vendorGroups.filter((group) => !isVendorSelectionDone(group)).length,
-    [vendorGroups],
-  );
-  const completedCount = useMemo(
-    () => vendorGroups.filter((group) => isVendorSelectionDone(group)).length,
-    [vendorGroups],
-  );
-  const tabFilteredGroups = useMemo(
-    () => visibleVendorGroups.filter((group) => (
-      activeTab === 'completed' ? isVendorSelectionDone(group) : !isVendorSelectionDone(group)
-    )),
-    [visibleVendorGroups, activeTab],
-  );
+  const progressCount = vendorGroups.length;
+  const completedCount = completedGroups.length;
+  // 필터/정렬은 이미 sourceGroups(=활성 탭 목록) 기준으로 적용돼 있다.
+  const tabFilteredGroups = visibleVendorGroups;
   // 완료 탭 요약 - 끝난 건들 중 AI 추천 1순위를 그대로 선정한 비율.
   // (aiRank는 견적 랭킹 결과라 이미 내려오는 값이고, 새로 계산하는 건 없다.)
   const completedAiFollow = useMemo(() => {
-    const decided = vendorGroups
-      .filter((group) => isVendorSelectionDone(group))
+    const decided = completedGroups
       .map((group) => group.quotations.find((quotation) => quotation.supplierId === group.selectedSupplierId))
       .filter((quotation): quotation is SupplierQuotation => Boolean(quotation));
     return {
       total: decided.length,
       followed: decided.filter((quotation) => quotation.aiRank === 1).length,
     };
-  }, [vendorGroups]);
+  }, [completedGroups]);
 
   const rfqCandidateRows = useMemo<RfqCandidateRow[]>(() => {
     if (!selectedGroup) return [];
@@ -949,10 +969,36 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     onSendPO(group.id);
   };
 
+  // 상세 패널이 열릴 때마다 그 케이스의 마감일 연장 이력을 불러온다.
+  useEffect(() => {
+    if (!detailGroup) return undefined;
+    const caseId = detailGroup.backendCaseId;
+    if (!caseId) {
+      // 목업 데이터에는 백엔드 케이스가 없다 - isExtended 플래그로만 표시.
+      setDeadlineHistory([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setDeadlineHistory('loading');
+    fetchQuotationDeadlineHistory(caseId)
+      .then((items) => { if (!cancelled) setDeadlineHistory(items); })
+      .catch(() => { if (!cancelled) setDeadlineHistory('error'); });
+    return () => { cancelled = true; };
+  }, [detailGroup]);
+
   // 4. 마감시간 연장 처리
   const handleOpenExtendModal = (group: VendorSelectionGroup) => {
     setExtendingGroup(group);
-    setExtDate(group.deadlineDate || '2025-01-25');
+    // 백엔드는 '새 마감일 > 기존 마감일' 이고 '지금 이후'일 때만 연장을
+    // 받아준다. 기존 마감일을 그대로 채워두면(특히 이미 지난 마감일)
+    // 사용자가 날짜를 안 건드리고 확정을 눌러 409로 거절당하므로,
+    // 기본값을 '기존 마감일 다음날'(단 납기요청일 이내)로 제안한다.
+    const currentDeadline = group.deadlineDate || todayIso;
+    const base = new Date(`${currentDeadline}T00:00:00`);
+    const suggestion = new Date(Math.max(base.getTime(), new Date(`${todayIso}T00:00:00`).getTime()));
+    suggestion.setDate(suggestion.getDate() + 1);
+    const suggested = `${suggestion.getFullYear()}-${String(suggestion.getMonth() + 1).padStart(2, '0')}-${String(suggestion.getDate()).padStart(2, '0')}`;
+    setExtDate(suggested > group.targetDueDate ? group.targetDueDate : suggested);
     setExtTime(group.deadlineTime || '18:00');
     setExtValidationMessage(null);
   };
@@ -1316,12 +1362,21 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   onClick: () => { setChangingGroup(group); setChangeReason(''); },
                 });
               }
-              if (!hasSelection && group.deadlineDDay > 0) {
+              // ⚠️ 예전엔 deadlineDDay > 0(마감 전)일 때만 연장 버튼을 보여줘서,
+              // 마감이 이미 지난 건은 연장할 방법이 화면에 아예 없었다. 백엔드
+              // (workflow_service.extend_quotation_deadline)는 stage가 견적
+              // 수집/선정이고 새 마감일이 '지금 이후 + 기존 마감일보다 늦음'이면
+              // 마감이 지난 뒤에도 연장을 허용하므로, 조건을 백엔드와 맞춘다.
+              const canExtendDeadline = !hasSelection && (
+                !group.workflowStage
+                || ['QUOTATION_COLLECTION', 'SUPPLIER_SELECTION'].includes(group.workflowStage)
+              );
+              if (canExtendDeadline) {
                 overflowItems.push({
                   key: 'extend-deadline',
                   label: (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                      <Calendar size={13} /> 마감 연장
+                      <Calendar size={13} /> 마감 연장{group.deadlineDDay <= 0 ? ' (마감 지남)' : ''}
                     </span>
                   ),
                   onClick: () => handleOpenExtendModal(group),
@@ -1342,7 +1397,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
               return (
                 <React.Fragment key={group.id}>
-                  {movePlaceholders
+                  {(activeTab === 'progress' ? movePlaceholders : [])
                     .filter((placeholder) => placeholder.index === rowIndex)
                     .map((placeholder) => (
                       <StageMovePlaceholderRow
@@ -1673,7 +1728,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               );
             })}
 
-            {movePlaceholders
+            {(activeTab === 'progress' ? movePlaceholders : [])
               .filter((placeholder) => placeholder.index >= tabFilteredGroups.length)
               .map((placeholder) => (
                 <StageMovePlaceholderRow
@@ -1685,11 +1740,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 />
               ))}
 
-            {tabFilteredGroups.length === 0 && movePlaceholders.length === 0 && (
+            {tabFilteredGroups.length === 0 && (activeTab === 'completed' || movePlaceholders.length === 0) && (
               <tr>
                 <td colSpan={7} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
                   {activeTab === 'completed'
-                    ? '아직 발주까지 넘어간 건이 없습니다.'
+                    ? '아직 발주 시작까지 넘어간 건이 없습니다.'
                     : '현재 협력사 선정 대기 건이 없습니다.'}
                 </td>
               </tr>
@@ -1992,34 +2047,118 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   )}
                 </div>
 
+                {/* 마감 정보 + 연장 이력 - 마감일은 연장할 때마다 덮어써지므로
+                    백엔드가 남겨둔 연장 이력(workflow_status_history)을 따로
+                    불러와 '언제 -> 언제로' 늘렸는지 같이 보여준다. */}
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>마감 정보</div>
-                  <div style={{ padding: '10px 14px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>마감시간</span>
-                    <span style={{ fontWeight: 600 }}>
-                      {dg.rfqSent
-                        ? `${dg.deadlineDate} ${dg.deadlineTime}${dg.isExtended ? ' (연장됨)' : ''} · ${dg.deadlineDDay > 0 ? `D-${dg.deadlineDDay}일` : '마감 지남'}`
-                        : 'RFQ 발송 전'}
-                    </span>
+                  <div style={{ padding: '12px 14px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>현재 마감</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontWeight: 700 }}>
+                          {dg.rfqSent ? `${dg.deadlineDate} ${dg.deadlineTime.slice(0, 2)}시` : 'RFQ 발송 전'}
+                        </span>
+                        {dg.rfqSent && (
+                          <span
+                            className={`badge ${dg.deadlineDDay > 0 ? 'badge-yellow' : 'badge-red'}`}
+                            style={{ fontSize: '11px' }}
+                          >
+                            {dg.deadlineDDay > 0 ? `D-${dg.deadlineDDay}일` : '마감 지남'}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+
+                    {/* 연장 이력 */}
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border-color)' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>
+                        연장 이력
+                        {Array.isArray(deadlineHistory) && deadlineHistory.length > 0 && ` (${deadlineHistory.length}회)`}
+                      </div>
+                      {deadlineHistory === 'loading' ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>불러오는 중...</div>
+                      ) : deadlineHistory === 'error' ? (
+                        <div style={{ fontSize: '12px', color: 'var(--danger)' }}>연장 이력을 불러오지 못했습니다.</div>
+                      ) : deadlineHistory.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>연장한 적이 없습니다.</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          {deadlineHistory.map((change, index) => (
+                            <div key={`${change.changed_at}-${index}`} style={{ display: 'flex', gap: '10px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '10px' }}>
+                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--warning)', marginTop: '5px', flexShrink: 0 }} />
+                                {index < deadlineHistory.length - 1 && (
+                                  <span style={{ width: '1px', flexGrow: 1, backgroundColor: 'var(--border-color)' }} />
+                                )}
+                              </div>
+                              <div style={{ paddingBottom: index < deadlineHistory.length - 1 ? '12px' : 0 }}>
+                                <div style={{ fontSize: '12px', color: 'var(--text-main)' }}>
+                                  <span style={{ color: 'var(--text-muted)', textDecoration: 'line-through' }}>
+                                    {formatStampToHour(change.previous_deadline_at)}
+                                  </span>
+                                  <span style={{ color: 'var(--text-dim)' }}> → </span>
+                                  <strong>{formatStampToHour(change.deadline_at)}</strong>
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                  {formatStampToHour(change.changed_at)} 변경
+                                  {change.changed_by ? ` · ${change.changed_by}` : ''}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
+                {/* 차수 이력 - 마감된 지난 라운드는 회색, 지금 진행 중인 라운드는
+                    파란 점으로 구분해서 점·선 타임라인으로 보여준다. */}
                 <div>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>차수 이력</div>
-                  {dgRounds.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>재비딩 이력이 없습니다 (0차).</div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>
+                    차수 이력 (총 {closedRoundCount(dg) + (dg.rfqSent ? 1 : 0)}차)
+                  </div>
+                  {dgRounds.length === 0 && !dg.rfqSent ? (
+                    <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>아직 RFQ를 보내지 않았습니다.</div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
                       {dgRounds.map((r) => (
-                        <div key={r.rfqName} style={{ fontSize: '12px', color: 'var(--text-main)' }}>
-                          {r.round}차 · {r.rfqName}{r.deadline ? ` · 마감 ${r.deadline}` : ''}{r.closedAt ? ` · 종료 ${r.closedAt}` : ''}
+                        <div key={r.rfqName} style={{ display: 'flex', gap: '12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '12px' }}>
+                            <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--text-dim)', marginTop: '4px', flexShrink: 0 }} />
+                            <span style={{ width: '1px', flexGrow: 1, backgroundColor: 'var(--border-color)' }} />
+                          </div>
+                          <div style={{ paddingBottom: '16px', flexGrow: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span className="badge badge-gray" style={{ fontSize: '11px', fontWeight: 700 }}>{r.round}차</span>
+                              <span className="badge badge-gray" style={{ fontSize: '10px' }}>마감 종료</span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-main)', marginTop: '4px', fontFamily: 'monospace' }}>{r.rfqName}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                              {r.deadline ? `마감 ${formatStampToHour(r.deadline)}` : '마감일 기록 없음'}
+                              {r.closedAt ? ` · 종료 ${formatStampToHour(r.closedAt)}` : ''}
+                            </div>
+                          </div>
                         </div>
                       ))}
-                    </div>
-                  )}
-                  {dg.rfqSent && (
-                    <div style={{ fontSize: '12px', color: 'var(--primary)', fontWeight: 600, marginTop: '6px' }}>
-                      {closedRoundCount(dg) + 1}차 · {dg.rfqName ?? '진행중'} · 진행중 (회신 {dgRespondedCount}/{dgCurrentRound.length}건)
+                      {dg.rfqSent && (
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '12px' }}>
+                            <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--accent)', marginTop: '4px', flexShrink: 0, boxShadow: '0 0 0 3px var(--accent-soft)' }} />
+                          </div>
+                          <div style={{ flexGrow: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span className="badge badge-blue" style={{ fontSize: '11px', fontWeight: 700 }}>{closedRoundCount(dg)}차</span>
+                              <span className="badge badge-progress" style={{ fontSize: '10px' }}>진행중</span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-main)', marginTop: '4px', fontFamily: 'monospace' }}>{dg.rfqName ?? '-'}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                              마감 {dg.deadlineDate} {dg.deadlineTime.slice(0, 2)}시 · 회신 {dgRespondedCount}/{dgCurrentRound.length}건
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2944,8 +3083,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     />
                   </div>
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  마감일시는 납기요청일({extendingGroup.targetDueDate})보다 늦을 수 없습니다.
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  마감일시는 납기요청일({extendingGroup.targetDueDate})보다 늦을 수 없습니다.<br />
+                  현재 마감은 <strong>{extendingGroup.deadlineDate} {extendingGroup.deadlineTime}</strong>
+                  {extendingGroup.deadlineDDay <= 0 ? ' (이미 지남)' : ''} 입니다 —
+                  {' '}새 마감일시는 <strong>지금 이후</strong>이고 <strong>현재 마감보다 늦어야</strong> 저장됩니다.
                 </div>
                 {extValidationMessage && (
                   <div className="form-validation-message" role="alert">
