@@ -2197,6 +2197,7 @@ function ProcurementWorkspaceComponent({
                   <DashboardView
                     requests={dashboardRequests}
                     poItems={activePOItems}
+                    vendorGroups={vendorGroups}
                     onApprove={apiDataEnabled ? handleStartSubstituteCheck : handleApproveRequest}
                     onOpenRejectModal={(id, mrNo) => setRejectingItem({ id, mrNo })}
                     onOpenSpecModal={handleOpenSpecByItemCode}
