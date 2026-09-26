@@ -17,9 +17,27 @@ export interface CompanyPolicy {
     quotation_delivery_weight: number;
     quotation_specification_weight: number;
     quotation_scorecard_weight: number;
+    /** off: 모든 체크포인트에서 사람 대기 · shadow: 판단만 기록 · on: 조건 통과 시 자동 진행 */
+    automation_mode: 'off' | 'shadow' | 'on';
+    auto_rfq_dispatch: boolean;
+    auto_final_selection: boolean;
+    auto_selection_score_gap: number;
+    auto_selection_max_amount: number;
+    auto_deadline_extension_days: number;
+    auto_deadline_extension_min_lead_days: number;
   };
   guidance: { item_specification: string; substitute_selection: string };
 }
+export const AUTOMATION_DEFAULTS = {
+  automation_mode: 'off',
+  auto_rfq_dispatch: true,
+  auto_final_selection: true,
+  auto_selection_score_gap: 10,
+  auto_selection_max_amount: 50_000_000,
+  auto_deadline_extension_days: 3,
+  auto_deadline_extension_min_lead_days: 7,
+} as const;
+
 export const QUOTATION_WEIGHT_KEYS = [
   'quotation_price_weight',
   'quotation_delivery_weight',
@@ -45,6 +63,11 @@ export function normalizePolicy(policy: CompanyPolicy): CompanyPolicy {
   delete rules.quotation_spec_score_weight;
   for (const key of QUOTATION_WEIGHT_KEYS) {
     if (!Number.isFinite(rules[key])) rules[key] = DEFAULT_QUOTATION_WEIGHTS[key];
+  }
+  // 자동 진행 설정이 없는 옛 정책은 '꺼짐'으로 채운다 - 진행 중인 케이스가
+  // 자동화를 켠 순간 갑자기 움직이지 않도록 백엔드도 같은 기본값을 쓴다.
+  for (const [key, value] of Object.entries(AUTOMATION_DEFAULTS)) {
+    if (rules[key] === undefined || rules[key] === null) rules[key] = value;
   }
   return { ...policy, rules };
 }
