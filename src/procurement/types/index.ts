@@ -253,6 +253,46 @@ export interface QuotationScoreBreakdown {
   warnings: string[];
 }
 
+/** 자동 진행 조건 하나의 판정. 예외 결정 화면이 이걸 체크리스트로 그린다. */
+export interface AutoProgressCheck {
+  code: string;
+  label: string;
+  detail: string;
+  /** passed(통과) · blocked(걸림) · unknown(판단 불가 - 통과로 치지 않는다) */
+  status: 'passed' | 'blocked' | 'unknown' | string;
+}
+
+/** 마지막 자동 진행 판정. */
+export interface AutoProgressVerdict {
+  /** 조건을 모두 통과했는가(모드와 무관한 순수 판정) */
+  allowed: boolean;
+  /** off: 사람이 확인 · shadow: 판단만 기록 · on: 자동 진행 */
+  mode: 'off' | 'shadow' | 'on' | string;
+  /** 이 단계의 자동화 스위치가 켜져 있는가 */
+  enabled: boolean;
+  checks: AutoProgressCheck[];
+  evidence: Record<string, unknown>;
+  summary: string;
+}
+
+/** 담당자가 자동 진행을 멈춰 둔 상태. */
+export interface AutomationHold {
+  held: boolean;
+  reason?: string;
+  by?: string;
+  at?: string;
+}
+
+/** 한 건의 이력 한 줄 - 단계 전환·사람 응답·AI 판단을 합친 것. */
+export interface CaseTimelineEntry {
+  kind: 'status' | 'human_task' | 'ai_decision' | string;
+  occurredAt: string;
+  title: string;
+  stage?: string;
+  detail?: string;
+  actor?: string;
+}
+
 /** 순위 계산 전체에 대한 정보(경쟁 견적 수, 단독 응찰, 파싱 실패 목록). */
 export interface QuotationRankingMeta {
   /** 'live' = 견적 도착 때마다 갱신되는 실시간 순위, 'workflow' = 워크플로 체크포인트 값 */
@@ -403,6 +443,12 @@ export interface VendorSelectionGroup {
   /** 순위에서 제외된 견적과 사유(quotation_excluded). */
   quotationExclusions?: QuotationExclusion[];
   quotationRankingMeta?: QuotationRankingMeta;
+  /** 마지막 자동 진행 판정. 없으면 아직 판정한 적이 없다는 뜻이다. */
+  autoProgress?: AutoProgressVerdict;
+  /** 담당자가 자동 진행을 멈춰 둔 상태. */
+  automationHold?: AutomationHold;
+  /** 'auto'면 사람 손 없이 조건을 통과해 선정된 건이다. */
+  selectionMode?: 'auto' | 'manual' | string;
   selectedSupplierId?: string;
   supplierApprovalStatus?: 'approved' | 'rejected' | 'pending';
   selectionRound?: number;

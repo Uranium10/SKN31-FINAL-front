@@ -13,6 +13,9 @@ import type {
   QuotationIntakeFailure,
   QuotationRankingMeta,
   QuotationScoreBreakdown,
+  AutoProgressVerdict,
+  AutomationHold,
+  CaseTimelineEntry,
 } from '../types';
 
 export type ProcurementDataMode = 'mock' | 'hybrid' | 'api';
@@ -45,6 +48,10 @@ export interface ProcurementCaseDTO {
   /** 견적 도착(웹훅)·견적 확인·마감 잡이 갱신하는 실시간 순위. 그래프 밖에 저장된다. */
   live_quotation_ranking?: Record<string, unknown> | null;
   live_quotation_ranking_at?: string | null;
+  automation_hold?: boolean | null;
+  automation_hold_reason?: string | null;
+  automation_hold_by?: string | null;
+  automation_hold_at?: string | null;
   pending_task_count?: number;
   pending_task?: {
     task_id: string;
@@ -248,6 +255,45 @@ export interface QuotationDeadlineChange {
   changed_by: string | null;
   changed_at: string;
 }
+
+/** 자동 진행을 멈추거나 다시 푼다. 워크플로가 멈춰 있어도 걸 수 있다. */
+export const setAutomationHold = async (
+  caseId: string,
+  hold: boolean,
+  reason?: string,
+): Promise<AutomationHold> => {
+  const response = await fetchWithAuth(
+    `/api/procurement/cases/${encodeURIComponent(caseId)}/automation-hold`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hold, reason: reason ?? null }),
+    },
+  );
+  const payload = await parseJson<Record<string, unknown>>(response);
+  return {
+    held: payload.automation_hold === true,
+    reason: text(payload.automation_hold_reason) || undefined,
+    by: text(payload.automation_hold_by) || undefined,
+    at: text(payload.automation_hold_at) || undefined,
+  };
+};
+
+/** 이 건에 무슨 일이 언제 있었는지(오래된 순). 상세를 펼칠 때만 부른다. */
+export const fetchCaseTimeline = async (caseId: string): Promise<CaseTimelineEntry[]> => {
+  const response = await fetchWithAuth(
+    `/api/procurement/cases/${encodeURIComponent(caseId)}/timeline`,
+  );
+  const payload = await parseJson<{ items?: Array<Record<string, unknown>> }>(response);
+  return rows(payload.items).map((row) => ({
+    kind: text(row.kind, 'status'),
+    occurredAt: text(row.occurred_at),
+    title: text(row.title),
+    stage: text(row.stage) || undefined,
+    detail: text(row.detail) || undefined,
+    actor: text(row.actor) || undefined,
+  }));
+};
 
 /** 견적 마감일 연장 이력(오래된 순). 상세 패널을 펼칠 때만 불러온다. */
 export const fetchQuotationDeadlineHistory = async (
@@ -621,6 +667,27 @@ const scoreBreakdownOf = (row: Record<string, unknown>): QuotationScoreBreakdown
   };
 };
 
+const autoProgressOf = (entry: ProcurementCaseDTO): AutoProgressVerdict | undefined => {
+  const raw = valuesOf(entry).auto_progress;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const verdict = raw as Record<string, unknown>;
+  return {
+    allowed: verdict.allowed === true,
+    mode: text(verdict.mode, 'off'),
+    enabled: verdict.enabled === true,
+    checks: rows(verdict.checks).map((check) => ({
+      code: text(check.code),
+      label: text(check.label),
+      detail: text(check.detail),
+      status: text(check.status, 'unknown'),
+    })),
+    evidence: (verdict.evidence && typeof verdict.evidence === 'object'
+      ? verdict.evidence as Record<string, unknown>
+      : {}),
+    summary: text(verdict.summary),
+  };
+};
+
 const exclusionOf = (row: Record<string, unknown>): QuotationExclusion => ({
   quotationId: text(row.quotation_id ?? row.name),
   supplierName: text(row.supplier_name ?? row.supplier) || undefined,
@@ -975,6 +1042,14 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     quotationAiEvaluations: quotationAiEvaluations(entry),
     quotationExclusions: quotationExclusions(entry),
     quotationRankingMeta: rankingSource(entry).meta,
+    autoProgress: autoProgressOf(entry),
+    automationHold: {
+      held: entry.automation_hold === true,
+      reason: text(entry.automation_hold_reason) || undefined,
+      by: text(entry.automation_hold_by) || undefined,
+      at: text(entry.automation_hold_at) || undefined,
+    },
+    selectionMode: text(valuesOf(entry).selection_mode) || undefined,
     selectedSupplierId: selected || undefined,
   };
 };
