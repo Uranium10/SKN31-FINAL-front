@@ -9,7 +9,7 @@ import type {
   SupplierQuotation,
   SupplierRecommendation,
   VendorSelectionGroup,
-} from '../types';
+  QuotationExclusion,} from '../types';
 
 export type ProcurementDataMode = 'mock' | 'hybrid' | 'api';
 
@@ -667,6 +667,31 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
 // 평가 결과가 뭔지는 quotationId로 조회할 수 있어야 한다 - 최종선정
 // 모달이 지난 라운드 견적(직접 다시 조회해온)에 이 정보를 매칭해서
 // "AI 분석 완료 여부"와 순위/사유를 보여주는 데 쓴다.
+// 순위에 들지 못한 견적과 사유. 백엔드가 규격/정합성 검증(수량 부족, 금액
+// 불일치, 유효기간 만료, RFQ 품목 연결 실패 등)으로 제외한 견적들이며, 화면
+// 에서 '평가중'과 구분해서 사유를 그대로 보여주는 데 쓴다.
+const quotationExclusions = (entry: ProcurementCaseDTO): QuotationExclusion[] => {
+  const values = valuesOf(entry);
+  return rows(values.quotation_excluded)
+    .map((row) => {
+      const quotationId = text(row.quotation_id ?? row.name);
+      const evidence = Array.isArray(row.evidence)
+        ? row.evidence.map((item) => text(item)).filter(Boolean)
+        : [];
+      return {
+        quotationId,
+        supplierName: text(row.supplier_name ?? row.supplier) || undefined,
+        status: text(row.status) || undefined,
+        evidence,
+        specificationScore: row.specification_score != null
+          ? numberValue(row.specification_score)
+          : undefined,
+        specificationReason: text(row.specification_reason) || undefined,
+      };
+    })
+    .filter((row) => Boolean(row.quotationId));
+};
+
 const quotationAiEvaluations = (entry: ProcurementCaseDTO): QuotationAiEvaluation[] => {
   const values = valuesOf(entry);
   const ranking = rows(values.quotation_ranking);
@@ -782,6 +807,7 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     prSent: false,
     quotations,
     quotationAiEvaluations: quotationAiEvaluations(entry),
+    quotationExclusions: quotationExclusions(entry),
     selectedSupplierId: selected || undefined,
   };
 };

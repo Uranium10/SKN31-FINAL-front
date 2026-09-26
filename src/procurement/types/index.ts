@@ -239,6 +239,20 @@ export interface QuotationAiEvaluation {
   aiIssues: string[];
 }
 
+/** 규격/정합성 검증에서 순위에 들지 못한 견적과 그 사유.
+ * "AI 평가가 아직 안 끝난 견적"과 "검증에서 탈락해 평가 대상이 아닌 견적"을
+ * 화면에서 구분하기 위해 백엔드 quotation_excluded를 그대로 받는다. */
+export interface QuotationExclusion {
+  quotationId: string;
+  supplierName?: string;
+  /** ACCEPTED / EXCLUDED / REEXTRACT / HUMAN_REVIEW / RFQ_REWRITE 등 검토 상태 */
+  status?: string;
+  /** 사람이 읽을 수 있는 탈락 근거(수량 부족, 금액 불일치, 유효기간 만료 등) */
+  evidence: string[];
+  specificationScore?: number;
+  specificationReason?: string;
+}
+
 export interface VendorSelectionHistoryEntry {
   id: string;
   round: number;
@@ -326,6 +340,8 @@ export interface VendorSelectionGroup {
   /** quotation_ranking 전체(라운드 무관)의 AI 평가 결과 - 최종선정 모달이
    * 지난 라운드 견적(별도로 직접 조회해온)에 AI 평가를 매칭해 보여줄 때 쓴다. */
   quotationAiEvaluations?: QuotationAiEvaluation[];
+  /** 순위에서 제외된 견적과 사유(quotation_excluded). */
+  quotationExclusions?: QuotationExclusion[];
   selectedSupplierId?: string;
   supplierApprovalStatus?: 'approved' | 'rejected' | 'pending';
   selectionRound?: number;

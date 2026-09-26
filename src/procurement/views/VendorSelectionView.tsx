@@ -6,6 +6,7 @@ import type {
   RfqRoundQuotation,
   SupplierQuotation,
   QuotationAiEvaluation,
+  QuotationExclusion,
   POScorecardScores,
   SupplierRecommendation,
   StageMovePlaceholder,
@@ -1123,6 +1124,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // 찾기 위한 조회용 Map. 지난 라운드 견적도 "AI 분석"을 실행하면
   // evaluate_quotations_for_rfqs가 모든 라운드를 합쳐 평가하므로, 이미
   // 평가된 지난 라운드 견적은 여기서 매칭되어 선택 가능해진다.
+  // 순위에서 제외된 견적의 사유 조회용. '평가중'과 '검증 탈락'을 구분한다.
+  const exclusionByQuotationId = useMemo(() => {
+    const map = new Map<string, QuotationExclusion>();
+    (selectedGroup?.quotationExclusions ?? []).forEach((row) => {
+      if (row.quotationId) map.set(row.quotationId, row);
+    });
+    return map;
+  }, [selectedGroup?.quotationExclusions]);
+
   const aiEvaluationByQuotationId = useMemo(() => {
     const map = new Map<string, QuotationAiEvaluation>();
     (selectedGroup?.quotationAiEvaluations ?? []).forEach((evalRow) => {
@@ -1979,10 +1989,20 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 evaluatedCount: dgCurrentRound.filter((q) => q.isResponded && q.aiRank > 0).length,
               }
             : null;
-        // 회신은 왔는데 아직 AI 평가가 안 붙은 견적 - '평가중'으로 안내한다.
-        const dgAwaitingEvaluation = dgCurrentRound.filter(
+        // 회신은 왔는데 순위에 없는 견적을 둘로 나눈다 - 아직 평가가 안 끝난
+        // 것(평가중)과, 수량 부족·금액 불일치처럼 검증에서 탈락해 다시
+        // 분석해도 안 바뀌는 것(제외). 예전엔 둘이 섞여서 '평가 전'으로만
+        // 보였다.
+        const dgExcludedIds = new Set(
+          (dg.quotationExclusions ?? []).map((row) => row.quotationId),
+        );
+        const dgUnranked = dgCurrentRound.filter(
           (q) => q.isResponded && !hasQuotationAiEvaluation(q),
+        );
+        const dgExcludedCount = dgUnranked.filter(
+          (q) => q.quotationId && dgExcludedIds.has(q.quotationId),
         ).length;
+        const dgAwaitingEvaluation = dgUnranked.length - dgExcludedCount;
         const dgSelected = dg.quotations.find((q) => q.supplierId === dg.selectedSupplierId) ?? null;
         return (
           <div className="modal-overlay" onClick={() => setDetailGroup(null)}>
@@ -2048,8 +2068,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{dgAiTop.aiReason}</div>
                     )}
                     {dgAwaitingEvaluation > 0 && (
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--primary-hover)', fontWeight: 600, marginTop: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--primary-hover)', fontWeight: 600, marginTop: '6px' }}>
                         <LoaderCircle size={11} className="spin-icon" /> {dgAwaitingEvaluation}건 평가중... 순위는 평가가 끝나면 갱신됩니다
+                      </div>
+                    )}
+                    {dgExcludedCount > 0 && (
+                      <div style={{ fontSize: '11px', color: 'var(--danger)', fontWeight: 600, marginTop: '4px' }}>
+                        {dgExcludedCount}건은 검증에서 순위 제외됨 (수량·금액·유효기간 등) — 사유는 견적 비교에서 확인
                       </div>
                     )}
                     <button
@@ -2060,14 +2085,24 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       근거 자세히 보기 · 업체 선정 →
                     </button>
                   </div>
-                ) : dgAwaitingEvaluation > 0 ? (
+                ) : dgAwaitingEvaluation > 0 || dgExcludedCount > 0 ? (
                   <div style={{ border: '1px solid var(--border-highlight)', backgroundColor: 'var(--primary-soft)', borderRadius: '10px', padding: '14px 16px' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: 'var(--primary-hover)' }}>
-                      <LoaderCircle size={13} className="spin-icon" /> 평가중... ({dgAwaitingEvaluation}건)
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      회신이 도착한 견적을 AI가 순서대로 평가하고 있습니다. 끝나면 추천 1순위와 근거가 여기에 표시됩니다.
-                    </div>
+                    {dgAwaitingEvaluation > 0 && (
+                      <>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: 'var(--primary-hover)' }}>
+                          <LoaderCircle size={13} className="spin-icon" /> 평가중... ({dgAwaitingEvaluation}건)
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          회신이 도착한 견적을 AI가 순서대로 평가하고 있습니다. 끝나면 추천 1순위와 근거가 여기에 표시됩니다.
+                        </div>
+                      </>
+                    )}
+                    {dgExcludedCount > 0 && (
+                      <div style={{ fontSize: '12px', color: 'var(--danger)', fontWeight: 600, marginTop: dgAwaitingEvaluation > 0 ? '8px' : 0 }}>
+                        회신 {dgExcludedCount}건은 검증에서 순위 제외됐습니다 (수량 부족·금액 불일치·유효기간 만료 등).
+                        다시 분석해도 바뀌지 않으니 견적 비교에서 사유를 확인하고 재비딩을 검토해 주세요.
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div style={{ border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -2994,12 +3029,46 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           {/* 회신 요약 및 AI 분석 */}
                           <td style={{ color: 'var(--text-muted)', fontSize: '11px', lineHeight: 1.4, whiteSpace: 'normal', wordBreak: 'keep-all' }}>
                             {q.resContent}
-                            {q.isResponded && !hasQuotationAiEvaluation(q) && (
-                              <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--primary-hover)', fontWeight: 600 }}>
-                                <LoaderCircle size={11} className="spin-icon" />
-                                평가중... (회신 도착분은 순서대로 자동 평가됩니다)
-                              </div>
-                            )}
+                            {q.isResponded && !hasQuotationAiEvaluation(q) && (() => {
+                              // 순위에 못 들어간 견적은 두 종류다 - (1) 아직 AI
+                              // 평가가 안 끝난 것, (2) 수량 부족·금액 불일치·
+                              // 유효기간 만료처럼 결정적 검증에서 탈락해 애초에
+                              // 순위 대상이 아닌 것. 예전에는 둘 다 'AI 분석 전'
+                              // 으로만 보여서 아무리 다시 분석해도 안 바뀌는
+                              // 견적의 이유를 알 수 없었다.
+                              const exclusion = q.quotationId
+                                ? exclusionByQuotationId.get(q.quotationId)
+                                : undefined;
+                              if (exclusion) {
+                                return (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <span className="badge badge-red" style={{ fontSize: '10px' }}>
+                                      순위 제외{exclusion.status ? ` · ${exclusion.status}` : ''}
+                                    </span>
+                                    <div style={{ marginTop: '3px', color: 'var(--danger)', fontWeight: 600 }}>
+                                      {exclusion.evidence.length > 0
+                                        ? exclusion.evidence.join(' / ')
+                                        : '검증에서 제외되었습니다.'}
+                                    </div>
+                                    {exclusion.specificationReason && (
+                                      <div style={{ marginTop: '2px', color: 'var(--text-muted)' }}>
+                                        규격 평가: {exclusion.specificationReason}
+                                        {exclusion.specificationScore != null ? ` (${exclusion.specificationScore}점)` : ''}
+                                      </div>
+                                    )}
+                                    <div style={{ marginTop: '2px', color: 'var(--text-dim)' }}>
+                                      이 사유는 다시 분석해도 바뀌지 않습니다 - 협력사에 견적 재요청(재비딩)이 필요합니다.
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--primary-hover)', fontWeight: 600 }}>
+                                  <LoaderCircle size={11} className="spin-icon" />
+                                  평가중... (회신 도착분은 순서대로 자동 평가됩니다)
+                                </div>
+                              );
+                            })()}
                             {hasQuotationAiEvaluation(q) && (
                               <>
                                 {(q.specMatch !== undefined || q.fulfillsQuantity !== undefined) && (
