@@ -47,6 +47,7 @@ import {
   isDirectPurchaseOrderStart,
   listProcurementCases,
   rejectProcurementCase,
+  runAutomationScan,
   searchSuppliers,
   setAutomationHold,
   getSupplierEvaluations,
@@ -1541,6 +1542,22 @@ function ProcurementWorkspaceComponent({
     return true;
   };
 
+  /** 10분 주기 스캔을 기다리지 않고 이 건의 자동 진행 판정을 지금 돌린다. */
+  const handleRunAutomationScan = async (groupId: string) => {
+    const group = vendorGroups.find((row) => row.id === groupId);
+    const caseId = group?.backendCaseId;
+    if (!group || !caseId) return false;
+    try {
+      const result = await runAutomationScan(caseId);
+      showToast(`${group.mrNo} · ${result.message}`);
+      await loadMRsFromApi(false, true);
+      return true;
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '자동 진행 판정에 실패했습니다.');
+      return false;
+    }
+  };
+
   /** 자동 진행 보류/재개. 워크플로를 깨우지 않고 케이스에만 표시한다. */
   const handleSetAutomationHold = async (groupId: string, hold: boolean) => {
     const group = vendorGroups.find((row) => row.id === groupId);
@@ -2259,6 +2276,7 @@ function ProcurementWorkspaceComponent({
                 requests={uniqueRequests}
                 onSelectSupplier={handleSelectSupplier}
                 onSetAutomationHold={handleSetAutomationHold}
+                onRunAutomationScan={handleRunAutomationScan}
                 onSendPO={handleSendPO}
                 onWithdrawSupplierSelection={handleWithdrawSupplierSelection}
                 onCancelMR={handleCancelMrFromVendorSelection}

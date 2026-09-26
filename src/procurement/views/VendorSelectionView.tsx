@@ -187,6 +187,8 @@ interface VendorSelectionViewProps {
   onRebidQuotations: (groupId: string) => Promise<boolean> | boolean;
   /** 자동 진행을 멈추거나 다시 푼다. */
   onSetAutomationHold?: (groupId: string, hold: boolean) => Promise<boolean> | boolean;
+  /** 주기 스캔을 기다리지 않고 지금 자동 진행 판정을 돌린다. */
+  onRunAutomationScan?: (groupId: string) => Promise<boolean> | boolean;
   onOpenSpecModalByItemCode: (itemCode: string) => void;
   onExtendDeadline: (groupId: string, newDate: string, newTime: string) => Promise<boolean> | boolean;
   onSendRFQ: (
@@ -335,6 +337,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onCancelMR,
   onRebidQuotations,
   onSetAutomationHold,
+  onRunAutomationScan,
   onExtendDeadline,
   onSendRFQ,
   onCheckQuotations,
@@ -1585,6 +1588,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         onClick: () => { void handleToggleHold(group, true); },
                       },
                 );
+              }
+              if (onRunAutomationScan && !hasSelection && group.rfqSent
+                  && group.autoProgress?.enabled !== false) {
+                overflowItems.push({
+                  key: 'run-automation-scan',
+                  label: '자동 진행 지금 확인',
+                  onClick: () => { void onRunAutomationScan(group.id); },
+                });
               }
               if (hasSelection && group.supplierApprovalStatus === 'pending') {
                 overflowItems.push({

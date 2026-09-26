@@ -256,6 +256,26 @@ export interface QuotationDeadlineChange {
   changed_at: string;
 }
 
+export interface AutomationScanResult {
+  outcome: string;
+  message: string;
+  stage?: string;
+}
+
+/** 이 건의 자동 진행 판정을 지금 즉시 돌린다(10분 주기 스캔을 기다리지 않고). */
+export const runAutomationScan = async (caseId: string): Promise<AutomationScanResult> => {
+  const response = await fetchWithAuth(
+    `/api/procurement/cases/${encodeURIComponent(caseId)}/automation/scan`,
+    { method: 'POST' },
+  );
+  const payload = await parseJson<Record<string, unknown>>(response);
+  return {
+    outcome: text(payload.outcome),
+    message: text(payload.message),
+    stage: text(payload.stage) || undefined,
+  };
+};
+
 /** 자동 진행을 멈추거나 다시 푼다. 워크플로가 멈춰 있어도 걸 수 있다. */
 export const setAutomationHold = async (
   caseId: string,
