@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { POItem, POScorecardScores, SupplierScores, StageMovePlaceholder } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
+import { SelectionRationale } from '../components/SelectionRationale';
 import { WorkflowInterruptForm } from '../components/WorkflowInterruptForm';
 import {
   AlertTriangle,
@@ -680,11 +681,11 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
       {/* PO 생성 (결재권자 결재) Modal */}
       {approvalModalItem && (
         <div className="modal-overlay" onClick={() => setApprovalModalItem(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '500px' }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: 'min(680px, calc(100vw - 32px))' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <ShoppingCart size={20} color="var(--success)" />
-                <h3>PO 생성 및 전자 결재 요청</h3>
+                <h3>PO 발송 전 마지막 확인</h3>
               </div>
               <button className="icon-btn" onClick={() => setApprovalModalItem(null)}>
                 <X size={18} />
@@ -709,6 +710,10 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   </div>
                 )}
               </div>
+              <SelectionRationale
+                task={approvalModalItem.pendingTask}
+                selectedSupplier={approvalModalItem.selectedSupplier}
+              />
             </div>
             <div className="modal-footer">
               <button className="btn-outline" onClick={() => setApprovalModalItem(null)}>
