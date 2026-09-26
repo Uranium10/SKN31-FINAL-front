@@ -267,6 +267,11 @@ export interface QuotationValidationRow {
   rankable: boolean;
   blocking_issues: QuotationValidationIssue[];
   evidence: string[];
+  /** AI 규격 평가(RunPod) 결과가 캐시에 있는지. null이면 평가기 설정이 없어
+   * 확인 자체를 못 한 경우다. 검증은 통과했는데 순위에 없는 견적은 대부분
+   * 이 값이 false다(= 규격 평가가 아직/실패로 없음). */
+  spec_evaluated?: boolean | null;
+  evaluation_source?: string | null;
 }
 
 /** 견적별 '순위 진입 가능 여부'와 차단 사유. RunPod 평가나 워크플로 실행

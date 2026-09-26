@@ -3131,6 +3131,42 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   </div>
                                 );
                               }
+                              // 검증은 통과했는데 순위에 없는 경우. 규격 평가
+                              // 결과가 캐시에 있는지로 원인을 갈라 보여준다 -
+                              // 예전엔 전부 '평가중'이라 RunPod이 그 견적만
+                              // 실패한 상황과 구분이 안 됐다.
+                              if (validation && validation.spec_evaluated === false) {
+                                return (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <span className="badge badge-yellow" style={{ fontSize: '10px' }}>AI 규격 평가 미완료</span>
+                                    <div style={{ marginTop: '3px', color: 'var(--warning)', fontWeight: 600 }}>
+                                      이 견적만 규격 평가 결과가 없습니다{validation.evaluation_source ? ` (${validation.evaluation_source})` : ''} —
+                                      평가가 아직 안 돌았거나 실패했습니다.
+                                    </div>
+                                    <div style={{ marginTop: '2px', color: 'var(--text-dim)' }}>
+                                      표의 ⋯ → '회신 새로 확인 · 남은 견적 분석'을 누르면 이 견적만 다시 평가합니다.
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              if (validation && validation.spec_evaluated === true) {
+                                return (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <span className="badge badge-blue" style={{ fontSize: '10px' }}>평가 완료 · 순위 반영 대기</span>
+                                    <div style={{ marginTop: '3px', color: 'var(--text-muted)' }}>
+                                      규격 평가는 끝났고 순위 계산에만 아직 반영되지 않았습니다.
+                                      ⋯ → '회신 새로 확인 · 남은 견적 분석'을 누르면 바로 반영됩니다(재평가 없음).
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              if (validation && validation.spec_evaluated == null) {
+                                return (
+                                  <div style={{ marginTop: '4px', color: 'var(--text-dim)' }}>
+                                    AI 규격 평가 상태를 확인할 수 없습니다 (평가기 설정 확인 필요).
+                                  </div>
+                                );
+                              }
                               return (
                                 <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--primary-hover)', fontWeight: 600 }}>
                                   <LoaderCircle size={11} className="spin-icon" />
