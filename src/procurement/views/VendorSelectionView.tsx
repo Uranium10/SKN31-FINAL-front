@@ -11,7 +11,12 @@ import type {
   SupplierRecommendation,
   StageMovePlaceholder,
 } from '../types';
-import { fetchQuotationDeadlineHistory, type QuotationDeadlineChange } from '../api/cases';
+import {
+  fetchQuotationDeadlineHistory,
+  fetchQuotationValidation,
+  type QuotationDeadlineChange,
+  type QuotationValidationRow,
+} from '../api/cases';
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
@@ -385,6 +390,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // 상세 패널의 '연장 이력' - 케이스 목록에 매번 조인을 걸지 않으려고
   // 패널을 열 때만 따로 불러온다(차수별 견적 조회와 같은 방식).
   const [deadlineHistory, setDeadlineHistory] = useState<QuotationDeadlineChange[] | 'loading' | 'error'>('loading');
+  // 비교 팝업을 열 때 견적별 검증 결과(순위 진입 가능 여부 + 차단 사유)를
+  // 불러온다. quotation_ranking은 check_quotations가 다시 돌아야 갱신되지만
+  // 이 조회는 언제든 현재 ERP 데이터 기준으로 사유를 알려준다.
+  const [quotationValidation, setQuotationValidation] = useState<QuotationValidationRow[] | 'loading' | 'error'>('loading');
   const [selectedSupplierForApproval, setSelectedSupplierForApproval] = useState<string | null>(null);
   // 같은 공급사가 재비딩으로 여러 차수에 걸쳐 견적을 냈을 수 있어
   // supplierId만으로는 어떤 견적을 고른 건지 특정할 수 없다 - 행별로
@@ -982,6 +991,22 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     onSendPO(group.id);
   };
 
+  // 견적 비교 팝업이 열리면 견적별 검증 결과를 불러온다.
+  useEffect(() => {
+    if (!showQuotationModal || !selectedGroup) return undefined;
+    const caseId = selectedGroup.backendCaseId;
+    if (!caseId) {
+      setQuotationValidation([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setQuotationValidation('loading');
+    fetchQuotationValidation(caseId)
+      .then((items) => { if (!cancelled) setQuotationValidation(items); })
+      .catch(() => { if (!cancelled) setQuotationValidation('error'); });
+    return () => { cancelled = true; };
+  }, [showQuotationModal, selectedGroup]);
+
   // 상세 패널이 열릴 때마다 그 케이스의 마감일 연장 이력을 불러온다.
   useEffect(() => {
     if (!detailGroup) return undefined;
@@ -1132,6 +1157,16 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     });
     return map;
   }, [selectedGroup?.quotationExclusions]);
+
+  const validationByQuotationId = useMemo(() => {
+    const map = new Map<string, QuotationValidationRow>();
+    if (Array.isArray(quotationValidation)) {
+      quotationValidation.forEach((row) => {
+        if (row.quotation_id) map.set(row.quotation_id, row);
+      });
+    }
+    return map;
+  }, [quotationValidation]);
 
   const aiEvaluationByQuotationId = useMemo(() => {
     const map = new Map<string, QuotationAiEvaluation>();
@@ -3028,7 +3063,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           </td>
                           {/* 회신 요약 및 AI 분석 */}
                           <td style={{ color: 'var(--text-muted)', fontSize: '11px', lineHeight: 1.4, whiteSpace: 'normal', wordBreak: 'keep-all' }}>
-                            {q.resContent}
+                            {/* AI 평가가 붙은 견적은 resContent에 이미 같은 사유가
+                                들어와 아래 'AI n위 · ...'와 두 번 보였다. 평가가
+                                있으면 아래 줄만 남긴다. */}
+                            {(!hasQuotationAiEvaluation(q) || !q.aiReason || q.resContent !== q.aiReason)
+                              && q.resContent}
                             {q.isResponded && !hasQuotationAiEvaluation(q) && (() => {
                               // 순위에 못 들어간 견적은 두 종류다 - (1) 아직 AI
                               // 평가가 안 끝난 것, (2) 수량 부족·금액 불일치·
@@ -3036,9 +3075,32 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                               // 순위 대상이 아닌 것. 예전에는 둘 다 'AI 분석 전'
                               // 으로만 보여서 아무리 다시 분석해도 안 바뀌는
                               // 견적의 이유를 알 수 없었다.
+                              const validation = q.quotationId
+                                ? validationByQuotationId.get(q.quotationId)
+                                : undefined;
+                              // 1순위: 방금 조회한 검증 결과(순위 재계산 없이도
+                              // 항상 최신). 없으면 지난 분석의 제외 기록.
                               const exclusion = q.quotationId
                                 ? exclusionByQuotationId.get(q.quotationId)
                                 : undefined;
+                              if (validation && !validation.rankable) {
+                                const reasons = validation.blocking_issues.length > 0
+                                  ? validation.blocking_issues.map((issue) => issue.evidence || issue.message)
+                                  : validation.evidence;
+                                return (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <span className="badge badge-red" style={{ fontSize: '10px' }}>
+                                      순위 제외{validation.status ? ` · ${validation.status}` : ''}
+                                    </span>
+                                    <div style={{ marginTop: '3px', color: 'var(--danger)', fontWeight: 600 }}>
+                                      {reasons.length > 0 ? reasons.join(' / ') : '검증에서 제외되었습니다.'}
+                                    </div>
+                                    <div style={{ marginTop: '2px', color: 'var(--text-dim)' }}>
+                                      AI 평가와 무관한 검증 결과라 다시 분석해도 바뀌지 않습니다 - 협력사에 견적 재요청(재비딩)이 필요합니다.
+                                    </div>
+                                  </div>
+                                );
+                              }
                               if (exclusion) {
                                 return (
                                   <div style={{ marginTop: '4px' }}>
@@ -3059,6 +3121,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                     <div style={{ marginTop: '2px', color: 'var(--text-dim)' }}>
                                       이 사유는 다시 분석해도 바뀌지 않습니다 - 협력사에 견적 재요청(재비딩)이 필요합니다.
                                     </div>
+                                  </div>
+                                );
+                              }
+                              if (quotationValidation === 'loading') {
+                                return (
+                                  <div style={{ marginTop: '4px', color: 'var(--text-dim)' }}>
+                                    검증 상태 확인 중...
                                   </div>
                                 );
                               }

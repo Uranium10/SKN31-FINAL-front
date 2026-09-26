@@ -253,6 +253,34 @@ export const fetchQuotationDeadlineHistory = async (
   return payload.items ?? [];
 };
 
+export interface QuotationValidationIssue {
+  code: string;
+  message: string;
+  evidence: string;
+}
+
+export interface QuotationValidationRow {
+  quotation_id: string;
+  supplier_name?: string | null;
+  status?: string | null;
+  /** false면 결정적 검증에서 탈락해 AI 순위에 들어갈 수 없는 견적이다. */
+  rankable: boolean;
+  blocking_issues: QuotationValidationIssue[];
+  evidence: string[];
+}
+
+/** 견적별 '순위 진입 가능 여부'와 차단 사유. RunPod 평가나 워크플로 실행
+ * 없이 결정적 검증만 다시 돌린 결과라 비교 팝업을 열 때 바로 부를 수 있다. */
+export const fetchQuotationValidation = async (
+  caseId: string,
+): Promise<QuotationValidationRow[]> => {
+  const response = await fetchWithAuth(
+    `/api/procurement/cases/${encodeURIComponent(caseId)}/quotations/validation`,
+  );
+  const payload = await parseJson<{ items?: QuotationValidationRow[] }>(response);
+  return payload.items ?? [];
+};
+
 export interface SupplierSearchResult {
   name: string;
   supplierName: string;
