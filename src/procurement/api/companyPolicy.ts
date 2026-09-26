@@ -12,11 +12,43 @@ export interface CompanyPolicy {
     min_competing_suppliers: number;
     supplier_refresh_years: number;
     quotation_priority: 'price_then_delivery' | 'delivery_then_price';
-    quotation_numeric_score_weight: number;
-    quotation_spec_score_weight: number;
+    /** 견적 종합점수 4항목 가중치(%) - 합계 100. 없는 항목은 백엔드가 나머지로 재정규화한다. */
+    quotation_price_weight: number;
+    quotation_delivery_weight: number;
+    quotation_specification_weight: number;
+    quotation_scorecard_weight: number;
   };
   guidance: { item_specification: string; substitute_selection: string };
 }
+export const QUOTATION_WEIGHT_KEYS = [
+  'quotation_price_weight',
+  'quotation_delivery_weight',
+  'quotation_specification_weight',
+  'quotation_scorecard_weight',
+] as const;
+export type QuotationWeightKey = typeof QUOTATION_WEIGHT_KEYS[number];
+export const DEFAULT_QUOTATION_WEIGHTS: Record<QuotationWeightKey, number> = {
+  quotation_price_weight: 35,
+  quotation_delivery_weight: 20,
+  quotation_specification_weight: 30,
+  quotation_scorecard_weight: 15,
+};
+
+/**
+ * 예전 2항목 가중치(가격·납기 / 규격)만 있는 정책이 내려와도 편집기가
+ * 깨지지 않게 4항목 기본값을 채우고 옛 키는 버린다. 백엔드는 옛 키가 섞인
+ * 게시 요청을 거부하므로(extra=forbid) 반드시 새 키만 보내야 한다.
+ */
+export function normalizePolicy(policy: CompanyPolicy): CompanyPolicy {
+  const rules = { ...(policy.rules as CompanyPolicy['rules'] & Record<string, unknown>) };
+  delete rules.quotation_numeric_score_weight;
+  delete rules.quotation_spec_score_weight;
+  for (const key of QUOTATION_WEIGHT_KEYS) {
+    if (!Number.isFinite(rules[key])) rules[key] = DEFAULT_QUOTATION_WEIGHTS[key];
+  }
+  return { ...policy, rules };
+}
+
 export interface PolicyVersion {
   version: number;
   policy: CompanyPolicy;
@@ -47,7 +79,13 @@ async function read<T>(path: string, options?: RequestInit): Promise<T> {
   return body as T;
 }
 export const getPolicyCapabilities = () => read<{ can_manage: boolean; roles: string[]; source: 'erpnext'; enabled: boolean }>('/capabilities');
-export const getCompanyPolicy = () => read<PolicyResponse>('');
+export const getCompanyPolicy = async (): Promise<PolicyResponse> => {
+  const response = await read<PolicyResponse>('');
+  return {
+    active: { ...response.active, policy: normalizePolicy(response.active.policy) },
+    history: response.history.map((row) => ({ ...row, policy: normalizePolicy(row.policy) })),
+  };
+};
 export const getRunpodWorker = () => read<RunpodWorkerState>('/runpod-worker');
 export const changeRunpodWorker = (action: 'start' | 'extend' | 'stop', revision: number, minutes = 60) =>
   read<RunpodWorkerState>('/runpod-worker', {

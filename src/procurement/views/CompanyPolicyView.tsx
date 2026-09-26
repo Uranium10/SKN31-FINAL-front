@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, History, Save, ShieldCheck, RotateCcw } from 'lucide-react';
 import {
-  getCompanyPolicy, publishCompanyPolicy,
-  type CompanyPolicy, type PolicyResponse,
+  getCompanyPolicy, publishCompanyPolicy, QUOTATION_WEIGHT_KEYS,
+  type CompanyPolicy, type PolicyResponse, type QuotationWeightKey,
 } from '../api/companyPolicy';
 import './CompanyPolicyView.css';
 import { EmailAllowlistEditor } from './EmailAllowlistEditor';
@@ -10,8 +10,19 @@ import { RunpodWorkerControl } from './RunpodWorkerControl';
 
 type NumericRule = Exclude<
   keyof CompanyPolicy['rules'],
-  'quotation_priority' | 'quotation_numeric_score_weight' | 'quotation_spec_score_weight'
+  'quotation_priority' | QuotationWeightKey
 >;
+// 견적 종합점수 4항목. 백엔드 quotation_ranker의 점수 규칙과 1:1로 맞춘 설명이다.
+const quotationWeightFields: { key: QuotationWeightKey; label: string; ruleName: string; hint: string }[] = [
+  { key: 'quotation_price_weight', label: '가격', ruleName: 'QUOTATION_PRICE_WEIGHT',
+    hint: '최저가 100점, 최저가보다 50% 비싸면 0점. 경쟁 견적 2건이면 절반만 반영, 단독 응찰이면 제외합니다.' },
+  { key: 'quotation_delivery_weight', label: '납기', ruleName: 'QUOTATION_DELIVERY_WEIGHT',
+    hint: '요청 납기 이내 100점, 하루 늦을 때마다 10점 감점. 납기 미기재는 0점입니다.' },
+  { key: 'quotation_specification_weight', label: '규격', ruleName: 'QUOTATION_SPECIFICATION_WEIGHT',
+    hint: 'AI가 RFQ 요구 규격과 견적 사양의 일치도를 평가한 점수입니다. 아직 평가 전이면 제외하고 계산합니다.' },
+  { key: 'quotation_scorecard_weight', label: '평가이력', ruleName: 'QUOTATION_SCORECARD_WEIGHT',
+    hint: '최근 3건의 협력사 평가(Scorecard) 평균입니다. 평가 이력이 없는 신규 협력사는 이 항목을 제외합니다.' },
+];
 // Display the team's original rule names so operators can reconcile settings
 // with the purchasing-agent implementation without editing code.
 const ruleNames: Record<NumericRule, string> = {
@@ -54,8 +65,11 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
   const confirmation = useRef<HTMLElement>(null);
   const dirty = Boolean(data && draft && JSON.stringify(data.active.policy) !== JSON.stringify(draft));
   const quotationWeightTotal = draft
-    ? draft.rules.quotation_numeric_score_weight + draft.rules.quotation_spec_score_weight
+    ? QUOTATION_WEIGHT_KEYS.reduce((sum, key) => sum + draft.rules[key], 0)
     : 0;
+  const quotationWeightsChanged = Boolean(data && draft && QUOTATION_WEIGHT_KEYS.some(
+    (key) => draft.rules[key] !== data.active.policy.rules[key],
+  ));
   const quotationWeightsValid = Math.abs(quotationWeightTotal - 100) < 0.000001;
 
   async function load() {
@@ -174,44 +188,31 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
               <div className="policy-weight-heading">
                 <div>
                   <strong>견적 종합평가 가중치</strong>
-                  <small>quotation_ranker가 가격·납기 점수와 AI 규격 점수를 합산할 때 실제 사용하는 비율입니다.</small>
+                  <small>견적 종합점수 = 4항목 점수 × 가중치 − 페널티. 값이 없는 항목(평가이력 없음·규격 평가 전·단독 응찰의 가격)은 빼고 나머지 비율로 다시 나눕니다. 파싱에 실패한 견적만 순위에서 제외됩니다.</small>
                 </div>
                 <span className={quotationWeightsValid ? 'is-valid' : 'is-invalid'}>
                   합계 {Number.isFinite(quotationWeightTotal) ? quotationWeightTotal.toLocaleString() : '-'}%
                 </span>
               </div>
               <div className="policy-grid">
-                <label className="policy-field">
-                  <strong>가격·납기 가중치</strong>
-                  <code className="policy-rule-name">QUOTATION_NUMERIC_SCORE_WEIGHT</code>
-                  <div className="policy-number">
-                    <input type="number" required min={0} max={100} step={1}
-                      value={Number.isFinite(draft.rules.quotation_numeric_score_weight)
-                        ? draft.rules.quotation_numeric_score_weight : ''}
-                      onChange={e => setDraft({ ...draft, rules: {
-                        ...draft.rules, quotation_numeric_score_weight: e.target.valueAsNumber,
-                      } })} />
-                    <span>%</span>
-                  </div>
-                  <small>견적 금액과 요청 납기 준수 여부로 산정한 수치 점수의 반영 비율입니다.</small>
-                </label>
-                <label className="policy-field">
-                  <strong>규격 가중치</strong>
-                  <code className="policy-rule-name">QUOTATION_SPEC_SCORE_WEIGHT</code>
-                  <div className="policy-number">
-                    <input type="number" required min={0} max={100} step={1}
-                      value={Number.isFinite(draft.rules.quotation_spec_score_weight)
-                        ? draft.rules.quotation_spec_score_weight : ''}
-                      onChange={e => setDraft({ ...draft, rules: {
-                        ...draft.rules, quotation_spec_score_weight: e.target.valueAsNumber,
-                      } })} />
-                    <span>%</span>
-                  </div>
-                  <small>AI가 RFQ 요구 규격과 견적 사양의 일치도를 평가한 점수의 반영 비율입니다.</small>
-                </label>
+                {quotationWeightFields.map((field) => (
+                  <label className="policy-field" key={field.key}>
+                    <strong>{field.label} 가중치</strong>
+                    <code className="policy-rule-name">{field.ruleName}</code>
+                    <div className="policy-number">
+                      <input type="number" required min={0} max={100} step={1}
+                        value={Number.isFinite(draft.rules[field.key]) ? draft.rules[field.key] : ''}
+                        onChange={e => setDraft({ ...draft, rules: {
+                          ...draft.rules, [field.key]: e.target.valueAsNumber,
+                        } })} />
+                      <span>%</span>
+                    </div>
+                    <small>{field.hint}</small>
+                  </label>
+                ))}
               </div>
               {!quotationWeightsValid && (
-                <p className="policy-weight-warning" role="alert">두 가중치의 합계를 100%로 맞춰주세요.</p>
+                <p className="policy-weight-warning" role="alert">네 가중치의 합계를 100%로 맞춰주세요.</p>
               )}
             </div>
           </section>
@@ -241,9 +242,9 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
           {JSON.stringify(draft.supplier_sources) !== JSON.stringify(data.active.policy.supplier_sources) &&
             <li>공급사 탐색 소스: {draft.supplier_sources.join(' · ')}</li>}
           {draft.rules.quotation_priority !== data.active.policy.rules.quotation_priority && <li>견적 비교 우선순위 변경</li>}
-          {(draft.rules.quotation_numeric_score_weight !== data.active.policy.rules.quotation_numeric_score_weight
-            || draft.rules.quotation_spec_score_weight !== data.active.policy.rules.quotation_spec_score_weight) &&
-            <li>견적 종합평가 가중치: 가격·납기 {data.active.policy.rules.quotation_numeric_score_weight}% / 규격 {data.active.policy.rules.quotation_spec_score_weight}% → 가격·납기 {draft.rules.quotation_numeric_score_weight}% / 규격 {draft.rules.quotation_spec_score_weight}%</li>}
+          {quotationWeightsChanged &&
+            <li>견적 종합평가 가중치: {quotationWeightFields.map(f => `${f.label} ${data.active.policy.rules[f.key]}%`).join(' / ')}
+              {' → '}{quotationWeightFields.map(f => `${f.label} ${draft.rules[f.key]}%`).join(' / ')}</li>}
           {draft.guidance.item_specification !== data.active.policy.guidance.item_specification && <li>품목 규격 검토 지침 변경</li>}
           {draft.guidance.substitute_selection !== data.active.policy.guidance.substitute_selection && <li>대체품 추천 지침 변경</li>}
         </ul><p>게시 후 새 작업에 적용됩니다. 진행 중인 MR에는 소급 적용하지 않습니다.</p>
