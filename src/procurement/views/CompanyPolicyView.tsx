@@ -11,7 +11,7 @@ import { RunpodWorkerControl } from './RunpodWorkerControl';
 /** 자동 진행 설정은 아래 전용 섹션에서 다룬다(숫자·불리언·선택이 섞여 있다). */
 type AutomationRuleKey =
   | 'automation_mode' | 'auto_rfq_dispatch' | 'auto_final_selection'
-  | 'auto_selection_score_gap' | 'auto_selection_max_amount'
+  | 'auto_selection_min_quotations' | 'auto_selection_score_gap' | 'auto_selection_max_amount'
   | 'auto_deadline_extension_days' | 'auto_deadline_extension_min_lead_days';
 type AutomationNumberKey = Exclude<AutomationRuleKey, 'automation_mode' | 'auto_rfq_dispatch' | 'auto_final_selection'>;
 type NumericRule = Exclude<
@@ -27,8 +27,10 @@ const automationModes: { value: CompanyPolicy['rules']['automation_mode']; label
     hint: '조건에 걸리는 건만 멈춰 담당자를 부릅니다. 켜기 전에 기록 모드로 일치율을 확인하시기를 권합니다.' },
 ];
 const automationNumberFields: { key: AutomationNumberKey; label: string; unit: string; min: number; max: number; step: number; hint: string }[] = [
+  { key: 'auto_selection_min_quotations', label: '자동 선정 최소 견적 수', unit: '건 이상', min: 2, max: 20, step: 1,
+    hint: '이만큼 회신이 와야 자동으로 선정합니다. 최솟값이 2라서 단독 응찰은 어떤 설정으로도 자동 선정되지 않습니다. 위의 최소 경쟁 협력사 수는 "몇 곳을 찾아 초대할까"를 정하는 값이라 별개입니다.' },
   { key: 'auto_selection_score_gap', label: '자동 선정 최소 점수차', unit: '점 이상', min: 0, max: 100, step: 0.5,
-    hint: '1순위와 2순위의 종합점수 차이가 이보다 작으면 박빙으로 보고 담당자에게 넘깁니다. 경쟁 견적 최소 건수는 위의 최소 경쟁 협력사 수를 그대로 씁니다.' },
+    hint: '1순위와 2순위의 종합점수 차이가 이보다 작으면 박빙으로 보고 담당자에게 넘깁니다.' },
   { key: 'auto_selection_max_amount', label: '자동 선정 금액 상한', unit: '원 이하', min: 1, max: 1_000_000_000_000, step: 1,
     hint: '선정 금액이 이 값을 넘으면 조건을 다 통과해도 담당자가 확인합니다.' },
   { key: 'auto_deadline_extension_days', label: '회신 0건 자동 연장', unit: '일', min: 0, max: 30, step: 1,

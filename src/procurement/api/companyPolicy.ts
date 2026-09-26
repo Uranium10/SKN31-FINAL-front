@@ -21,6 +21,7 @@ export interface CompanyPolicy {
     automation_mode: 'off' | 'shadow' | 'on';
     auto_rfq_dispatch: boolean;
     auto_final_selection: boolean;
+    auto_selection_min_quotations: number;
     auto_selection_score_gap: number;
     auto_selection_max_amount: number;
     auto_deadline_extension_days: number;
@@ -32,6 +33,7 @@ export const AUTOMATION_DEFAULTS = {
   automation_mode: 'off',
   auto_rfq_dispatch: true,
   auto_final_selection: true,
+  auto_selection_min_quotations: 2,
   auto_selection_score_gap: 10,
   auto_selection_max_amount: 50_000_000,
   auto_deadline_extension_days: 3,
