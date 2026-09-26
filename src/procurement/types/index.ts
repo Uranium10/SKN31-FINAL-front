@@ -270,6 +270,8 @@ export interface AutoProgressVerdict {
   mode: 'off' | 'shadow' | 'on' | string;
   /** 이 단계의 자동화 스위치가 켜져 있는가 */
   enabled: boolean;
+  /** 어느 단계의 판정인지. 'auto_rfq_dispatch' | 'auto_final_selection' */
+  node?: string;
   checks: AutoProgressCheck[];
   evidence: Record<string, unknown>;
   summary: string;

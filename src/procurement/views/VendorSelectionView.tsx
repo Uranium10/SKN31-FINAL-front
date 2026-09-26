@@ -942,25 +942,42 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setShowQuotationModal(true);
   };
 
-  // 자동 진행이 조건에 걸려 멈춘 건인지. 자동화가 꺼져 있으면 예외라는
-  // 개념 자체가 없다(모든 단계에서 원래 사람이 확인하므로).
-  const isAutoBlocked = (group: VendorSelectionGroup): boolean => Boolean(
-    group.autoProgress
-    && group.autoProgress.enabled
-    && group.autoProgress.mode !== 'off'
-    && !group.autoProgress.allowed
-    && !group.automationHold?.held
-    && !group.selectedSupplierId,
+  // ⚠️ 판정은 단계마다 남는다. RFQ 발송 단계에서 내린 판정이 상태에 그대로
+  // 남아 있으므로, 최종 선정이 멈춘 것처럼 보이지 않으려면 어느 단계의
+  // 판정인지(node) 반드시 확인해야 한다.
+  const selectionVerdict = (group: VendorSelectionGroup) => (
+    group.autoProgress?.node === 'auto_final_selection' ? group.autoProgress : undefined
   );
 
+  // 자동 진행이 조건에 걸려 실제로 멈춘 건인지. 기록만 하는 섀도 모드에서는
+  // 사람이 원래대로 처리하면 되므로 '결정 필요'로 몰아붙이지 않는다.
+  const isAutoBlocked = (group: VendorSelectionGroup): boolean => {
+    const verdict = selectionVerdict(group);
+    return Boolean(
+      verdict
+      && verdict.enabled
+      && verdict.mode === 'on'
+      && !verdict.allowed
+      && !group.automationHold?.held
+      && !group.selectedSupplierId,
+    );
+  };
+
   // 조건을 통과해 사람 없이 굴러가는 중인지.
-  const isAutoRunning = (group: VendorSelectionGroup): boolean => Boolean(
-    group.autoProgress
-    && group.autoProgress.enabled
-    && group.autoProgress.mode === 'on'
-    && group.autoProgress.allowed
-    && !group.automationHold?.held,
-  );
+  const isAutoRunning = (group: VendorSelectionGroup): boolean => {
+    const verdict = selectionVerdict(group);
+    return Boolean(
+      verdict && verdict.enabled && verdict.mode === 'on' && verdict.allowed
+      && !group.automationHold?.held,
+    );
+  };
+
+  // 섀도 모드의 판정 - 실제 동작은 지금까지와 같고, "자동이었다면 어땠을지"만
+  // 알려준다. 임계값이 맞는지 판단하는 근거가 된다.
+  const shadowVerdict = (group: VendorSelectionGroup) => {
+    const verdict = selectionVerdict(group);
+    return verdict && verdict.enabled && verdict.mode === 'shadow' ? verdict : undefined;
+  };
 
   const handleToggleHold = async (group: VendorSelectionGroup, hold: boolean) => {
     if (!onSetAutomationHold || holdingGroupId) return;
@@ -1718,6 +1735,14 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       ) : isAutoRunning(group) ? (
                         <span className="badge badge-blue" style={{ fontSize: '10px' }} title="조건을 통과해 사람 확인 없이 진행 중입니다.">
                           자동 진행 중
+                        </span>
+                      ) : shadowVerdict(group) ? (
+                        <span
+                          className="badge"
+                          style={{ fontSize: '10px', color: 'var(--text-muted)', backgroundColor: 'var(--bg-input)' }}
+                          title={`기록 모드 판정: ${shadowVerdict(group)?.summary ?? ''}\n실제 동작은 지금까지와 같습니다.`}
+                        >
+                          기록: {shadowVerdict(group)?.allowed ? '자동 진행 가능' : '조건 미충족'}
                         </span>
                       ) : null}
                       <div

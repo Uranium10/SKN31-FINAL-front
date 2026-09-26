@@ -675,6 +675,7 @@ const autoProgressOf = (entry: ProcurementCaseDTO): AutoProgressVerdict | undefi
     allowed: verdict.allowed === true,
     mode: text(verdict.mode, 'off'),
     enabled: verdict.enabled === true,
+    node: text(verdict.node) || undefined,
     checks: rows(verdict.checks).map((check) => ({
       code: text(check.code),
       label: text(check.label),
