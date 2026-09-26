@@ -166,7 +166,17 @@ interface VendorSelectionViewProps {
   onDismissMovePlaceholder?: (id: string) => void;
   onNavigateMovePlaceholder?: (placeholder: StageMovePlaceholder) => void;
   requests?: MaterialRequest[];
-  onSelectSupplier: (groupId: string, supplierId: string, quotationId?: string) => Promise<boolean> | boolean;
+  onSelectSupplier: (
+    groupId: string,
+    supplierId: string,
+    quotationId?: string,
+    options?: {
+      /** 지난 차수에서 고른 견적처럼 현재 라운드 목록에 없는 행을 그대로 넘긴다. */
+      quotation?: SupplierQuotation;
+      /** 선정과 동시에 수주 접수 요청 메일까지 발송(사용자 확인 완료). */
+      startOrder?: boolean;
+    },
+  ) => Promise<boolean> | boolean;
   onSendPO: (groupId: string) => void;
   onWithdrawSupplierSelection: (groupId: string, reason: string) => void;
   /** 견적 마감이 지났는데 아직 업체를 선정하지 않은 상태에서 'MR 취소'를 선택했을 때. */
@@ -399,9 +409,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   // 견적서가 왔지만 읽지 못해(파싱 실패) Supplier Quotation조차 못 만든 건.
   // 이 협력사들은 표에서 '미회신'이 아니라 '회신됨 · 읽기 실패'로 보여준다.
   const [intakeFailures, setIntakeFailures] = useState<QuotationIntakeFailure[]>([]);
-  // 페널티 중 '선정 시 확인'이 붙은 견적(수량 부족·RFQ 품목 불일치 등)을
-  // 고르면 한 번 더 확인받는다.
-  const [penaltyConfirm, setPenaltyConfirm] = useState<SupplierQuotation | null>(null);
+  // 최종 선정 확인 팝업. 선정과 동시에 협력사에 수주 접수 요청 메일이
+  // 나가므로, 페널티 경고까지 이 팝업 하나에서 같이 보여주고 확인을 받는다.
+  const [selectionConfirm, setSelectionConfirm] = useState<SupplierQuotation | null>(null);
   const [selectedSupplierForApproval, setSelectedSupplierForApproval] = useState<string | null>(null);
   // 같은 공급사가 재비딩으로 여러 차수에 걸쳐 견적을 냈을 수 있어
   // supplierId만으로는 어떤 견적을 고른 건지 특정할 수 없다 - 행별로
@@ -940,7 +950,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     }
   };
 
-  const handleConfirmSupplierSelection = async (penaltyAcknowledged = false) => {
+  // '선택한 업체로 최종 선정'을 누르면 곧바로 확정하지 않고, 수주 접수 요청
+  // 메일이 발송된다는 사실을 확인받는 팝업을 띄운다(발주 시작·PR 요청 버튼을
+  // 대신하는 단 하나의 확인 지점이다).
+  const handleConfirmSupplierSelection = () => {
     if (!selectedGroup || !selectedSupplierForApproval || selectingSupplierId) return;
     const selectedQuotation = selectedQuotationKey
       ? allSelectableQuotations.find((quotation) => quotationRowKey(quotation) === selectedQuotationKey)
@@ -961,20 +974,28 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       });
       return;
     }
-    if (!penaltyAcknowledged && selectedQuotation.scoreBreakdown?.requiresConfirmation) {
-      setPenaltyConfirm(selectedQuotation);
-      return;
-    }
-    setPenaltyConfirm(null);
+    setSelectionConfirm(selectedQuotation);
+  };
+
+  const handleDispatchSupplierSelection = async (selectedQuotation: SupplierQuotation) => {
+    if (!selectedGroup || selectingSupplierId) return;
+    setSelectionConfirm(null);
 
     const groupId = selectedGroup.id;
-    const supplierId = selectedSupplierForApproval;
+    const supplierId = selectedQuotation.supplierId;
     const quotationId = selectedQuotation.quotationId;
 
     setSelectingSupplierId(supplierId);
 
     await new Promise((resolve) => window.setTimeout(resolve, 350));
-    const selected = await onSelectSupplier(groupId, supplierId, quotationId);
+    // ⚠️ 고른 견적 행을 그대로 넘긴다. 지난 차수 견적은 현재 라운드 목록
+    // (group.quotations)에 없어서, 예전처럼 supplierId로만 다시 찾으면 그
+    // 협력사의 이번 차수 '미회신' 행이 잡혀 "견적을 회신한 협력사만 최종
+    // 선정할 수 있습니다"로 막혔다.
+    const selected = await onSelectSupplier(groupId, supplierId, quotationId, {
+      quotation: selectedQuotation,
+      startOrder: true,
+    });
     if (selected) {
       setSelectedGroup((current) => {
         if (!current || current.id !== groupId) return current;
@@ -990,8 +1011,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       setSelectingSupplierId(null);
       setShowQuotationModal(false);
       setResultModal({
-        title: '최종 협력사 선정 완료',
-        message: "표의 '발주 시작' 버튼을 눌러 PO 관리의 최종 승인 단계로 이동해 주세요.",
+        title: '최종 선정 · 수주 접수 요청 발송 완료',
+        message: `${selectedQuotation.supplierName}에 수주 접수 요청 메일을 발송했습니다. 협력사가 수락하면 PO 관리에서 발송 전 최종 승인을 진행해 주세요.`,
         tone: 'success',
       });
       return;
@@ -3412,7 +3433,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   || Boolean(selectingSupplierId)
                   || isAnalyzingQuotations
                 }
-                onClick={() => { void handleConfirmSupplierSelection(); }}
+                onClick={handleConfirmSupplierSelection}
                 title={selectedApprovalExpired
                   ? '유효기간이 지난 견적입니다. 다른 견적을 선택해주세요.'
                   : !selectedApprovalHasAiEvaluation
@@ -3641,54 +3662,97 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       )}
 
       {/* 작업 모달을 닫은 뒤 표시하는 독립 결과 모달 */}
-      {penaltyConfirm && penaltyConfirm.scoreBreakdown && (
-        <div className="modal-overlay" onClick={() => setPenaltyConfirm(null)}>
+      {/* 최종 선정 확인 - 협력사에 수주 접수 요청 메일이 바로 나가는 지점이라
+          확인을 여기 한 번만 받는다. 예전엔 선정 후 '발주 시작'(협력사 선정)과
+          'PR 요청'(PO 관리)을 더 눌러야 했는데, 같은 뜻의 확인을 세 번 받던 셈
+          이라 이 팝업 하나로 합쳤다. */}
+      {selectionConfirm && (
+        <div className="modal-overlay" onClick={() => setSelectionConfirm(null)}>
           <div
             className="modal-content"
             onClick={(event) => event.stopPropagation()}
-            style={{ width: 'min(480px, calc(100vw - 32px))' }}
+            style={{ width: 'min(520px, calc(100vw - 32px))' }}
           >
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <AlertTriangle size={22} color="var(--warning)" />
-                <h3 style={{ margin: 0 }}>확인이 필요한 견적입니다</h3>
+                <Send size={20} color="var(--primary)" />
+                <h3 style={{ margin: 0 }}>이 협력사로 확정하고 수주 접수를 요청할까요?</h3>
               </div>
-              <button type="button" className="icon-btn" onClick={() => setPenaltyConfirm(null)} aria-label="확인 닫기">
+              <button type="button" className="icon-btn" onClick={() => setSelectionConfirm(null)} aria-label="확인 닫기">
                 <X size={18} />
               </button>
             </div>
             <div className="modal-body" style={{ lineHeight: 1.65, color: 'var(--text-muted)', fontSize: '13px' }}>
-              <div style={{ marginBottom: '8px' }}>
-                <b style={{ color: 'var(--text-main)' }}>{penaltyConfirm.supplierName}</b> 견적에 아래 문제가 있어 점수가 깎였습니다. 그래도 이 업체로 선정할까요?
-              </div>
-              {penaltyConfirm.scoreBreakdown.penalties
-                .filter((penalty) => penalty.requiresConfirmation)
-                .map((penalty) => (
-                  <div key={penalty.code} style={{ padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: '6px', marginBottom: '6px' }}>
-                    <div style={{ fontWeight: 700, color: 'var(--danger)' }}>−{penalty.points}점 · {penalty.label}</div>
-                    {penalty.evidence.length > 0 && (
-                      <div style={{ fontSize: '12px' }}>{penalty.evidence.join(' / ')}</div>
-                    )}
+              <div
+                style={{
+                  display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '10px',
+                  padding: '12px 14px', border: '1px solid var(--border-color)', borderRadius: '8px', marginBottom: '12px',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>
+                    {selectionConfirm.supplierName}
+                    <span className="badge badge-blue" style={{ marginLeft: '6px', fontSize: '10px' }}>
+                      {selectionConfirm.rfqRound ?? 0}차 견적
+                    </span>
                   </div>
-                ))}
+                  <div style={{ fontSize: '12px' }}>
+                    {selectedGroup?.itemName} · {selectedGroup?.quantity} {selectedGroup?.unit}
+                    {selectionConfirm.expectedDeliveryDate ? ` · 납기 ${selectionConfirm.expectedDeliveryDate}` : ''}
+                  </div>
+                </div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--primary)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                  ₩{selectionConfirm.quoteTotalPrice.toLocaleString()}
+                </div>
+              </div>
+              <div style={{ color: 'var(--text-main)' }}>
+                확인을 누르면 <b>{selectionConfirm.supplierName}</b>에 <b>수주 접수 요청 메일이 바로 발송</b>됩니다.
+              </div>
+              <div style={{ marginTop: '4px' }}>
+                협력사가 수락하면 PO 관리에서 발송 전 최종 승인을 진행하게 됩니다. 발주서(PO)는 그 승인 뒤에 나가므로 이 단계에서 확정되지는 않습니다.
+              </div>
+              {selectionConfirm.scoreBreakdown?.requiresConfirmation && (
+                <div
+                  role="alert"
+                  style={{
+                    marginTop: '12px', padding: '10px 12px', border: '1px solid var(--warning)',
+                    borderRadius: '8px', background: 'var(--warning-bg)',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: 'var(--warning)', marginBottom: '4px' }}>
+                    이 견적은 아래 문제로 점수가 깎였습니다. 그래도 진행할까요?
+                  </div>
+                  {selectionConfirm.scoreBreakdown.penalties
+                    .filter((penalty) => penalty.requiresConfirmation)
+                    .map((penalty) => (
+                      <div key={penalty.code} style={{ marginTop: '4px' }}>
+                        <span style={{ fontWeight: 700, color: 'var(--danger)' }}>−{penalty.points}점 · {penalty.label}</span>
+                        {penalty.evidence.length > 0 && (
+                          <div style={{ fontSize: '12px' }}>{penalty.evidence.join(' / ')}</div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
-              <button type="button" className="btn-outline" onClick={() => setPenaltyConfirm(null)}>
+              <button type="button" className="btn-outline" onClick={() => setSelectionConfirm(null)}>
                 다시 고르기
               </button>
               <button
                 type="button"
                 className="btn-primary"
                 disabled={Boolean(selectingSupplierId)}
-                onClick={() => { void handleConfirmSupplierSelection(true); }}
+                onClick={() => { void handleDispatchSupplierSelection(selectionConfirm); }}
               >
-                확인하고 선정
+                {selectingSupplierId ? '발송 중...' : '확인 · 수주 접수 요청 발송'}
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* 작업 모달을 닫은 뒤 표시하는 독립 결과 모달 */}
       {resultModal && (
         <div className="modal-overlay" onClick={() => setResultModal(null)}>
           <div

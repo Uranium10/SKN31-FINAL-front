@@ -20,6 +20,7 @@ import type {
   MaterialRequest,
   MaterialRequestAttachment,
   VendorSelectionGroup,
+  SupplierQuotation,
   POItem,
   POScorecardScores,
   ProcurementNotification,
@@ -1443,17 +1444,26 @@ function ProcurementWorkspaceComponent({
     });
   };
 
-  const handleSelectSupplier = async (groupId: string, supplierId: string, quotationId?: string) => {
+  const handleSelectSupplier = async (
+    groupId: string,
+    supplierId: string,
+    quotationId?: string,
+    options?: { quotation?: SupplierQuotation; startOrder?: boolean },
+  ) => {
     const selectedGroup = vendorGroups.find((group) => group.id === groupId);
+    // ⚠️ group.quotations에는 '이번 차수' 견적만 들어있다. 지난 차수에서
+    // 회신한 협력사를 고른 경우 여기서 다시 찾으면 그 협력사의 이번 차수
+    // '미회신' 행이 잡혀서, 실제로는 회신한 견적인데도 아래 회신 검사에
+    // 걸려 선정이 막혔다. 화면이 실제로 고른 견적 행을 넘겨주면 그걸 쓴다.
     // 재비딩으로 같은 공급사가 여러 차수에 걸쳐 견적을 냈을 수 있어,
-    // quotationId가 넘어오면 그 견적을 정확히 짚어서 선택한다 - 단순히
-    // supplierId로만 찾으면 그 공급사의 아무 차수 견적이나 잡힐 수 있다.
-    const selectedSupplier = quotationId
-      ? (
-        selectedGroup?.quotations.find((quotation) => quotation.quotationId === quotationId)
-        ?? selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId)
-      )
-      : selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId);
+    // quotationId가 넘어오면 그 견적을 정확히 짚어서 선택한다.
+    const selectedSupplier = options?.quotation
+      ?? (quotationId
+        ? (
+          selectedGroup?.quotations.find((quotation) => quotation.quotationId === quotationId)
+          ?? selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId)
+        )
+        : selectedGroup?.quotations.find((quotation) => quotation.supplierId === supplierId));
     if (!selectedGroup || !selectedSupplier) return false;
 
     if (apiDataEnabled) {
@@ -1469,6 +1479,10 @@ function ProcurementWorkspaceComponent({
         return false;
       }
       const resolvedQuotationId = quotationId ?? selectedSupplier.quotationId;
+      // start_order: 선정 화면에서 "수주 접수 요청 메일을 지금 보낸다"는
+      // 확인을 이미 받았다는 뜻. 백엔드가 '발주 시작'과 'PR 요청' 확인을
+      // 건너뛰고 메일 발송까지 이어서 진행한다.
+      const startOrder = options?.startOrder ? { start_order: true } : {};
       try {
         await answerProcurementTask(
           selectedGroup.pendingTaskId,
@@ -1477,15 +1491,28 @@ function ProcurementWorkspaceComponent({
                 decision: 'finalize',
                 supplier: selectedSupplier.supplierName,
                 ...(resolvedQuotationId ? { quotation_id: resolvedQuotationId } : {}),
+                ...startOrder,
               }
             : {
                 supplier: selectedSupplier.supplierName,
                 ...(resolvedQuotationId ? { quotation_id: resolvedQuotationId } : {}),
+                ...startOrder,
               },
           selectedGroup.pendingTask?.version,
         );
         clearNotificationsForMR(selectedGroup.mrNo);
-        showToast(`${selectedSupplier.supplierName}이(가) 최종 업체로 선정되었습니다. 발주 시작 전 상태입니다.`);
+        showToast(options?.startOrder
+          ? `${selectedSupplier.supplierName}을(를) 선정하고 수주 접수 요청 메일을 발송했습니다.`
+          : `${selectedSupplier.supplierName}이(가) 최종 업체로 선정되었습니다. 발주 시작 전 상태입니다.`);
+        if (options?.startOrder) {
+          pushNotification({
+            title: '협력사 수주 접수 응답을 기다리는 중입니다',
+            detail: `${selectedGroup.mrNo} · ${selectedSupplier.supplierName}`,
+            targetTab: 'po-manage',
+            reference: selectedGroup.mrNo,
+            tone: 'info',
+          });
+        }
         await loadMRsFromApi(false);
         return true;
       } catch (error) {
