@@ -679,6 +679,7 @@ const quotationAiEvaluations = (entry: ProcurementCaseDTO): QuotationAiEvaluatio
     const overallScore = row.overall_score ?? row.score ?? row.ai_score;
     evaluations.push({
       quotationId,
+      supplierName: text(row.supplier_name ?? row.supplier) || undefined,
       aiRank: numberValue(row.rank),
       aiScore: numberValue(overallScore),
       aiReason: text(row.reason ?? row.ai_reason),

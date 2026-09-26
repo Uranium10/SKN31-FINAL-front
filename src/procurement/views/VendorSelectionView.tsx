@@ -99,7 +99,14 @@ const closedRoundCount = (group: VendorSelectionGroup): number => group.rfqRound
 // 숫자만 길어지고 한눈에 안 들어온다는 피드백.
 const formatStampToHour = (value?: string | null): string => {
   if (!value) return '-';
-  const parsed = new Date(value);
+  // ⚠️ 백엔드가 남긴 일부 타임스탬프(차수 종료시각 등)는 시간대 표기가
+  // 없는 UTC 문자열이다. new Date()는 그런 문자열을 '로컬(KST) 시각'으로
+  // 해석해서 9시간 어긋나 보였다(12:50 종료가 03:50으로 표시). 시간대
+  // 표기가 없으면 UTC로 간주하고 붙여준다.
+  const raw = String(value).trim();
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw);
+  const normalized = hasZone || !raw.includes('T') ? raw : `${raw}Z`;
+  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) {
     // 'YYYY-MM-DD HH:mm' 같은 문자열이 그대로 오는 경우도 있어 앞부분만 쓴다.
     const text = String(value).replace('T', ' ');
@@ -900,11 +907,16 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setShowQuotationModal(true);
   };
 
-  const handleAnalyzeQuotations = async () => {
-    if (!selectedGroup || isAnalyzingQuotations) return;
+  // '회신 새로 확인 · 남은 견적 분석' - 견적은 도착할 때마다 백엔드가
+  // 규격 평가를 미리 걸어두지만(웹훅 -> 캐시), RunPod 호출이 실패했거나
+  // 아직 안 돌아간 견적이 남아 있을 수 있어 사람이 한 번에 몰아서
+  // 처리할 수 있는 경로를 남겨둔다. 이미 평가된 견적은 캐시 히트로
+  // 다시 계산하지 않는다.
+  const handleCheckQuotations = async (group: VendorSelectionGroup) => {
+    if (isAnalyzingQuotations) return;
     setIsAnalyzingQuotations(true);
     try {
-      await onCheckQuotations(selectedGroup.id);
+      await onCheckQuotations(group.id);
     } finally {
       setIsAnalyzingQuotations(false);
     }
@@ -1195,11 +1207,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     ? isQuotationExpired(selectedApprovalQuotation)
     : false;
   const quotationAnalysisRunning = selectedGroup?.workflowStatus === 'RUNNING';
-  const canAnalyzeSelectedGroup = Boolean(
-    selectedGroup?.workflowStage === 'QUOTATION_COLLECTION'
-    && !quotationAnalysisRunning
-    && allSelectableQuotations.some((quotation) => quotation.isResponded),
-  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1383,15 +1390,30 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   disabled: !rfqActive,
                 });
               }
+              // 재비딩은 마감 후 '주 액션'으로도 뜨지만, 마감 전에도 필요할
+              // 수 있어(예: 대상 협력사를 다시 구성하고 싶을 때) ⋯에도 둔다.
+              // 조건/핸들러는 기존 재비딩 버튼과 같다.
+              if (!hasSelection && group.workflowStage === 'QUOTATION_COLLECTION') {
+                overflowItems.push({
+                  key: 'rebid',
+                  label: (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <Send size={13} /> 재비딩 (차수 추가)
+                    </span>
+                  ),
+                  onClick: () => { void handleRebid(group); },
+                  disabled: isRebidding === group.id,
+                });
+              }
               if (group.workflowStage === 'QUOTATION_COLLECTION') {
                 overflowItems.push({
                   key: 'check-quotations',
                   label: (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                      <LoaderCircle size={13} /> 회신 새로 확인
+                      <LoaderCircle size={13} /> 회신 새로 확인 · 남은 견적 분석
                     </span>
                   ),
-                  onClick: () => onCheckQuotations(group.id),
+                  onClick: () => { void handleCheckQuotations(group); },
                 });
               }
 
@@ -1918,12 +1940,49 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
             .filter((name) => name && !dgExistingNames.has(name)),
         )];
         const dgRounds = dg.rfqRounds ?? [];
-        // 회신이 들어온 견적 중 AI 랭킹 1순위(없으면 순위가 가장 높은 것).
-        // 새로 계산하는 게 아니라 이미 내려오는 aiRank/aiScore/aiReason을
-        // 상세 패널 맨 위로 끌어올려 보여주는 것뿐이다.
-        const dgAiTop = dgCurrentRound
+        // AI 추천 1순위는 '이번 라운드'가 아니라 재비딩으로 쌓인 모든 차수를
+        // 합친 결과(quotation_ranking)에서 고른다 - 백엔드 ranker가 지난
+        // 라운드 견적까지 한꺼번에 순위를 매기기 때문에, 1순위가 지난 차수
+        // 견적일 수 있다. 이름은 랭킹 행의 supplier_name을 쓰고(현재 라운드
+        // 목록에 없는 견적도 표시 가능), 금액은 현재 라운드에 있으면 붙인다.
+        const dgAllEvaluations = [...(dg.quotationAiEvaluations ?? [])]
+          .filter((evaluation) => evaluation.aiRank > 0)
+          .sort((left, right) => left.aiRank - right.aiRank);
+        const dgAiTopEvaluation = dgAllEvaluations[0] ?? null;
+        const dgAiTopQuotation = dgAiTopEvaluation
+          ? dg.quotations.find((q) => q.quotationId === dgAiTopEvaluation.quotationId) ?? null
+          : null;
+        // 랭킹 결과가 아직 없으면(도착 직후) 이번 라운드 견적의 aiRank로 대체.
+        const dgAiTopFallback = dgCurrentRound
           .filter((q) => q.isResponded && q.aiRank > 0)
           .sort((left, right) => left.aiRank - right.aiRank)[0] ?? null;
+        const dgAiTop = dgAiTopEvaluation
+          ? {
+              supplierName: dgAiTopEvaluation.supplierName
+                ?? dgAiTopQuotation?.supplierName
+                ?? '(협력사명 미확인)',
+              aiRank: dgAiTopEvaluation.aiRank,
+              aiScore: dgAiTopEvaluation.aiScore,
+              aiReason: dgAiTopEvaluation.aiReason,
+              quoteTotalPrice: dgAiTopQuotation?.quoteTotalPrice ?? null,
+              fromPastRound: !dgAiTopQuotation,
+              evaluatedCount: dgAllEvaluations.length,
+            }
+          : dgAiTopFallback
+            ? {
+                supplierName: dgAiTopFallback.supplierName,
+                aiRank: dgAiTopFallback.aiRank,
+                aiScore: dgAiTopFallback.aiScore,
+                aiReason: dgAiTopFallback.aiReason,
+                quoteTotalPrice: dgAiTopFallback.quoteTotalPrice,
+                fromPastRound: false,
+                evaluatedCount: dgCurrentRound.filter((q) => q.isResponded && q.aiRank > 0).length,
+              }
+            : null;
+        // 회신은 왔는데 아직 AI 평가가 안 붙은 견적 - '평가중'으로 안내한다.
+        const dgAwaitingEvaluation = dgCurrentRound.filter(
+          (q) => q.isResponded && !hasQuotationAiEvaluation(q),
+        ).length;
         const dgSelected = dg.quotations.find((q) => q.supplierId === dg.selectedSupplierId) ?? null;
         return (
           <div className="modal-overlay" onClick={() => setDetailGroup(null)}>
@@ -1967,29 +2026,52 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </div>
                 ) : dgAiTop ? (
                   <div style={{ border: '1px solid var(--border-highlight)', backgroundColor: 'var(--primary-soft)', borderRadius: '10px', padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: 'var(--primary-hover)' }}>
-                      <Sparkles size={13} color="var(--accent)" /> AI 추천 {dgAiTop.aiRank}순위
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: 'var(--primary-hover)' }}>
+                        <Sparkles size={13} color="var(--accent)" /> AI 추천 {dgAiTop.aiRank}순위
+                        <span style={{ color: 'var(--text-dim)', fontWeight: 600 }}>
+                          · 전 차수 {dgAiTop.evaluatedCount}건 비교
+                        </span>
+                      </span>
+                      {dgAiTop.fromPastRound && (
+                        <span className="badge badge-purple" style={{ fontSize: '10px' }}>지난 차수 견적</span>
+                      )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '8px', gap: '10px' }}>
                       <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>{dgAiTop.supplierName}</span>
                       <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>
-                        {dgAiTop.aiScore > 0 ? `${dgAiTop.aiScore.toFixed(1)}점 · ` : ''}₩{dgAiTop.quoteTotalPrice.toLocaleString()}
+                        {dgAiTop.aiScore > 0 ? `${dgAiTop.aiScore.toFixed(1)}점` : ''}
+                        {dgAiTop.quoteTotalPrice != null ? `${dgAiTop.aiScore > 0 ? ' · ' : ''}₩${dgAiTop.quoteTotalPrice.toLocaleString()}` : ''}
                       </span>
                     </div>
                     {dgAiTop.aiReason && (
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{dgAiTop.aiReason}</div>
                     )}
+                    {dgAwaitingEvaluation > 0 && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--primary-hover)', fontWeight: 600, marginTop: '6px' }}>
+                        <LoaderCircle size={11} className="spin-icon" /> {dgAwaitingEvaluation}건 평가중... 순위는 평가가 끝나면 갱신됩니다
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => { setDetailGroup(null); handleOpenQuotationModal(dg); }}
-                      style={{ marginTop: '8px', background: 'none', border: 'none', padding: 0, fontSize: '12px', fontWeight: 600, color: 'var(--primary-hover)', cursor: 'pointer', textDecoration: 'underline' }}
+                      style={{ marginTop: '8px', display: 'block', background: 'none', border: 'none', padding: 0, fontSize: '12px', fontWeight: 600, color: 'var(--primary-hover)', cursor: 'pointer', textDecoration: 'underline' }}
                     >
                       근거 자세히 보기 · 업체 선정 →
                     </button>
                   </div>
+                ) : dgAwaitingEvaluation > 0 ? (
+                  <div style={{ border: '1px solid var(--border-highlight)', backgroundColor: 'var(--primary-soft)', borderRadius: '10px', padding: '14px 16px' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: 'var(--primary-hover)' }}>
+                      <LoaderCircle size={13} className="spin-icon" /> 평가중... ({dgAwaitingEvaluation}건)
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                      회신이 도착한 견적을 AI가 순서대로 평가하고 있습니다. 끝나면 추천 1순위와 근거가 여기에 표시됩니다.
+                    </div>
+                  </div>
                 ) : (
                   <div style={{ border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                    아직 AI가 순위를 낼 견적 회신이 없습니다. 회신이 들어오면 여기에 추천 1순위와 근거가 표시됩니다.
+                    아직 AI가 순위를 낼 견적 회신이 없습니다. 회신이 들어오면 자동으로 평가해 추천 1순위와 근거를 보여줍니다.
                   </div>
                 )}
 
@@ -2751,19 +2833,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                   </span>
                 </div>
               </div>
+              {/* 재비딩 버튼은 표의 '주 액션'과 '⋯' 메뉴로 옮겼다 - 이 팝업은
+                  견적을 비교해서 고르는 화면이라, 여기서 라운드를 새로
+                  시작하는 버튼이 같이 있으면 실수로 누르기 쉽다. */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {selectedGroup.workflowStage === 'QUOTATION_COLLECTION' && (
-                  <button
-                    type="button"
-                    className="btn-sm btn-outline"
-                    disabled={isRebidding === selectedGroup.id}
-                    onClick={() => handleRebid(selectedGroup)}
-                    style={{ fontSize: '11px' }}
-                    title="지금까지 들어온 견적은 유지한 채 새 RFQ 차수를 추가로 보냅니다."
-                  >
-                    {isRebidding === selectedGroup.id ? '처리 중...' : '재비딩'}
-                  </button>
-                )}
                 <button type="button" className="icon-btn" onClick={() => setShowQuotationModal(false)}>
                   <X size={18} />
                 </button>
@@ -2797,23 +2870,19 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       <th style={{ textAlign: 'right', width: '120px' }}>총 견적금액</th>
                       <th style={{ textAlign: 'center', width: '90px' }}>제시 납기</th>
                       <th style={{ width: '160px' }}>제출 첨부자료</th>
+                      {/* 'AI 분석' 버튼은 없앴다 - 견적이 도착하면 백엔드가
+                          웹훅에서 규격 평가를 바로 걸어두고(캐시), 남은 게
+                          있으면 표의 ⋯ '회신 새로 확인 · 남은 견적 분석'이
+                          한 번에 처리한다. 버튼이 두 곳에서 같은 일을
+                          하던 상태였다. */}
                       <th>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                          <span>회신 요약 및 AI 분석</span>
-                          <button
-                            type="button"
-                            className="btn-sm btn-primary"
-                            disabled={!canAnalyzeSelectedGroup || isAnalyzingQuotations}
-                            onClick={() => void handleAnalyzeQuotations()}
-                            title={canAnalyzeSelectedGroup
-                              ? '현재 회신된 견적을 AI가 비교하고 순위를 다시 계산합니다.'
-                              : '견적 수집 단계에서 회신된 견적이 있을 때 분석할 수 있습니다.'}
-                            style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
-                          >
-                            {isAnalyzingQuotations || quotationAnalysisRunning
-                              ? <><LoaderCircle size={12} className="spin-icon" /> 분석 중...</>
-                              : <><Sparkles size={12} /> AI 분석</>}
-                          </button>
+                          <span>회신 요약 및 AI 평가</span>
+                          {(isAnalyzingQuotations || quotationAnalysisRunning) && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--primary-hover)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              <LoaderCircle size={12} className="spin-icon" /> 평가중...
+                            </span>
+                          )}
                         </div>
                       </th>
                     </tr>
@@ -2926,10 +2995,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           <td style={{ color: 'var(--text-muted)', fontSize: '11px', lineHeight: 1.4, whiteSpace: 'normal', wordBreak: 'keep-all' }}>
                             {q.resContent}
                             {q.isResponded && !hasQuotationAiEvaluation(q) && (
-                              <div style={{ marginTop: '4px', color: 'var(--text-dim)' }}>
-                                {quotationAnalysisRunning
-                                  ? 'AI가 규격 적합도와 순위를 분석하고 있습니다.'
-                                  : 'AI 분석 전 · 상단의 AI 분석 버튼을 눌러주세요.'}
+                              <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--primary-hover)', fontWeight: 600 }}>
+                                <LoaderCircle size={11} className="spin-icon" />
+                                평가중... (회신 도착분은 순서대로 자동 평가됩니다)
                               </div>
                             )}
                             {hasQuotationAiEvaluation(q) && (

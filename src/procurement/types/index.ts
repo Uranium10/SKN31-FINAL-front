@@ -223,6 +223,10 @@ export interface SupplierQuotation {
  * 정보를 보강하는 데 쓴다(그 견적이 "AI 분석"으로 이미 평가됐다면). */
 export interface QuotationAiEvaluation {
   quotationId: string;
+  /** 이 견적을 낸 협력사명. quotation_ranking 행의 supplier_name이며, 지난
+   * 라운드 견적까지 포함한 'AI 추천 1순위'를 표시할 때 쓴다(현재 라운드
+   * 목록에 없는 견적은 이름을 알아낼 다른 방법이 없다). */
+  supplierName?: string;
   aiRank: number;
   aiScore: number;
   aiReason: string;
