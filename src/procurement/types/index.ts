@@ -448,6 +448,7 @@ export interface POItem {
   supplierEmail?: string;
   totalAmount: number;
   dueDate: string; // 약정 납기일 (YYYY-MM-DD)
+  isUrgent?: boolean;
   actualDeliveryDate?: string; // 실제 수령일 (기본 '-')
   supplierApprovalStatus: 'pending' | 'pr_requested' | 'accepted' | 'rejected' | 'approved';
   backendStatus?: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'PO_CREATED' | 'PO_FAILED' | 'CANCELLED';

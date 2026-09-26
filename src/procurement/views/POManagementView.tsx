@@ -3,53 +3,28 @@ import type { POItem, POScorecardScores, SupplierScores, StageMovePlaceholder } 
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { WorkflowInterruptForm } from '../components/WorkflowInterruptForm';
-import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
 import {
-  matchesTableRange,
-  normalizeTableFilterValue,
-  useSessionStoredState,
-  useSessionTableState,
-  type TableColumnRangeFilter,
-  type TableColumnDefinition,
-} from '../hooks/useSessionTableState';
-import {
+  AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  CircleDollarSign,
+  ClipboardList,
   Clock,
   FileText,
-  X,
-  AlertTriangle,
-  PackageCheck,
-  ClipboardList,
-  Star,
+  Filter,
   Mail,
-  XCircle,
-  ShoppingCart,
-  CircleDollarSign,
+  PackageCheck,
+  Plus,
   Send,
+  ShoppingCart,
+  Star,
+  X,
+  XCircle,
 } from 'lucide-react';
+import './POManagementView.css';
 
-type POColumnKey = 'poNo' | 'mrNo' | 'item' | 'supplier' | 'payment' | 'status' | 'action';
-
-const PO_COLUMNS: readonly TableColumnDefinition<POColumnKey>[] = [
-  { key: 'poNo', label: 'PO 번호', defaultWidth: 175, minWidth: 130 },
-  { key: 'mrNo', label: 'MR 번호', defaultWidth: 175, minWidth: 135 },
-  { key: 'item', label: '품목명 및 아이템코드', defaultWidth: 250, minWidth: 180 },
-  { key: 'supplier', label: '협력사', defaultWidth: 190, minWidth: 140 },
-  // 발주금액/약정납기일/실제수령일은 여기서 컬럼으로 안 보여주고 '품목명 및
-  // 아이템코드' 클릭 시 뜨는 'MR 및 발주 상세 내역' 패널로 옮겼다(구매팀
-  // 피드백: 컬럼에 정보가 너무 많음). 데이터가 없어진 게 아니라 위치만
-  // 옮긴 것 - 상세 패널 쪽 내용은 아래 selectedMRDetail 모달 참고.
-  { key: 'payment', label: '대금결제', defaultWidth: 165, minWidth: 130 },
-  { key: 'status', label: '현재 단계', defaultWidth: 190, minWidth: 150 },
-  // ⚠️ 예전엔 이 컬럼 자리에 배지랑 버튼이 한꺼번에 쌓여 있었다(구매팀
-  // 피드백: "컬럼에 너무 많은 정보"). 바이어가 실제로 클릭하는 버튼만
-  // 이 별도 컬럼으로 분리한다 - 입고 확인/대금결제는 ERPNext 웹훅으로
-  // 자동 갱신되고 버튼이 없으므로(아래 표 본문 참고) 이 컬럼에도
-  // 나타나지 않는다.
-  { key: 'action', label: '다음 행동', defaultWidth: 200, minWidth: 160, filterMode: 'none' },
-] as const;
-
-type PORangeFilters = Partial<Record<POColumnKey, TableColumnRangeFilter>>;
+type POStageKey = 'reply' | 'rejected' | 'po' | 'receipt-wait' | 'received';
+type POListTab = 'in-progress' | 'completed';
 
 interface POManagementViewProps {
   poItems: POItem[];
@@ -80,44 +55,41 @@ const getScoreAverage = (scores: POScorecardScores) => (
   / (scores.price == null ? 4 : 5)
 );
 
-const getOverallProgress = (item: POItem) => {
-  if (item.pendingTask?.taskType === 'po_creation_failed') {
-    return { label: 'PO 생성 실패 · 확인 필요', className: 'badge-red' };
-  }
-  if (item.pendingTask?.taskType === 'order_start') {
-    return { label: '긴급발주 · 발주 시작 대기', className: 'badge-yellow' };
-  }
-  if (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') {
-    return { label: 'PR 요청 대기', className: 'badge-yellow' };
-  }
-  if (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') {
-    return { label: 'PR 요청 · 수주접수 대기', className: 'badge-gray' };
-  }
-  if (
-    (item.prStatus === 'ACCEPTED' || item.supplierApprovalStatus === 'accepted' || item.supplierApprovalStatus === 'approved')
-    && !item.poCreated
-  ) {
-    return { label: '수주접수 · PO 생성 중', className: 'badge-green' };
-  }
-  if (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') {
-    return { label: '수주 거절', className: 'badge-red' };
-  }
-  if (!item.poCreated) return { label: 'PO 최종 승인 대기', className: 'badge-yellow' };
-  if (item.deliveryStatus === 'PARTIAL') return { label: '부분 입고 진행 중', className: 'badge-yellow' };
-  if (!item.arrived) return { label: `PO 생성 완료 · ${item.poNo}`, className: 'badge-blue' };
-  if (item.paymentStatus === 'PARTIALLY_PAID') return { label: '부분 결제 진행 중', className: 'badge-yellow' };
-  if (item.paymentStatus !== 'PAID') return { label: '물품 도착', className: 'badge-green' };
-  if (!item.scorecardCompleted) return { label: '협력사 평가 대기', className: 'badge-yellow' };
-  return { label: '구매 업무 완료', className: 'badge-green' };
+const PO_STAGES: Array<{ key: POStageKey; label: string }> = [
+  { key: 'reply', label: '회신 대기' },
+  { key: 'rejected', label: '거절' },
+  { key: 'po', label: 'PO 생성' },
+  { key: 'receipt-wait', label: '입고 대기' },
+  { key: 'received', label: '입고 완료' },
+];
+const PO_PROGRESS_STEPS = ['선정', 'PO', '입고', '평가'];
+const getPOStage = (item: POItem): POStageKey => {
+  if (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') return 'rejected';
+  if (item.pendingTask?.taskType === 'po_creation_failed') return 'po';
+  if (!item.poCreated && (
+    item.prStatus === 'SENT'
+    || item.supplierApprovalStatus === 'pr_requested'
+    || item.pendingTask?.taskType === 'pr_request'
+    || item.supplierApprovalStatus === 'pending'
+  )) return 'reply';
+  if (item.poCreated && (item.arrived || item.deliveryStatus === 'FULL' || item.scorecardCompleted)) return 'received';
+  if (item.poCreated) return 'receipt-wait';
+  if (item.pendingTask?.taskType === 'order_start' || item.pendingTask?.taskType === 'po_approval'
+    || item.prStatus === 'ACCEPTED' || item.prStatus === 'PO_FAILED'
+    || item.supplierApprovalStatus === 'accepted' || item.supplierApprovalStatus === 'approved'
+    || item.approvalStatus === 'pending') return 'po';
+  return 'reply';
+};
+const stageLabel = (stage: POStageKey) => ({ reply: '회신 대기', rejected: '거절', po: 'PO 생성', 'receipt-wait': '입고 대기', received: '입고 완료' })[stage];
+const stageClass = (stage: POStageKey) => ({ reply: 'po-state-reply', rejected: 'po-state-rejected', po: 'po-state-po', 'receipt-wait': 'po-state-receipt', received: 'po-state-received' })[stage];
+const formatShortDate = (value?: string) => {
+  if (!value) return '—';
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[2]}/${match[3]}` : value;
 };
 
-// 진행중/완료 탭 분리 기준: 대금결제는 ERPNext Payment Entry 웹훅으로
-// 자동 처리되고 구매팀이 직접 처리/확인하는 일이 아니므로(위 배너 문구
-// 그대로) 완료 판정에서 제외한다. 구매팀 입장에서 "우리 쪽 일이 끝났다"는
-// 건 물품이 입고되고 협력사 평가(스코어카드)까지 작성된 시점이다 -
-// getOverallProgress()의 최종 라벨('구매 업무 완료')은 결제완료까지
-// 요구해서 탭 분리 기준으로 쓰기엔 안 맞아 별도 조건으로 분리했다.
 const isPoComplete = (item: POItem): boolean => !!item.poCreated && !!item.arrived && !!item.scorecardCompleted;
+const isPOCompleted = isPoComplete;
 
 const paymentLabel = (item: POItem): string => ({
   PAID: '결제 완료',
@@ -125,18 +97,6 @@ const paymentLabel = (item: POItem): string => ({
   UNPAID: '결제 대기',
   NOT_INVOICED: '매입송장 대기',
 }[item.paymentStatus ?? 'NOT_INVOICED']);
-
-const poFilterValue = (item: POItem, key: POColumnKey): string | number => {
-  switch (key) {
-    case 'poNo': return item.poNo ?? '발주 대기';
-    case 'mrNo': return item.mrNo;
-    case 'item': return `${item.itemName} · ${item.itemCode}`;
-    case 'supplier': return item.selectedSupplier || '협력사 미지정';
-    case 'payment': return paymentLabel(item);
-    case 'status': return getOverallProgress(item).label;
-    case 'action': return '';
-  }
-};
 
 export const POManagementView: React.FC<POManagementViewProps> = ({
   poItems,
@@ -166,85 +126,69 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
     });
   };
   const [selectedRejectReason, setSelectedRejectReason] = useState<POItem | null>(null);
-  const [showReselectList, setShowReselectList] = useState<boolean>(false);
+  const [showReselectList, setShowReselectList] = useState(false);
   const [emailModalItem, setEmailModalItem] = useState<POItem | null>(null);
   const [approvalModalItem, setApprovalModalItem] = useState<POItem | null>(null);
   const [scorecardItem, setScorecardItem] = useState<POItem | null>(null);
   const [draftScores, setDraftScores] = useState<Partial<SupplierScores>>({});
   const [showRejectInput, setShowRejectInput] = useState<boolean>(false);
   const [rejectReasonText, setRejectReasonText] = useState<string>('');
-  const tableState = useSessionTableState('po-management', PO_COLUMNS);
-  const [rangeFilters, setRangeFilters] = useSessionStoredState<PORangeFilters>(
-    'biddingflow.table.po-management.ranges',
-    {},
-  );
-  const [sortColumn, setSortColumn] = useState<POColumnKey>('mrNo');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  // 진행중/완료 탭 - 결제·평가까지 다 끝난(구매 업무 완료) 건을 목록에서
-  // 분리해서, 아직 바이어가 볼 일이 있는 건만 기본으로 보이게 한다.
-  const [activeTab, setActiveTab] = useState<'progress' | 'completed'>('progress');
+  const [activeTab, setActiveTab] = useState<POListTab>('in-progress');
+  const [activeStage, setActiveStage] = useState<POStageKey | 'all'>('all');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [dueDateFrom, setDueDateFrom] = useState('');
+  const [dueDateTo, setDueDateTo] = useState('');
+  const [sortOrder, setSortOrder] = useState<'latest' | 'due-date' | 'amount'>('latest');
+  const [showCreatePOChooser, setShowCreatePOChooser] = useState(false);
 
-  // 발주금액(amount) 컬럼은 상세 패널로 옮기면서 PO_COLUMNS에서 빠졌으므로
-  // 통화 포맷 특수 처리도 같이 제거 - 이제 모든 컬럼이 poFilterValue를
-  // 그대로 문자열화한다.
-  const poFilterOptions = useMemo(() => Object.fromEntries(PO_COLUMNS.map((column) => [
-    column.key,
-    poItems.map((item) => String(poFilterValue(item, column.key))),
-  ])) as Record<POColumnKey, string[]>, [poItems]);
-
-  const visiblePOItems = useMemo(() => poItems
-    .filter((item) => PO_COLUMNS.every((column) => {
-      if (column.filterMode === 'number-range' || column.filterMode === 'date-range') {
-        return matchesTableRange(
-          poFilterValue(item, column.key),
-          rangeFilters[column.key],
-          column.filterMode,
-        );
-      }
-      if (column.filterMode === 'none') return true;
-      const selected = tableState.filters[column.key];
-      return selected === undefined
-        || selected.includes(normalizeTableFilterValue(poFilterValue(item, column.key)));
-    }))
-    .sort((left, right) => {
-      const leftValue = poFilterValue(left, sortColumn);
-      const rightValue = poFilterValue(right, sortColumn);
-      const compared = typeof leftValue === 'number' && typeof rightValue === 'number'
-        ? leftValue - rightValue
-        : String(leftValue).localeCompare(String(rightValue), 'ko-KR', { numeric: true });
-      return sortDirection === 'asc' ? compared : -compared;
-    }), [poItems, rangeFilters, sortColumn, sortDirection, tableState.filters]);
-
-  const progressCount = useMemo(() => poItems.filter((item) => !isPoComplete(item)).length, [poItems]);
-  const completedCount = useMemo(() => poItems.filter((item) => isPoComplete(item)).length, [poItems]);
-  const tabFilteredPOItems = useMemo(
-    () => visiblePOItems.filter((item) => (activeTab === 'completed' ? isPoComplete(item) : !isPoComplete(item))),
-    [visiblePOItems, activeTab],
-  );
+  const tabItems = useMemo(() => poItems.filter((item) => (
+    activeTab === 'completed' ? isPoComplete(item) : !isPoComplete(item)
+  )), [activeTab, poItems]);
+  const stageCounts = useMemo(() => Object.fromEntries(PO_STAGES.map(({ key }) => [
+    key,
+    tabItems.filter((item) => getPOStage(item) === key).length,
+  ])) as Record<POStageKey, number>, [tabItems]);
+  const visiblePOItems = useMemo(() => {
+    const query = searchText.trim().toLocaleLowerCase('ko-KR');
+    const minimum = minAmount === '' ? undefined : Number(minAmount);
+    const maximum = maxAmount === '' ? undefined : Number(maxAmount);
+    return tabItems
+      .filter((item) => activeStage === 'all' || getPOStage(item) === activeStage)
+      .filter((item) => !query || [item.mrNo, item.poNo, item.prNo, item.itemName, item.itemCode, item.selectedSupplier, item.department, paymentLabel(item)].some((value) => value?.toLocaleLowerCase('ko-KR').includes(query)))
+      .filter((item) => minimum === undefined || item.totalAmount >= minimum)
+      .filter((item) => maximum === undefined || item.totalAmount <= maximum)
+      .filter((item) => !dueDateFrom || (item.promisedDeliveryDate ?? item.dueDate) >= dueDateFrom)
+      .filter((item) => !dueDateTo || (item.promisedDeliveryDate ?? item.dueDate) <= dueDateTo)
+      .sort((left, right) => sortOrder === 'amount'
+        ? right.totalAmount - left.totalAmount
+        : sortOrder === 'due-date'
+          ? (left.promisedDeliveryDate ?? left.dueDate).localeCompare(right.promisedDeliveryDate ?? right.dueDate)
+          : right.mrNo.localeCompare(left.mrNo, 'ko-KR', { numeric: true }));
+  }, [activeStage, dueDateFrom, dueDateTo, maxAmount, minAmount, searchText, sortOrder, tabItems]);
+  const poCreationCandidates = poItems.filter((item) => !item.poCreated && (
+    item.pendingTask?.taskType === 'po_approval'
+    || (!isApiMode && item.supplierApprovalStatus === 'approved')
+  ));
+  const progressCount = poItems.filter((item) => !isPoComplete(item)).length;
+  const completedCount = poItems.filter(isPoComplete).length;
 
   const openScorecard = (item: POItem) => {
     setScorecardItem(item);
     setDraftScores({ ...item.scorecardScores, ...item.automaticScorecard?.scores });
   };
-
-  const closeScorecard = () => {
-    setScorecardItem(null);
-    setDraftScores({});
-  };
-
+  const closeScorecard = () => { setScorecardItem(null); setDraftScores({}); };
   const handleRequestPRClick = (item: POItem) => {
     onRequestPR(item.id);
-    if (!isApiMode) {
-      setEmailModalItem(item);
-    }
+    if (!isApiMode) setEmailModalItem(item);
   };
-
   const handleSupplierAcceptClick = (item: POItem) => {
     onSupplierAcceptOrder(item.id, 'accept');
     setEmailModalItem(null);
     setShowRejectInput(false);
   };
-
   const handleSupplierRejectSubmit = (item: POItem) => {
     if (!rejectReasonText.trim() || rejectReasonText.trim().length < 2) {
       alert('거절 사유를 2자 이상 입력해 주세요.');
@@ -255,354 +199,139 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
     setShowRejectInput(false);
     setRejectReasonText('');
   };
-
   const currentScorecardItem = poItems.find((item) => item.id === scorecardItem?.id) ?? scorecardItem;
   const automaticScorecard = currentScorecardItem?.automaticScorecard;
-  const isDraftComplete = SCORECARD_CRITERIA.every((criterion) => draftScores[criterion.key])
-    && automaticScorecard?.scores.leadTime != null;
-
-  // 수주 거절(pr_rejection_review) 대기 작업의 payload에는 백엔드가
-  // "이 거절된 공급사 말고 아직 견적을 제출한 다른 협력사가 남아있는지"
-  // (remaining_suppliers)와 "이 MR에서 지금까지 수주를 거절한 협력사
-  // 누적 이력"(rejected_suppliers)을 함께 내려준다. 후자는 여러 라운드에
-  // 걸쳐 재선택을 반복할 때 예전에 거절했던 협력사가 남은 후보에 다시
-  // 나타날 수 있어서(A거절->B선택->B도거절 시 remaining에 A가 재등장)
-  // 그런 협력사를 빨간 배지로 표시하는 데 쓴다.
+  const isDraftComplete = SCORECARD_CRITERIA.every((criterion) => draftScores[criterion.key]) && automaticScorecard?.scores.leadTime != null;
   const canReselectFromQuotations = selectedRejectReason?.pendingTask?.taskType === 'pr_rejection_review';
   const remainingQuotationSuppliers = useMemo<Array<{ name?: string; supplier?: string; reason?: string }>>(() => {
     if (!canReselectFromQuotations) return [];
-    const payload = selectedRejectReason?.pendingTask?.payload as Record<string, unknown> | undefined;
-    const raw = payload?.remaining_suppliers;
-    return Array.isArray(raw) ? (raw as Array<{ name?: string; supplier?: string; reason?: string }>) : [];
+    const raw = (selectedRejectReason?.pendingTask?.payload as Record<string, unknown> | undefined)?.remaining_suppliers;
+    return Array.isArray(raw) ? raw as Array<{ name?: string; supplier?: string; reason?: string }> : [];
   }, [canReselectFromQuotations, selectedRejectReason]);
   const previouslyRejectedSupplierKeys = useMemo<Set<string>>(() => {
-    const payload = selectedRejectReason?.pendingTask?.payload as Record<string, unknown> | undefined;
-    const raw = payload?.rejected_suppliers;
+    const raw = (selectedRejectReason?.pendingTask?.payload as Record<string, unknown> | undefined)?.rejected_suppliers;
     const keys = new Set<string>();
-    if (Array.isArray(raw)) {
-      (raw as Array<{ supplier?: string }>).forEach((entry) => {
-        if (entry?.supplier) keys.add(entry.supplier);
-      });
-    }
+    if (Array.isArray(raw)) (raw as Array<{ supplier?: string }>).forEach((entry) => { if (entry?.supplier) keys.add(entry.supplier); });
     return keys;
   }, [selectedRejectReason]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Top Banner Guide (Matching Screenshot 1 exactly) */}
-      <div
-        style={{
-          backgroundColor: '#e6f4ea',
-          border: '1px solid #ceead6',
-          borderRadius: '8px',
-          padding: '14px 20px',
-          fontSize: '13px',
-          color: '#137333',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}
-      >
-        <PackageCheck size={20} color="#137333" />
-        <span>
-          <strong>PO 발송 전 최종 승인부터 입고·대금결제·협력사 평가까지 관리합니다.</strong> ERPNext의 <strong>Purchase Receipt, Purchase Invoice, Payment Entry</strong>를 기준으로 진행상태를 자동 갱신합니다.
-        </span>
-      </div>
-
-      {/* 진행중 / 완료 탭 */}
-      <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--border)' }}>
-        <button
-          type="button"
-          onClick={() => setActiveTab('progress')}
-          style={{
-            padding: '10px 18px',
-            fontSize: '14px',
-            fontWeight: 700,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: activeTab === 'progress' ? 'var(--primary)' : 'var(--text-dim)',
-            borderBottom: activeTab === 'progress' ? '2px solid var(--primary)' : '2px solid transparent',
-          }}
-        >
-          진행중 &nbsp;{progressCount}
+    <div className="po-management-view">
+      <header className="po-management-heading">
+        <div><h2>PO 관리</h2><p>구매 요청(MR)부터 PO 발행, 입고까지 진행 현황을 확인할 수 있습니다.</p></div>
+        <button type="button" className="po-create-button" disabled={poCreationCandidates.length === 0} onClick={() => setShowCreatePOChooser(true)}>
+          <Plus size={17} /> PO 생성
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('completed')}
-          style={{
-            padding: '10px 18px',
-            fontSize: '14px',
-            fontWeight: 700,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: activeTab === 'completed' ? 'var(--primary)' : 'var(--text-dim)',
-            borderBottom: activeTab === 'completed' ? '2px solid var(--primary)' : '2px solid transparent',
-          }}
-        >
-          완료 &nbsp;{completedCount}
+      </header>
+      <div className="po-list-tabs" role="tablist" aria-label="PO 처리 구분">
+        <button type="button" role="tab" aria-selected={activeTab === 'in-progress'} className={activeTab === 'in-progress' ? 'is-active' : ''} onClick={() => { setActiveTab('in-progress'); setActiveStage('all'); }}>
+          진행중 <span>{progressCount}</span>
+        </button>
+        <button type="button" role="tab" aria-selected={activeTab === 'completed'} className={activeTab === 'completed' ? 'is-active' : ''} onClick={() => { setActiveTab('completed'); setActiveStage('all'); }}>
+          완료 <span>{completedCount}</span>
         </button>
       </div>
 
       {/* PO Management Table */}
+      <div className="po-list-toolbar">
+        <div className="po-stage-filters" aria-label="진행 상태 필터">
+          <button type="button" className={`po-stage-filter ${activeStage === 'all' ? 'is-active' : ''}`} aria-pressed={activeStage === 'all'} onClick={() => setActiveStage('all')}>전체 <span>{tabItems.length}</span></button>
+          {PO_STAGES.map(({ key, label }) => <button type="button" key={key} className={`po-stage-filter ${activeStage === key ? 'is-active' : ''}`} aria-pressed={activeStage === key} onClick={() => setActiveStage(key)}><span className={`po-stage-dot ${stageClass(key)}`} />{label} <span>{stageCounts[key]}</span></button>)}
+        </div>
+        <div className="po-toolbar-actions">
+          <label className="po-sort-select"><span className="sr-only">PO 정렬</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)}><option value="latest">요청 최신순</option><option value="due-date">납기 임박순</option><option value="amount">발주 금액순</option></select><ChevronDown size={15} aria-hidden="true" /></label>
+          <button type="button" className={`po-filter-button ${searchOpen ? 'is-active' : ''}`} aria-label="PO 검색 필터" aria-expanded={searchOpen} onClick={() => { setSearchOpen((open) => !open); if (searchOpen) setSearchText(''); }}><Filter size={17} /></button>
+        </div>
+      </div>
+      {searchOpen && (
+        <div className="po-search-panel">
+          <label className="po-search-field"><span className="sr-only">MR, 품목, 협력사 검색</span><input autoFocus value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="MR, PO, 품목, 협력사, 결제 상태 검색" /></label>
+          <div className="po-range-filters">
+            <label className="po-range-field">발주 금액 <span><input type="number" min="0" value={minAmount} onChange={(event) => setMinAmount(event.target.value)} placeholder="최소" aria-label="최소 발주 금액" /><input type="number" min="0" value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} placeholder="최대" aria-label="최대 발주 금액" /></span></label>
+            <label className="po-range-field">납기일 <span><input type="date" value={dueDateFrom} onChange={(event) => setDueDateFrom(event.target.value)} aria-label="납기 시작일" /><input type="date" value={dueDateTo} onChange={(event) => setDueDateTo(event.target.value)} aria-label="납기 종료일" /></span></label>
+            <button type="button" className="po-filter-reset" onClick={() => { setSearchText(''); setMinAmount(''); setMaxAmount(''); setDueDateFrom(''); setDueDateTo(''); setActiveStage('all'); }}>초기화</button>
+          </div>
+        </div>
+      )}
       <SmartTableContainer>
-        <table
-          className="custom-table configurable-table"
-          style={{ width: `${tableState.totalWidth}px`, minWidth: '100%' }}
-        >
-          <colgroup>
-            {PO_COLUMNS.map((column) => (
-              <col key={column.key} style={{ width: tableState.widths[column.key] }} />
-            ))}
-          </colgroup>
-          <thead>
-            <tr>
-              {PO_COLUMNS.map((column) => (
-                <ExcelColumnHeader
-                  key={column.key}
-                  columnKey={column.key}
-                  label={column.label}
-                  width={tableState.widths[column.key]}
-                  minWidth={column.minWidth}
-                  align={column.align}
-                  values={poFilterOptions[column.key]}
-                  selectedValues={column.filterMode ? undefined : tableState.filters[column.key]}
-                  onFilterChange={(selected) => tableState.setFilter(column.key, selected)}
-                  filterMode={column.filterMode}
-                  rangeValue={rangeFilters[column.key]}
-                  onRangeFilterChange={(range) => setRangeFilters((current) => {
-                    const next = { ...current };
-                    if (range) next[column.key] = range;
-                    else delete next[column.key];
-                    return next;
-                  })}
-                  onResizeStart={(event) => tableState.beginResize(column.key, event)}
-                  activeSort={sortColumn === column.key ? sortDirection : undefined}
-                  onSort={(direction) => { setSortColumn(column.key); setSortDirection(direction); }}
-                />
-              ))}
-            </tr>
-          </thead>
+        <table className="custom-table po-management-table">
+          <thead><tr><th>구매 건</th><th>상태 / 진행</th><th>PO</th><th>납기일정</th></tr></thead>
           <tbody>
-            {tabFilteredPOItems.map((item, rowIndex) => (
-              <React.Fragment key={item.id}>
-                {movePlaceholders
-                  .filter((placeholder) => placeholder.index === rowIndex)
-                  .map((placeholder) => (
-                    <StageMovePlaceholderRow
-                      key={placeholder.id}
-                      placeholder={placeholder}
-                      colSpan={7}
-                      onNavigate={onNavigateMovePlaceholder}
-                      onDismiss={onDismissMovePlaceholder}
-                    />
-                  ))}
-                <tr className={`workflow-transition-${item.transitionPhase ?? 'stable'}`}>
-                {/* PO 번호 */}
-                <td>
-                  {item.poCreated ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>
-                        {item.poNo}
-                      </span>
-                      {item.createdDate && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>{item.createdDate}</span>
-                      )}
-                    </div>
-                  ) : (
-                    <span style={{ fontFamily: 'monospace', color: 'var(--text-dim)' }}>발주 대기</span>
-                  )}
-                </td>
-                {/* MR 번호 */}
-                <td>
-                  <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>
-                    {item.mrNo}
-                  </span>
-                </td>
-                {/* 품목명 및 아이템코드 (클릭 시 MR/PR 상세 확인) */}
-                <td>
-                  <button
-                    className="spec-clickable-btn"
-                    onClick={() => setSelectedMRDetail(item)}
-                    title="클릭 시 발주금액·약정납기일·실제수령일·수량 등 상세 확인"
-                  >
-                    <FileText size={13} />
-                    <span>
-                      {item.itemName} ({item.itemCode})
-                    </span>
-                  </button>
-                  <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: '3px' }}>
-                    상세보기 (금액·납기·수령일·수량)
-                  </div>
-                </td>
-                {/* 협력사 (선정된 공급사명 + 이메일) */}
-                <td>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
-                      {item.selectedSupplier || '협력사 미지정'}
-                    </span>
-                    {item.supplierEmail && (
-                      <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-                        {item.supplierEmail}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td>
-                  {item.paymentStatus === 'PAID' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                      <span className="badge badge-green">
-                        <CheckCircle2 size={12} /> 결제 완료
-                      </span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-                        {item.lastPaymentDate ?? item.latestInvoiceName ?? ''}
-                      </span>
-                    </div>
-                  ) : item.paymentStatus === 'PARTIALLY_PAID' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                      <span className="badge badge-yellow">
-                        <CircleDollarSign size={12} /> 부분 결제
-                      </span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-                        ₩{(item.paidAmount ?? 0).toLocaleString()} / ₩{(item.invoiceTotal ?? 0).toLocaleString()}
-                      </span>
-                    </div>
-                  ) : item.paymentStatus === 'UNPAID' ? (
-                    <span className="badge badge-yellow">
-                      <Clock size={12} /> 결제 대기
-                    </span>
-                  ) : (
-                    <span className="badge badge-gray">
-                      <FileText size={12} /> 매입송장 대기
-                    </span>
-                  )}
-                </td>
-                {/* 현재 단계 - 상태 배지/에러만. 실제로 클릭하는 버튼은 전부
-                    바로 다음 '다음 행동' 컬럼으로 옮겼다(예전엔 이 셀 하나에
-                    배지+버튼이 전부 쌓여 있었음 - 구매팀 피드백). */}
-                <td>
-                  <div className="mr-stage-cell">
-                    {(() => {
-                      const progress = getOverallProgress(item);
-                      return (
-                        <span className={`badge ${progress.className}`}>
-                          {progress.label}
-                        </span>
-                      );
-                    })()}
-                    {item.pendingTask?.taskType === 'po_creation_failed' && item.workflowError && (
-                      <span
-                        className={`mr-workflow-error is-clickable${expandedErrors.has(item.id) ? ' is-expanded' : ''}`}
-                        title={item.workflowError}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => toggleErrorExpanded(item.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            toggleErrorExpanded(item.id);
-                          }
-                        }}
-                      >
-                        {item.workflowError}
-                      </span>
-                    )}
-                    {item.poCreated && !item.arrived && (
-                      <span className={item.deliveryStatus === 'PARTIAL' ? 'badge badge-yellow' : 'badge badge-gray'}>
-                        <Clock size={12} /> {item.deliveryStatus === 'PARTIAL'
-                          ? `부분 입고 ${item.receivedQty ?? 0}/${item.orderedQty ?? 0}`
-                          : 'Purchase Receipt 입고 대기'}
-                      </span>
-                    )}
-                    {item.scorecardCompleted && (
-                      <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        <CheckCircle2 size={12} /> 평가 완료
-                        {item.scorecardScores && ` · 평균 ${getScoreAverage(item.scorecardScores).toFixed(1)}점`}
-                        {item.scorecardScores && item.scorecardScores.price == null && ' (가격 제외)'}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                {/* 다음 행동 - 바이어가 실제로 클릭해서 처리하는 것만 여기
-                    있다. 입고 확인/대금결제는 ERPNext(Purchase Receipt,
-                    Purchase Invoice, Payment Entry) 웹훅으로 자동 갱신되고
-                    이 화면에서 직접 처리하는 버튼이 없으므로(위 배너 문구
-                    그대로) 여기에도 나타나지 않는다 - "목업: 입고 웹훅 수신"
-                    버튼은 실제 서비스(isApiMode)에서는 아예 렌더링되지 않는
-                    데모 전용 버튼이다. */}
-                <td>
-                  <div className="mr-stage-cell">
-                    {item.pendingTask?.taskType === 'po_creation_failed' && onAnswerTask && (
-                      <WorkflowInterruptForm task={item.pendingTask} onSubmit={onAnswerTask} />
-                    )}
-                    {!item.poCreated && item.pendingTask?.taskType === 'order_start' && (
-                      <button className="btn-sm btn-primary" onClick={() => onStartOrder(item.id)}>
-                        <Send size={14} />
-                        <span>발주 시작</span>
-                      </button>
-                    )}
-                    {!item.poCreated && (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') && (
-                      <button className="btn-sm btn-primary" onClick={() => handleRequestPRClick(item)}>
-                        <ShoppingCart size={14} />
-                        <span>PR 요청</span>
-                      </button>
-                    )}
-                    {/* ⚠️ 위 '현재 단계' 컬럼이 이미 'PR 요청 · 수주접수 대기'
-                        배지를 보여주고 있으므로, 여기서는 그 상태에서 취할 수
-                        있는 액션(이메일/수주접수 버튼)만 보여준다. */}
-                    {!item.poCreated && (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') && !isApiMode && (
-                      <button className="btn-sm btn-outline" onClick={() => setEmailModalItem(item)}>
-                        <Mail size={12} />
-                        <span>이메일/수주접수</span>
-                      </button>
-                    )}
-                    {!item.poCreated && (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') && (
-                      <button
-                        className="btn-sm btn-reject"
-                        onClick={() => { setSelectedRejectReason(item); setShowReselectList(false); }}
-                      >
-                        <AlertTriangle size={14} />
-                        <span>수주 거절 사유</span>
-                      </button>
-                    )}
-                    {!item.poCreated && item.pendingTask?.taskType === 'po_approval' && (
-                      <button className="btn-sm btn-primary" onClick={() => setApprovalModalItem(item)}>
-                        <ShoppingCart size={14} />
-                        <span>PO 발송 최종 승인</span>
-                      </button>
-                    )}
-                    {item.poCreated && !item.arrived && !isApiMode && (
-                      <button className="btn-sm btn-outline" onClick={() => onMarkArrived(item.id)}>
-                        <PackageCheck size={14} />
-                        <span>목업: 입고 웹훅 수신</span>
-                      </button>
-                    )}
-                    {item.poCreated && item.arrived && !item.scorecardCompleted && (
-                      <button className="btn-sm btn-primary" onClick={() => openScorecard(item)}>
-                        <ClipboardList size={14} />
-                        <span>Supplier Scorecard 작성</span>
-                      </button>
-                    )}
-                  </div>
-                </td>
-                </tr>
-              </React.Fragment>
-            ))}
+            {visiblePOItems.map((item, rowIndex) => {
+              const stage = getPOStage(item);
+              const stageIndex = stage === 'reply' || stage === 'rejected' ? 0 : stage === 'po' ? 1 : stage === 'receipt-wait' ? 2 : 3;
+              const dueDate = item.promisedDeliveryDate ?? item.dueDate;
+              return (
+                <React.Fragment key={item.id}>
+                  {movePlaceholders.filter((placeholder) => placeholder.index === rowIndex).map((placeholder) => <StageMovePlaceholderRow key={placeholder.id} placeholder={placeholder} colSpan={4} onNavigate={onNavigateMovePlaceholder} onDismiss={onDismissMovePlaceholder} />)}
+                  <tr className={`workflow-transition-${item.transitionPhase ?? 'stable'}`}>
+                    <td>
+                      <div className="po-purchase-cell">
+                        <button type="button" className="po-mr-link" onClick={() => setSelectedMRDetail(item)} title="MR 기본 정보와 선정 협력사 확인">{item.mrNo}</button>
+                        <span className="po-item-summary">{item.itemName}{item.itemCode ? ` · ${item.itemCode}` : ''}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="po-workflow-cell">
+                        <div className="po-state-line">
+                          <span className={`po-state-badge ${stageClass(stage)}`}><span className="po-stage-dot" />{stageLabel(stage)}</span>
+                          {stage === 'receipt-wait' && item.deliveryStatus === 'PARTIAL' && <span className="po-inline-note">부분 입고 {item.receivedQty ?? 0}/{item.orderedQty ?? 0}</span>}
+                        </div>
+                        {item.pendingTask?.taskType === 'po_creation_failed' && item.workflowError && (
+                          <button type="button" className={`mr-workflow-error is-clickable${expandedErrors.has(item.id) ? ' is-expanded' : ''}`} title={item.workflowError} onClick={() => toggleErrorExpanded(item.id)}>
+                            {item.workflowError}
+                          </button>
+                        )}
+                        <div className={`po-progress-track stage-${stage} ${stage === 'rejected' ? 'has-rejection' : ''}`} aria-label={`진행 단계: ${stageLabel(stage)}`}>
+                          {PO_PROGRESS_STEPS.map((label, index) => (
+                            <div key={label} className={`po-progress-step ${index < stageIndex || isPOCompleted(item) ? 'is-complete' : ''} ${index === stageIndex && !isPOCompleted(item) ? 'is-current' : ''} ${stage === 'rejected' && index === 0 ? 'is-rejected' : ''}`}>
+                              <span className="po-progress-node" /><span className="po-progress-label">{label}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="po-row-actions">
+                          {item.pendingTask?.taskType === 'po_creation_failed' && onAnswerTask && <WorkflowInterruptForm task={item.pendingTask} onSubmit={onAnswerTask} />}
+                          {!item.poCreated && item.pendingTask?.taskType === 'order_start' && <button className="btn-sm btn-primary" onClick={() => onStartOrder(item.id)}><Send size={13} />발주 시작</button>}
+                          {!item.poCreated && (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') && <button className="btn-sm btn-primary" onClick={() => handleRequestPRClick(item)}><ShoppingCart size={13} />PR 요청</button>}
+                          {!item.poCreated && (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') && !isApiMode && <button className="btn-sm btn-outline" onClick={() => setEmailModalItem(item)}><Mail size={12} />이메일/수주접수</button>}
+                          {!item.poCreated && (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') && <button className="btn-sm btn-reject" onClick={() => { setSelectedRejectReason(item); setShowReselectList(false); }}><AlertTriangle size={13} />사유 보기</button>}
+                          {!item.poCreated && item.prStatus === 'PO_FAILED' && <button className="btn-sm btn-reject" onClick={() => setSelectedRejectReason(item)}><AlertTriangle size={13} />PO 오류 확인</button>}
+                          {!item.poCreated && item.pendingTask?.taskType === 'po_approval' && <button className="btn-sm btn-primary" onClick={() => setApprovalModalItem(item)}><ShoppingCart size={13} />PO 발송 최종 승인</button>}
+                          {item.poCreated && !item.arrived && !isApiMode && <button className="btn-sm btn-outline" onClick={() => onMarkArrived(item.id)}><PackageCheck size={13} />목업 입고 확인</button>}
+                          {item.poCreated && item.arrived && !item.scorecardCompleted && <button className="btn-sm btn-primary" onClick={() => openScorecard(item)}><ClipboardList size={13} />평가하기</button>}
+                          {item.scorecardCompleted && <span className="po-score-summary"><CheckCircle2 size={13} />평가 완료{item.scorecardScores && ` · 평균 ${getScoreAverage(item.scorecardScores).toFixed(1)}점`}{item.scorecardScores?.price == null && ' (가격 제외)'}</span>}
+                          {!item.poCreated && stage === 'reply' && !item.pendingTask?.taskType && item.prStatus !== 'SENT' && <span className="po-inline-note">PR 회신 대기</span>}
+                          {!item.poCreated && stage === 'po' && item.prStatus === 'ACCEPTED' && <span className="po-inline-note">수주 접수 · PO 생성 처리 중</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td><span className={item.poNo ? 'po-number' : 'po-number is-empty'}>{item.poNo ?? '—'}</span>{item.createdDate && <span className="po-created-date">{formatShortDate(item.createdDate)}</span>}</td>
+                    <td>
+                      <div className="po-date-cell">
+                        <span className={item.isUrgent ? 'po-date-urgent' : ''}>{formatShortDate(dueDate)}</span>
+                        {item.isUrgent && <span className="po-urgent-badge">긴급</span>}
+                        {(item.fullReceiptDate ?? item.arrivedDate) && <span className="po-receipt-date">입고 {formatShortDate(item.fullReceiptDate ?? item.arrivedDate)}</span>}
+                        {item.deliveryStatus === 'PARTIAL' && item.firstReceiptDate && <span className="po-receipt-date">부분 입고 {formatShortDate(item.firstReceiptDate)}</span>}
+                      </div>
+                    </td>
+                  </tr>
+                </React.Fragment>
+              );
+            })}
             {movePlaceholders
-              .filter((placeholder) => placeholder.index >= tabFilteredPOItems.length)
+              .filter((placeholder) => placeholder.index >= visiblePOItems.length)
               .map((placeholder) => (
                 <StageMovePlaceholderRow
                   key={placeholder.id}
                   placeholder={placeholder}
-                  colSpan={7}
+                  colSpan={4}
                   onNavigate={onNavigateMovePlaceholder}
                   onDismiss={onDismissMovePlaceholder}
                 />
               ))}
-            {tabFilteredPOItems.length === 0 && movePlaceholders.length === 0 && (
+            {visiblePOItems.length === 0 && movePlaceholders.length === 0 && (
               <tr>
-                <td colSpan={7} className="table-empty-state">
+                <td colSpan={4} className="table-empty-state">
                   {activeTab === 'completed' ? '완료된 건이 없습니다.' : '발주 시작 또는 입고 진행 중인 건이 없습니다.'}
                 </td>
               </tr>
@@ -610,6 +339,8 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           </tbody>
         </table>
       </SmartTableContainer>
+
+      {showCreatePOChooser && <div className="modal-overlay" onClick={() => setShowCreatePOChooser(false)}><div className="modal-content" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><ShoppingCart size={20} /><h3>PO 생성 대상</h3></div><button type="button" className="icon-btn" onClick={() => setShowCreatePOChooser(false)}><X size={18} /></button></div><div className="modal-body">{poCreationCandidates.map((item) => <button type="button" className="po-create-candidate" key={item.id} onClick={() => { setApprovalModalItem(item); setShowCreatePOChooser(false); }}><span><strong>{item.mrNo}</strong><small>{item.itemName} · {item.selectedSupplier}</small></span><ChevronDown size={16} /></button>)}</div><div className="modal-footer"><button type="button" className="btn-outline" onClick={() => setShowCreatePOChooser(false)}>닫기</button></div></div></div>}
 
       {/* ========================================================================= */}
       {/* 공급사 발송 메일 및 수주접수 미리보기 Modal */}
@@ -777,6 +508,17 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                       ₩{(selectedMRDetail.paidAmount ?? 0).toLocaleString()}
                       {selectedMRDetail.invoiceTotal ? ` / ₩${selectedMRDetail.invoiceTotal.toLocaleString()}` : ''}
                     </strong>
+                  </div>
+                  <div className={`po-detail-payment ${selectedMRDetail.paymentStatus === 'PAID' ? 'is-paid' : selectedMRDetail.paymentStatus === 'PARTIALLY_PAID' ? 'is-partial' : ''}`}>
+                    {selectedMRDetail.paymentStatus === 'PAID'
+                      ? <CheckCircle2 size={14} />
+                      : selectedMRDetail.paymentStatus === 'PARTIALLY_PAID'
+                        ? <CircleDollarSign size={14} />
+                        : <Clock size={14} />}
+                    <span>{paymentLabel(selectedMRDetail)}</span>
+                    {selectedMRDetail.paymentStatus === 'PARTIALLY_PAID' && (
+                      <strong>₩{(selectedMRDetail.paidAmount ?? 0).toLocaleString()} / ₩{(selectedMRDetail.invoiceTotal ?? 0).toLocaleString()}</strong>
+                    )}
                   </div>
                 </div>
               )}

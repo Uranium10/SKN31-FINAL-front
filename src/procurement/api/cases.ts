@@ -1048,6 +1048,7 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     referencePO: text(directBasis.reference_po) || undefined,
     referenceUnitPrice: directUnitPrice || undefined,
     dueDate: request.dueDate,
+    isUrgent: request.isUrgent,
     supplierApprovalStatus: 'approved',
     prStatus,
     prRejectionReason: text(values.pr_rejection_reason) || undefined,
