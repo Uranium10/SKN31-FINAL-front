@@ -986,6 +986,8 @@
 }
 .btn-outline:hover { border-color: var(--text-muted); color: #fff; }
 
+.row-action-menu-item:hover:not(:disabled) { background-color: var(--bg-input); }
+
 /* Table Styles (Used in Item Register, MR List, PO Management) */
 .table-container {
   background-color: var(--bg-card);
