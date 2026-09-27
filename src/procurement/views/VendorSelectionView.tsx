@@ -194,6 +194,7 @@ interface VendorSelectionViewProps {
     deadlineTime: string,
   ) => Promise<boolean> | boolean;
   onCheckQuotations: (groupId: string) => Promise<boolean> | boolean;
+  onAutoReview: (groupId: string) => Promise<boolean> | boolean;
   onDownloadAttachment?: (attachment: MaterialRequest['attachmentFiles'][number]) => void;
   /** '협력사 직접 입력' 자동완성 드롭다운 - 이름/이메일 각 입력란에서 기존
    * supplier 풀을 필드별로 검색한다(field='name'이면 이름만, 'email'이면
@@ -334,6 +335,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onExtendDeadline,
   onSendRFQ,
   onCheckQuotations,
+  onAutoReview,
   onDownloadAttachment,
   onSearchSuppliers,
   onLoadSupplierEvaluations,
@@ -945,6 +947,19 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setIsAnalyzingQuotations(true);
     try {
       await onCheckQuotations(group.id);
+    } finally {
+      setIsAnalyzingQuotations(false);
+    }
+  };
+
+  // '자동 진행 판정' - 평가·순위·조건 판정을 지금 한 번 돌린다. 조건을 모두
+  // 통과하면 선정·발주까지 이어지고, 하나라도 걸리면 이유만 남기고 멈춘다.
+  // 회신 새로 확인과 같은 대기 작업을 쓰므로 동시에 두 번 보내지 않는다.
+  const handleAutoReview = async (group: VendorSelectionGroup) => {
+    if (isAnalyzingQuotations) return;
+    setIsAnalyzingQuotations(true);
+    try {
+      await onAutoReview(group.id);
     } finally {
       setIsAnalyzingQuotations(false);
     }
@@ -1563,6 +1578,20 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     </span>
                   ),
                   onClick: () => { void handleCheckQuotations(group); },
+                  disabled: isAnalyzingQuotations,
+                });
+                // 마감이 지났는지, 마감 전 제출분 처리가 끝났는지는 서버가
+                // 판정한다. 조건을 모두 통과하면 선정·발주까지 이어지고,
+                // 걸리면 이유만 AI 판단 기록에 남기고 사람에게 넘어간다.
+                overflowItems.push({
+                  key: 'auto-review',
+                  label: (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <Sparkles size={13} /> 자동 진행 판정 (조건 맞으면 선정까지)
+                    </span>
+                  ),
+                  onClick: () => { void handleAutoReview(group); },
+                  disabled: isAnalyzingQuotations,
                 });
               }
 

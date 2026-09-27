@@ -1268,6 +1268,36 @@ function ProcurementWorkspaceComponent({
     }
   };
 
+  // '자동 진행 판정' - 지금 시점의 견적 상태를 평가·순위 산정하고 자동 진행
+  // 조건을 판정해서 기록한다. 조건을 모두 통과하면 그대로 선정·발주까지 가고,
+  // 하나라도 걸리면 그 이유를 남기고 사람에게 넘긴다(견적을 확정하지 않는다).
+  //
+  // ⚠️ 판정 시점(마감이 지났는가, 마감 전 제출분 처리가 끝났는가)은 서버가
+  // 정한다. 화면이 그걸 주장할 수 있게 하면 마감 전에도 자동으로 닫힌다.
+  const handleAutoReview = async (groupId: string) => {
+    const group = vendorGroups.find((entry) => entry.id === groupId);
+    if (!apiDataEnabled || !group?.pendingTaskId) {
+      showToast('현재 단계에 판정할 수 있는 견적 작업이 없습니다. 목록을 새로고침해 주세요.');
+      return false;
+    }
+    try {
+      await answerProcurementTask(
+        group.pendingTaskId,
+        { decision: 'auto' },
+        group.pendingTask?.version,
+      );
+      clearNotificationsForMR(group.mrNo);
+      showToast(
+        `${group.mrNo} 자동 진행 조건을 판정합니다. 결과와 이유는 AI 판단 기록에 남고, 조건을 모두 통과하면 선정까지 진행됩니다.`,
+      );
+      await loadMRsFromApi(false);
+      return true;
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '자동 진행 판정에 실패했습니다.');
+      return false;
+    }
+  };
+
   // 견적 마감이 지났는데 아직 업체를 선정하지 않은 상태에서 '재비딩'을
   // 선택했을 때 - handleCheckQuotations와 같은 check_quotations 대기
   // 작업(pendingTask)에 { decision: 'rebid' }를 보낸다. 지금까지 들어온
@@ -2243,6 +2273,7 @@ function ProcurementWorkspaceComponent({
                 onExtendDeadline={handleExtendDeadline}
                 onSendRFQ={handleSendRFQ}
                 onCheckQuotations={handleCheckQuotations}
+                onAutoReview={handleAutoReview}
                 onDownloadAttachment={(attachment) => void handleDownloadAttachment(attachment)}
                 onSearchSuppliers={handleSearchSuppliers}
                 onLoadSupplierEvaluations={apiDataEnabled ? getSupplierEvaluations : undefined}
