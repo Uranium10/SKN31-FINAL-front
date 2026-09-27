@@ -47,9 +47,7 @@ import {
   isDirectPurchaseOrderStart,
   listProcurementCases,
   rejectProcurementCase,
-  runAutomationScan,
   searchSuppliers,
-  setAutomationHold,
   getSupplierEvaluations,
   startProcurementCase,
   syncDraftProcurementCases,
@@ -1542,43 +1540,6 @@ function ProcurementWorkspaceComponent({
     return true;
   };
 
-  /** 10분 주기 스캔을 기다리지 않고 이 건의 자동 진행 판정을 지금 돌린다. */
-  const handleRunAutomationScan = async (groupId: string) => {
-    const group = vendorGroups.find((row) => row.id === groupId);
-    const caseId = group?.backendCaseId;
-    if (!group || !caseId) return false;
-    try {
-      const result = await runAutomationScan(caseId);
-      showToast(`${group.mrNo} · ${result.message}`);
-      await loadMRsFromApi(false, true);
-      return true;
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '자동 진행 판정에 실패했습니다.');
-      return false;
-    }
-  };
-
-  /** 자동 진행 보류/재개. 워크플로를 깨우지 않고 케이스에만 표시한다. */
-  const handleSetAutomationHold = async (groupId: string, hold: boolean) => {
-    const group = vendorGroups.find((row) => row.id === groupId);
-    const caseId = group?.backendCaseId;
-    if (!group || !caseId) return false;
-    try {
-      const result = await setAutomationHold(caseId, hold);
-      setVendorGroups((previous) => previous.map((row) => (
-        row.id === groupId ? { ...row, automationHold: result } : row
-      )));
-      showToast(hold
-        ? `${group.mrNo} 자동 진행을 멈췄습니다. 재개할 때까지 선정하지 않습니다.`
-        : `${group.mrNo} 자동 진행을 다시 시작합니다.`);
-      await loadMRsFromApi(false, true);
-      return true;
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '자동 진행 상태를 바꾸지 못했습니다.');
-      return false;
-    }
-  };
-
   const handleSendPO = async (groupId: string) => {
     const selectedGroup = vendorGroups.find((group) => group.id === groupId);
     const supplierId = selectedGroup?.selectedSupplierId;
@@ -2214,7 +2175,6 @@ function ProcurementWorkspaceComponent({
                   <DashboardView
                     requests={dashboardRequests}
                     poItems={activePOItems}
-                    vendorGroups={vendorGroups}
                     onApprove={apiDataEnabled ? handleStartSubstituteCheck : handleApproveRequest}
                     onOpenRejectModal={(id, mrNo) => setRejectingItem({ id, mrNo })}
                     onOpenSpecModal={handleOpenSpecByItemCode}
@@ -2275,8 +2235,6 @@ function ProcurementWorkspaceComponent({
                 onNavigateMovePlaceholder={navigateStageMovePlaceholder}
                 requests={uniqueRequests}
                 onSelectSupplier={handleSelectSupplier}
-                onSetAutomationHold={handleSetAutomationHold}
-                onRunAutomationScan={handleRunAutomationScan}
                 onSendPO={handleSendPO}
                 onWithdrawSupplierSelection={handleWithdrawSupplierSelection}
                 onCancelMR={handleCancelMrFromVendorSelection}

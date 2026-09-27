@@ -23,7 +23,6 @@ import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
 import { RowActionMenu, type RowActionMenuItem } from '../components/RowActionMenu';
 import { QuotationScoreBreakdown } from '../components/QuotationScoreBreakdown';
-import { ExceptionDecisionModal } from '../components/ExceptionDecisionModal';
 import {
   matchesTableRange,
   normalizeTableFilterValue,
@@ -185,10 +184,6 @@ interface VendorSelectionViewProps {
   /** 같은 상태에서 '재비딩'을 선택했을 때 - 지금까지 들어온 견적은 버리고
    * 새 마감일로 RFQ를 다시 보낼 수 있도록 RFQ 대상 선택 단계로 되돌린다. */
   onRebidQuotations: (groupId: string) => Promise<boolean> | boolean;
-  /** 자동 진행을 멈추거나 다시 푼다. */
-  onSetAutomationHold?: (groupId: string, hold: boolean) => Promise<boolean> | boolean;
-  /** 주기 스캔을 기다리지 않고 지금 자동 진행 판정을 돌린다. */
-  onRunAutomationScan?: (groupId: string) => Promise<boolean> | boolean;
   onOpenSpecModalByItemCode: (itemCode: string) => void;
   onExtendDeadline: (groupId: string, newDate: string, newTime: string) => Promise<boolean> | boolean;
   onSendRFQ: (
@@ -336,8 +331,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onWithdrawSupplierSelection,
   onCancelMR,
   onRebidQuotations,
-  onSetAutomationHold,
-  onRunAutomationScan,
   onExtendDeadline,
   onSendRFQ,
   onCheckQuotations,
@@ -491,9 +484,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundsGroup, activeRoundIndex, onFetchRfqRoundQuotations]);
   const [isRebidding, setIsRebidding] = useState<string | null>(null);
-  // 자동 진행이 조건에 걸려 멈춘 건을 결정하는 화면.
-  const [exceptionGroup, setExceptionGroup] = useState<VendorSelectionGroup | null>(null);
-  const [holdingGroupId, setHoldingGroupId] = useState<string | null>(null);
   const [selectingSupplierId, setSelectingSupplierId] = useState<string | null>(null);
   const [resultModal, setResultModal] = useState<{
     title: string;
@@ -943,53 +933,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     const preselected = group.quotations.find((q) => q.supplierId === group.selectedSupplierId);
     setSelectedQuotationKey(preselected ? quotationRowKey(preselected) : null);
     setShowQuotationModal(true);
-  };
-
-  // ⚠️ 판정은 단계마다 남는다. RFQ 발송 단계에서 내린 판정이 상태에 그대로
-  // 남아 있으므로, 최종 선정이 멈춘 것처럼 보이지 않으려면 어느 단계의
-  // 판정인지(node) 반드시 확인해야 한다.
-  const selectionVerdict = (group: VendorSelectionGroup) => (
-    group.autoProgress?.node === 'auto_final_selection' ? group.autoProgress : undefined
-  );
-
-  // 자동 진행이 조건에 걸려 실제로 멈춘 건인지. 기록만 하는 섀도 모드에서는
-  // 사람이 원래대로 처리하면 되므로 '결정 필요'로 몰아붙이지 않는다.
-  const isAutoBlocked = (group: VendorSelectionGroup): boolean => {
-    const verdict = selectionVerdict(group);
-    return Boolean(
-      verdict
-      && verdict.enabled
-      && verdict.mode === 'on'
-      && !verdict.allowed
-      && !group.automationHold?.held
-      && !group.selectedSupplierId,
-    );
-  };
-
-  // 조건을 통과해 사람 없이 굴러가는 중인지.
-  const isAutoRunning = (group: VendorSelectionGroup): boolean => {
-    const verdict = selectionVerdict(group);
-    return Boolean(
-      verdict && verdict.enabled && verdict.mode === 'on' && verdict.allowed
-      && !group.automationHold?.held,
-    );
-  };
-
-  // 섀도 모드의 판정 - 실제 동작은 지금까지와 같고, "자동이었다면 어땠을지"만
-  // 알려준다. 임계값이 맞는지 판단하는 근거가 된다.
-  const shadowVerdict = (group: VendorSelectionGroup) => {
-    const verdict = selectionVerdict(group);
-    return verdict && verdict.enabled && verdict.mode === 'shadow' ? verdict : undefined;
-  };
-
-  const handleToggleHold = async (group: VendorSelectionGroup, hold: boolean) => {
-    if (!onSetAutomationHold || holdingGroupId) return;
-    setHoldingGroupId(group.id);
-    try {
-      await onSetAutomationHold(group.id, hold);
-    } finally {
-      setHoldingGroupId((current) => (current === group.id ? null : current));
-    }
   };
 
   // '회신 새로 확인 · 남은 견적 분석' - 견적은 도착할 때마다 백엔드가
@@ -1568,35 +1511,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               // 그 중에서 지금 이 행에서 가장 먼저 해야 할 일(또는 진짜
               // 갈림길이 있으면 둘)만 고르는 것 - 나머지는 전부 ⋯로.
               const overflowItems: RowActionMenuItem[] = [];
-              // 자동으로 굴러가는 건이라도 "잠깐, 이건 내가 볼래"가 가능해야
-              // 한다. 보류는 워크플로 상태가 아니라 케이스에 걸리므로 멈춰
-              // 있는 동안에도 걸 수 있다.
-              if (onSetAutomationHold && !hasSelection && group.autoProgress?.enabled
-                  && group.autoProgress.mode !== 'off') {
-                overflowItems.push(
-                  group.automationHold?.held
-                    ? {
-                        key: 'resume-automation',
-                        label: '자동 진행 재개',
-                        disabled: holdingGroupId === group.id,
-                        onClick: () => { void handleToggleHold(group, false); },
-                      }
-                    : {
-                        key: 'hold-automation',
-                        label: '자동 진행 보류',
-                        disabled: holdingGroupId === group.id,
-                        onClick: () => { void handleToggleHold(group, true); },
-                      },
-                );
-              }
-              if (onRunAutomationScan && !hasSelection && group.rfqSent
-                  && group.autoProgress?.enabled !== false) {
-                overflowItems.push({
-                  key: 'run-automation-scan',
-                  label: '자동 진행 지금 확인',
-                  onClick: () => { void onRunAutomationScan(group.id); },
-                });
-              }
               if (hasSelection && group.supplierApprovalStatus === 'pending') {
                 overflowItems.push({
                   key: 'change-selection',
@@ -1729,33 +1643,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           </button>
                         );
                       })()}
-                      {group.automationHold?.held ? (
-                        <span
-                          className="badge badge-yellow"
-                          style={{ fontSize: '10px' }}
-                          title={group.automationHold.reason
-                            ? `보류 사유: ${group.automationHold.reason}`
-                            : '담당자가 자동 진행을 멈춰 뒀습니다.'}
-                        >
-                          보류 중
-                        </span>
-                      ) : isAutoBlocked(group) ? (
-                        <span className="badge badge-red" style={{ fontSize: '10px' }} title={group.autoProgress?.summary}>
-                          결정 필요
-                        </span>
-                      ) : isAutoRunning(group) ? (
-                        <span className="badge badge-blue" style={{ fontSize: '10px' }} title="조건을 통과해 사람 확인 없이 진행 중입니다.">
-                          자동 진행 중
-                        </span>
-                      ) : shadowVerdict(group) ? (
-                        <span
-                          className="badge"
-                          style={{ fontSize: '10px', color: 'var(--text-muted)', backgroundColor: 'var(--bg-input)' }}
-                          title={`기록 모드 판정: ${shadowVerdict(group)?.summary ?? ''}\n실제 동작은 지금까지와 같습니다.`}
-                        >
-                          기록: {shadowVerdict(group)?.allowed ? '자동 진행 가능' : '조건 미충족'}
-                        </span>
-                      ) : null}
                       <div
                         style={{ opacity: rfqActive ? 1 : 0.4 }}
                         title={rfqActive ? undefined : 'RFQ 발송 후 이용할 수 있습니다.'}
@@ -1907,17 +1794,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           title={`납기요청일(${group.targetDueDate})이 지났고 RFQ도 보내지 않아 자동 취소 대상입니다. 확인을 누르면 이 MR을 취소합니다.`}
                         >
                           {isCancellingOverdue === group.id ? '취소 처리 중...' : '확인 · MR 취소'}
-                        </button>
-                      ) : isAutoBlocked(group) ? (
-                        <button
-                          type="button"
-                          className="btn-sm btn-reject"
-                          onClick={() => setExceptionGroup(group)}
-                          style={{ fontSize: '11px', padding: '5px 10px' }}
-                          title={group.autoProgress?.summary}
-                        >
-                          <AlertTriangle size={12} />
-                          <span>결정하기</span>
                         </button>
                       ) : !rfqActive ? (
                         <button
@@ -3877,29 +3753,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       )}
 
       {/* 작업 모달을 닫은 뒤 표시하는 독립 결과 모달 */}
-      {exceptionGroup && (
-        <ExceptionDecisionModal
-          group={exceptionGroup}
-          rebidding={isRebidding === exceptionGroup.id}
-          onClose={() => setExceptionGroup(null)}
-          onCompareAndSelect={() => {
-            const target = exceptionGroup;
-            setExceptionGroup(null);
-            handleOpenQuotationModal(target);
-          }}
-          onExtendDeadline={() => {
-            const target = exceptionGroup;
-            setExceptionGroup(null);
-            handleOpenExtendModal(target);
-          }}
-          onRebid={() => {
-            const target = exceptionGroup;
-            setExceptionGroup(null);
-            void handleRebid(target);
-          }}
-        />
-      )}
-
       {resultModal && (
         <div className="modal-overlay" onClick={() => setResultModal(null)}>
           <div
