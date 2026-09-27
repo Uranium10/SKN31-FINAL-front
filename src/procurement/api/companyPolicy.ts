@@ -17,6 +17,16 @@ export interface CompanyPolicy {
     quotation_delivery_weight: number;
     quotation_specification_weight: number;
     quotation_scorecard_weight: number;
+    /** 자동 진행. 모르면 꺼짐이다 - 옛 정책에는 이 키들이 아예 없다. */
+    automation_mode: 'off' | 'shadow' | 'on';
+    auto_rfq_dispatch: boolean;
+    auto_final_selection: boolean;
+    auto_rfq_min_existing_suppliers: number;
+    auto_rfq_deadline_days: number;
+    auto_selection_min_quotations: number;
+    auto_selection_score_gap: number;
+    auto_selection_max_amount: number;
+    auto_known_supplier_years: number;
   };
   guidance: { item_specification: string; substitute_selection: string };
 }
@@ -46,8 +56,26 @@ export function normalizePolicy(policy: CompanyPolicy): CompanyPolicy {
   for (const key of QUOTATION_WEIGHT_KEYS) {
     if (!Number.isFinite(rules[key])) rules[key] = DEFAULT_QUOTATION_WEIGHTS[key];
   }
+  // 자동 진행이 생기기 전에 저장된 정책에는 이 키들이 없다. 없으면 꺼짐이
+  // 기본이라, 편집기가 빈 입력으로 깨지지 않으면서 안전한 쪽으로 채워진다.
+  for (const [key, fallback] of Object.entries(DEFAULT_AUTOMATION)) {
+    if (rules[key] === undefined || rules[key] === null) rules[key] = fallback;
+  }
   return { ...policy, rules };
 }
+
+/** 자동 진행 기본값. 서버 스키마와 같아야 한다(backend_logic2/policies/schema.py). */
+export const DEFAULT_AUTOMATION = {
+  automation_mode: 'off',
+  auto_rfq_dispatch: true,
+  auto_final_selection: true,
+  auto_rfq_min_existing_suppliers: 3,
+  auto_rfq_deadline_days: 5,
+  auto_selection_min_quotations: 2,
+  auto_selection_score_gap: 10,
+  auto_selection_max_amount: 50_000_000,
+  auto_known_supplier_years: 3,
+} as const;
 
 export interface PolicyVersion {
   version: number;

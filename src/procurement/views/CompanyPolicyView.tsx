@@ -8,10 +8,51 @@ import './CompanyPolicyView.css';
 import { EmailAllowlistEditor } from './EmailAllowlistEditor';
 import { RunpodWorkerControl } from './RunpodWorkerControl';
 
+// 자동 진행 설정은 아래에서 따로 다룬다(숫자 입력만 있는 게 아니라 모드
+// 선택과 스위치가 섞여 있다). '구매 판단 기준'의 숫자 표에서는 제외한다.
+type AutomationRule = Extract<keyof CompanyPolicy['rules'], `auto${string}`>;
 type NumericRule = Exclude<
   keyof CompanyPolicy['rules'],
-  'quotation_priority' | QuotationWeightKey
+  'quotation_priority' | QuotationWeightKey | AutomationRule
 >;
+type AutomationSwitch = 'auto_rfq_dispatch' | 'auto_final_selection';
+type AutomationNumber =
+  | 'auto_rfq_min_existing_suppliers' | 'auto_rfq_deadline_days'
+  | 'auto_selection_min_quotations' | 'auto_selection_score_gap'
+  | 'auto_selection_max_amount' | 'auto_known_supplier_years';
+
+const automationModes: {
+  value: CompanyPolicy['rules']['automation_mode']; label: string; hint: string;
+}[] = [
+  { value: 'off', label: '꺼짐', hint: '지금까지처럼 모든 지점에서 사람을 기다립니다.' },
+  { value: 'shadow', label: '기록만', hint: '조건을 평가해 "이렇게 진행했을 것"을 기록만 남기고 실제로는 멈춥니다. 임계값을 실제 데이터로 확인하는 단계입니다.' },
+  { value: 'on', label: '켜짐', hint: '조건을 모두 통과하면 사람 없이 진행합니다. 하나라도 걸리면 그 자리에서 멈추고 담당자를 부릅니다.' },
+];
+
+const automationSwitches: { key: AutomationSwitch; label: string; hint: string }[] = [
+  { key: 'auto_rfq_dispatch', label: 'RFQ 자동 발송',
+    hint: '기존 협력사만으로 충분하면 사람 확인 없이 RFQ를 보냅니다. 신규 협력사를 찾아야 하면 항상 사람에게 넘깁니다.' },
+  { key: 'auto_final_selection', label: '최종 선정 자동화',
+    hint: '마감 후 조건을 모두 통과하면 선정과 수주 요청 메일까지 자동으로 진행합니다.' },
+];
+
+const automationNumberFields: {
+  key: AutomationNumber; label: string; unit: string; min: number; max: number; step: number; hint: string;
+}[] = [
+  { key: 'auto_rfq_min_existing_suppliers', label: 'RFQ 자동 발송 최소 협력사', unit: '곳 이상', min: 1, max: 20, step: 1,
+    hint: '기존 거래 협력사가 이만큼 있어야 사람 확인을 건너뜁니다. 신규 탐색 여부를 정하는 "최소 경쟁 업체 수"와는 다른 값입니다.' },
+  { key: 'auto_rfq_deadline_days', label: '자동 발송 견적 마감', unit: '일 뒤 18시', min: 1, max: 60, step: 1,
+    hint: '발송 시각 기준입니다. 납기요청일이 더 가까우면 그쪽에 맞춰 당깁니다.' },
+  { key: 'auto_selection_min_quotations', label: '자동 선정 최소 견적 수', unit: '건 이상', min: 2, max: 20, step: 1,
+    hint: '최솟값이 2라서 어떤 설정으로도 단독 응찰은 자동 선정되지 않습니다.' },
+  { key: 'auto_selection_score_gap', label: '자동 선정 최소 점수차', unit: '점 이상', min: 0, max: 100, step: 0.5,
+    hint: '1순위와 2순위의 종합점수 차이가 이보다 작으면 박빙으로 보고 사람에게 넘깁니다.' },
+  { key: 'auto_selection_max_amount', label: '자동 선정 금액 상한', unit: '원 이하', min: 1, max: 1_000_000_000_000, step: 1,
+    hint: '선정 금액이 이 값을 넘으면 금액만으로 사람 확인 대상이 됩니다.' },
+  { key: 'auto_known_supplier_years', label: '거래 이력 인정 기간', unit: '년 이내', min: 1, max: 20, step: 1,
+    hint: '1순위에게 이 기간 안의 확정 발주 이력이 없으면 "처음 거래하는 협력사"로 보고 사람을 부릅니다.' },
+];
+
 // 견적 종합점수 4항목. 백엔드 quotation_ranker의 점수 규칙과 1:1로 맞춘 설명이다.
 const quotationWeightFields: { key: QuotationWeightKey; label: string; ruleName: string; hint: string }[] = [
   { key: 'quotation_price_weight', label: '가격', ruleName: 'QUOTATION_PRICE_WEIGHT',
@@ -215,6 +256,65 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
                 <p className="policy-weight-warning" role="alert">네 가중치의 합계를 100%로 맞춰주세요.</p>
               )}
             </div>
+          </section>
+          <section className="policy-section"><h3>자동 진행</h3>
+            <p>
+              사람이 멈추는 지점을 줄이되, 조건에 하나라도 걸리면 그 자리에서 멈추고 담당자를 부릅니다.
+              판단이 애매하면 통과가 아니라 정지입니다.
+              <strong> 이 설정은 케이스마다 고정됩니다</strong> - 이미 진행 중인 건은 여기서 바꿔도 영향받지 않습니다.
+            </p>
+            <div className="policy-grid">
+              {automationModes.map((mode) => (
+                <label className="policy-field" key={mode.value}>
+                  <span style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <input type="radio" name="automation_mode" value={mode.value}
+                      style={{ marginTop: '3px' }}
+                      checked={draft.rules.automation_mode === mode.value}
+                      onChange={() => setDraft({ ...draft, rules: {
+                        ...draft.rules, automation_mode: mode.value,
+                      } })} />
+                    <span><strong>{mode.label}</strong><small>{mode.hint}</small></span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <fieldset
+              disabled={draft.rules.automation_mode === 'off'}
+              style={{ border: 'none', padding: 0, margin: 0,
+                opacity: draft.rules.automation_mode === 'off' ? 0.55 : 1 }}
+            >
+              <div className="policy-grid">
+                {automationSwitches.map((row) => (
+                  <label className="policy-field" key={row.key}>
+                    <span style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                      <input type="checkbox" style={{ marginTop: '3px' }}
+                        checked={Boolean(draft.rules[row.key])}
+                        onChange={e => setDraft({ ...draft, rules: {
+                          ...draft.rules, [row.key]: e.target.checked,
+                        } })} />
+                      <span><strong>{row.label}</strong><small>{row.hint}</small></span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="policy-grid">
+                {automationNumberFields.map((field) => (
+                  <label className="policy-field" key={field.key}>
+                    <strong>{field.label}</strong>
+                    <code className="policy-rule-name">{field.key.toUpperCase()}</code>
+                    <div className="policy-number">
+                      <input type="number" required min={field.min} max={field.max} step={field.step}
+                        value={Number.isFinite(draft.rules[field.key]) ? draft.rules[field.key] : ''}
+                        onChange={e => setDraft({ ...draft, rules: {
+                          ...draft.rules, [field.key]: e.target.valueAsNumber,
+                        } })} />
+                      <span>{field.unit}</span>
+                    </div>
+                    <small>{field.hint}</small>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           </section>
           <section className="policy-section"><h3>AI 보조 판단 지침</h3>
             <p>회사별 용도·검토 관점을 입력하세요. 필수 검증을 없애거나 응답 형식을 변경하는 명령은 넣지 않습니다.</p>
