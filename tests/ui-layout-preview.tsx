@@ -8,6 +8,7 @@ import { CompanyPolicyView } from '../src/procurement/views/CompanyPolicyView';
 import { POManagementView } from '../src/procurement/views/POManagementView';
 import { VendorSelectionView } from '../src/procurement/views/VendorSelectionView';
 import { MRListView } from '../src/procurement/views/MRListView';
+import type { VendorSelectionGroup } from '../src/procurement/types';
 import { DEFAULT_AUTOMATION, DEFAULT_QUOTATION_WEIGHTS, type CompanyPolicy } from '../src/procurement/api/companyPolicy';
 import { initialPOItems, initialVendorGroups, initialMaterialRequests } from '../src/procurement/mock/data';
 const policy: CompanyPolicy = {
@@ -28,13 +29,20 @@ window.fetch = async (input, options) => {
   return Response.json({ detail: 'Network disabled in preview' }, { status: 403 });
 };
 const noop = () => {};
+const vendorColorCases: VendorSelectionGroup[] = [
+  ...initialVendorGroups,
+  { ...initialVendorGroups[0], id: 'qa-prepare', mrNo: 'QA-RFQ-PREPARE', selectedSupplierId: undefined,
+    rfqSent: false, workflowStage: 'RFQ_TARGET_SELECTION', targetDueDate: '2099-10-10' },
+  { ...initialVendorGroups[0], id: 'qa-selection', mrNo: 'QA-RFQ-SELECTION', selectedSupplierId: undefined,
+    rfqSent: true, workflowStage: 'SUPPLIER_SELECTION', deadlineDDay: 0, isExtended: true },
+];
 // Exported for Fast Refresh lint; this is a development-only entry.
 export function LayoutPreview() {
   const [tab, setTab] = useState('policy');
   const [approver, setApprover] = useState(false);
   const [manyRows, setManyRows] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const vendorRows = manyRows ? Array.from({ length: 24 }, (_, i) => ({ ...initialVendorGroups[i % initialVendorGroups.length], id: `qa-vendor-${i}`, mrNo: `QA-MR-${i}` })) : initialVendorGroups;
+  const vendorRows = manyRows ? Array.from({ length: 24 }, (_, i) => ({ ...vendorColorCases[i % vendorColorCases.length], id: `qa-vendor-${i}`, mrNo: `QA-MR-${i}` })) : vendorColorCases;
   const poRows = manyRows ? Array.from({ length: 24 }, (_, i) => ({ ...initialPOItems[i % initialPOItems.length], id: `qa-po-${i}`, mrNo: `QA-MR-${i}`, promisedDeliveryDate: i % 2 ? '2026-10-03T09:30:00Z' : '2026-10-03' })) : initialPOItems;
   const mrRows = Array.from({ length: manyRows ? 24 : 3 }, (_, i) => ({ ...initialMaterialRequests[0], id: `qa-mr-${i}`, mrNo: `QA-MR-${i}` }));
   return <div className="procurement-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>

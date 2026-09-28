@@ -1469,6 +1469,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               // 'YYYY-MM-DD' 형식이라 사전식 비교로 충분함).
               const isPastTargetDueDate = group.targetDueDate < todayIso;
               const isOverdueUnsentRfq = !rfqActive && isPastTargetDueDate;
+              // Visual state only: PO's blue / amber / purple / green / red palette.
+              // Workflow conditions and actions below are deliberately unchanged.
+              const visualStage = isOverdueUnsentRfq ? 'issue' : hasSelection ? 'complete'
+                : group.workflowStage === 'SUPPLIER_SELECTION' ? 'selection' : rfqActive ? 'collection' : 'preparation';
               // 납기요청일이 이미 지난 건은 RFQ를 새로 보내는 것 자체가
               // 의미가 없으므로(제때 납품이 불가능) 대상 선택 버튼을 막는다.
               const canConfigureRFQ = (
@@ -1610,25 +1614,30 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
                   <td data-column-key="roundDeadline">
                     <div className="vendor-deadline-cell">
+                      <div className="vendor-deadline-date">
+                        {rfqActive ? <><strong>{group.deadlineDate}</strong><span>{group.deadlineTime}</span></>
+                          : <span className="vendor-deadline-unset">RFQ 발송 전</span>}
+                      </div>
                       <div className="vendor-deadline-meta">
-                        <button type="button" className="vendor-round-link" disabled={closedRoundCount(group) === 0}
+                        {closedRoundCount(group) > 0 ? <button type="button" className="vendor-round-link"
                           onClick={() => handleOpenRoundsModal(group)} title="지난 차수별 견적 보기">
-                          {closedRoundCount(group)}차
-                        </button>
+                          {closedRoundCount(group)}차 이력 <ExternalLink size={11} aria-hidden="true" />
+                        </button> : <span className="vendor-round-first">첫 요청</span>}
+                        {rfqActive && <span className="vendor-meta-divider" aria-hidden="true" />}
                         {rfqActive && !hasSelection && <span className={`vendor-dday ${group.deadlineDDay < 0 ? 'is-overdue' : group.deadlineDDay <= 1 ? 'is-soon' : ''}`}
                           title={`견적 마감 ${group.deadlineDate} ${group.deadlineTime}`}>
                           {group.deadlineDDay === 0 ? 'D-day' : group.deadlineDDay > 0 ? `D-${group.deadlineDDay}` : `D+${Math.abs(group.deadlineDDay)}`}
                         </span>}
+                        {rfqActive && hasSelection && <span className="vendor-muted">마감 완료</span>}
                         {group.isExtended && rfqActive && <span className="vendor-muted">연장</span>}
                       </div>
-                      <span className="vendor-deadline-date">{rfqActive ? `${group.deadlineDate} ${group.deadlineTime}` : 'RFQ 발송 전'}</span>
                     </div>
                   </td>
 
                   <td data-column-key="status">
-                    <div className="vendor-workflow-cell">
+                    <div className={`vendor-workflow-cell stage-${visualStage}`}>
                       <div className={`vendor-state-line ${isOverdueUnsentRfq ? 'is-warning' : ''}`}>
-                        <span className="vendor-state-dot" />
+                        <span className="vendor-state-dot" aria-hidden="true" />
                         <strong>{isOverdueUnsentRfq ? '납기 초과 · RFQ 미발송' : String(vendorFilterValue(group, 'status'))}</strong>
                         {selectedQuotation && <span className="vendor-selected-supplier" title={selectedQuotation.supplierName}>{selectedQuotation.supplierName}</span>}
                       </div>
