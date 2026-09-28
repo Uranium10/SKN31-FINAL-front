@@ -369,8 +369,8 @@ function ProcurementWorkspaceComponent({
     if (request.workflowStatus && ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(request.workflowStatus)) {
       return false;
     }
-    const erpStatus = request.erpStatus?.trim().toLocaleLowerCase('en-US');
-    if (erpStatus) return erpStatus === 'draft' || erpStatus === 'pending';
+    // Submitted ERP documents may still need a decision or supplier response.
+    if (request.workflowStatus) return true;
     // 구형 목업/마이그레이션 데이터에는 ERP 상태가 없으므로 미처리 MR만
     // 호환 표시하고, 완료·취소된 작업은 대시보드에서 제외합니다.
     return request.status === '승인대기';
@@ -2205,9 +2205,8 @@ function ProcurementWorkspaceComponent({
                   <DashboardView
                     requests={dashboardRequests}
                     poItems={activePOItems}
-                    onApprove={apiDataEnabled ? handleStartSubstituteCheck : handleApproveRequest}
-                    onOpenRejectModal={(id, mrNo) => setRejectingItem({ id, mrNo })}
-                    onOpenSpecModal={handleOpenSpecByItemCode}
+                    notifications={notifications}
+                    onOpenTask={(tab, mrNo) => { setSearchQuery(mrNo); setCurrentTab(tab); }}
                     setCurrentTab={setCurrentTab}
                   />
                 </div>
