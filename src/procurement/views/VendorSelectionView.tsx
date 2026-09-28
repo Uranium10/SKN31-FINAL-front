@@ -496,7 +496,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     message: string;
     tone: 'success' | 'warning';
   } | null>(null);
-  const tableState = useSessionTableState('vendor-selection', VENDOR_COLUMNS);
+  // Keep the outer edges stable; use measured widths when the table has stretched
+  // to fill its container rather than resizing from the smaller stored defaults.
+  const tableState = useSessionTableState('vendor-selection', VENDOR_COLUMNS, 'adjacent');
   const [rangeFilters, setRangeFilters] = useSessionStoredState<VendorRangeFilters>(
     'biddingflow.table.vendor-selection.ranges',
     {},
@@ -1497,7 +1499,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     else delete next[column.key];
                     return next;
                   })}
-                  onResizeStart={(event) => tableState.beginResize(column.key, event)}
+                  onResizeStart={column.key === 'more' ? undefined : (event) => tableState.beginResize(column.key, event)}
                   activeSort={sortColumn === column.key ? sortDirection : undefined}
                   onSort={(direction) => { setSortColumn(column.key); setSortDirection(direction); }}
                 />

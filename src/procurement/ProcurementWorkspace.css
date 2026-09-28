@@ -1021,6 +1021,16 @@
   vertical-align: middle;
 }
 
+/* Inset lines do not add pixels to saved widths or shift resized boundaries.
+   Apply to each cell (including CSS-reordered MR columns), not DOM last-child.
+   Full-width empty/detail rows are deliberately left unsplit. */
+.custom-table > :is(thead, tbody, tfoot) > tr > :is(th, td):not([colspan]) {
+  box-shadow: inset -1px 0 0 rgba(100, 100, 108, 0.12);
+}
+.custom-table > thead > tr > th:not([colspan]) {
+  box-shadow: inset -1px 0 0 rgba(100, 100, 108, 0.2);
+}
+
 .custom-table tbody tr:hover {
   background-color: rgba(255, 255, 255, 0.02);
 }
@@ -1147,7 +1157,7 @@
   right: 4px;
   bottom: 7px;
   width: 1px;
-  background: transparent;
+  background: rgba(100, 100, 108, 0.25);
 }
 
 .excel-column-resizer:hover::after,

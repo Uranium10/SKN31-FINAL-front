@@ -25,7 +25,7 @@ interface ExcelColumnHeaderProps<Key extends string> {
   values: string[];
   selectedValues?: string[];
   onFilterChange: (selected: string[] | undefined) => void;
-  onResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onResizeStart?: (event: PointerEvent<HTMLDivElement>) => void;
   align?: 'left' | 'center' | 'right';
   order?: number;
   activeSort?: 'asc' | 'desc';
@@ -198,14 +198,14 @@ export const ExcelColumnHeader = <Key extends string>({
           </button>
         )}
       </div>
-      <div
+      {onResizeStart && <div
         className="excel-column-resizer"
         role="separator"
         aria-orientation="vertical"
         aria-label={`${label} 열 너비 조절`}
         onPointerDown={onResizeStart}
         onDragStart={(event) => event.preventDefault()}
-      />
+      />}
       {filterMode !== 'none' && open && createPortal(
         <div
           ref={menuRef}

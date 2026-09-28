@@ -27,3 +27,16 @@ test('fractional rendered widths preserve table span', () => {
     assert.ok(result.every((width, i) => width >= minimums[i]));
   }
 });
+
+test('RFQ stretched columns change only the dragged pair and retain the outer edges', () => {
+  const stored = [260, 165, 185, 175, 90, 220, 52];
+  const minimum = [190, 140, 145, 135, 70, 170, 52];
+  const rendered = stored.map(width => width * 1.4);
+  const resized = resizeAdjacentColumns(rendered, minimum, 0, 60);
+  assert.equal(resized[0], rendered[0] + 60);
+  assert.equal(resized[1], rendered[1] - 60);
+  assert.deepEqual(resized.slice(2), rendered.slice(2));
+  assert.ok(Math.abs(resized.reduce((a,b) => a+b, 0) - rendered.reduce((a,b) => a+b, 0)) < .001);
+  const back = resizeAdjacentColumns(resized, minimum, 0, -60);
+  back.forEach((width, i) => assert.ok(Math.abs(width - rendered[i]) < .001));
+});
