@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import type { POItem, POScorecardScores, SupplierScores, StageMovePlaceholder } from '../types';
+import type { MaterialRequestAttachment, POItem, POScorecardScores, SupplierScores, StageMovePlaceholder } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { WorkflowInterruptForm } from '../components/WorkflowInterruptForm';
@@ -10,6 +10,7 @@ import {
   CircleDollarSign,
   ClipboardList,
   Clock,
+  Download,
   FileText,
   Filter,
   Mail,
@@ -41,6 +42,7 @@ interface POManagementViewProps {
   onMarkArrived: (poId: string) => void;
   onSubmitScorecard: (poId: string, scores: POScorecardScores) => void;
   onAnswerTask?: (taskId: string, answer: Record<string, unknown>, version?: number) => Promise<void> | void;
+  onDownloadAttachment?: (attachment: string | MaterialRequestAttachment) => void;
   isApiMode?: boolean;
 }
 
@@ -113,6 +115,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onMarkArrived,
   onSubmitScorecard,
   onAnswerTask,
+  onDownloadAttachment,
   isApiMode = false,
 }) => {
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
@@ -476,22 +479,62 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <FileText size={20} color="var(--primary)" />
-                <h3>MR 및 발주 상세 내역 ({selectedMRDetail.mrNo})</h3>
+                <h3>MR 상세 내역 ({selectedMRDetail.mrNo})</h3>
               </div>
               <button type="button" className="icon-btn" onClick={() => setSelectedMRDetail(null)}>
                 <X size={18} />
               </button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ backgroundColor: 'var(--bg-input)', padding: '14px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
-                  {selectedMRDetail.itemName} ({selectedMRDetail.itemCode})
+              <div className="po-mr-detail-summary">
+                <div className="po-mr-detail-grid">
+                  <div><span>MR 번호</span><strong>{selectedMRDetail.mrNo}</strong></div>
+                  <div><span>품명 / 아이템코드</span><strong>{selectedMRDetail.itemName} ({selectedMRDetail.itemCode})</strong></div>
+                  <div><span>요청 부서 및 요청자</span><strong>{selectedMRDetail.department || '미지정'} · {selectedMRDetail.requester || '요청자 미지정'}</strong></div>
+                  <div><span>품목 분류</span><strong>{selectedMRDetail.category || '미분류'}</strong></div>
+                  <div><span>납기요청일</span><strong>{selectedMRDetail.dueDate || '—'}</strong></div>
+                  <div><span>요청 수량</span><strong>{selectedMRDetail.requestQuantity != null ? `${selectedMRDetail.requestQuantity.toLocaleString()} ${selectedMRDetail.requestUnit || 'EA'}` : '—'}</strong></div>
+                  <div><span>요청 단가</span><strong>{selectedMRDetail.requestUnitPrice != null ? `₩${selectedMRDetail.requestUnitPrice.toLocaleString()}` : '—'}</strong></div>
+                  <div><span>요청 예상 금액</span><strong>{selectedMRDetail.requestTotalPrice != null ? `₩${selectedMRDetail.requestTotalPrice.toLocaleString()}` : '—'}</strong></div>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  요청부서: {selectedMRDetail.department} | 약정 납기일: {selectedMRDetail.dueDate}
-                  {selectedMRDetail.orderedQty != null
-                    && ` | 수량: ${selectedMRDetail.receivedQty ?? 0}/${selectedMRDetail.orderedQty}`}
+                {selectedMRDetail.orderedQty != null && (
+                  <div className="po-mr-receipt-quantity">
+                    발주 입고 수량: {selectedMRDetail.receivedQty ?? 0} / {selectedMRDetail.orderedQty}
+                  </div>
+                )}
+              </div>
+
+              <section className="po-mr-detail-section">
+                <h4>규격 및 상세 사양</h4>
+                <div className="po-mr-specification">
+                  {selectedMRDetail.specificationText?.trim() || '등록된 규격 상세사항이 없습니다.'}
                 </div>
+              </section>
+
+              <section className="po-mr-detail-section">
+                <h4>첨부파일 ({selectedMRDetail.requestAttachments?.length ?? 0}개)</h4>
+                {selectedMRDetail.requestAttachments?.length ? (
+                  <div className="po-mr-attachments">
+                    {selectedMRDetail.requestAttachments.map((attachment, index) => {
+                      const fileName = typeof attachment === 'string' ? attachment : attachment.fileName;
+                      return (
+                        <div className="po-mr-attachment" key={`${fileName}-${index}`}>
+                          <span><FileText size={15} />{fileName}</span>
+                          <button type="button" className="po-mr-download" onClick={() => onDownloadAttachment?.(attachment)} disabled={!onDownloadAttachment} aria-label={`${fileName} 다운로드`} title="첨부파일 다운로드">
+                            <Download size={15} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="po-mr-empty-attachment">첨부된 파일이 없습니다.</p>
+                )}
+              </section>
+
+              <div className="po-mr-selected-supplier">
+                <span>선정 협력사 및 발주 금액</span>
+                <strong>{selectedMRDetail.selectedSupplier || '협력사 미지정'} · ₩{selectedMRDetail.totalAmount.toLocaleString()}</strong>
               </div>
               {selectedMRDetail.poCreated && (
                 <div style={{ backgroundColor: 'var(--bg-input)', padding: '14px', borderRadius: '8px' }}>

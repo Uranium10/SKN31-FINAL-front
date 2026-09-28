@@ -444,6 +444,14 @@ export interface POItem {
   itemName: string;
   itemCode: string;
   department: string;
+  requester?: string;
+  category?: string;
+  specificationText?: string;
+  requestQuantity?: number;
+  requestUnit?: string;
+  requestUnitPrice?: number;
+  requestTotalPrice?: number;
+  requestAttachments?: MaterialRequest['attachmentFiles'];
   selectedSupplier: string;
   supplierEmail?: string;
   totalAmount: number;

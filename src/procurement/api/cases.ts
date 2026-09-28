@@ -1033,6 +1033,14 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     itemName: request.itemName,
     itemCode: request.itemCode,
     department: request.department,
+    requester: request.requester,
+    category: request.category,
+    specificationText: request.fullSpecText,
+    requestQuantity: request.quantity,
+    requestUnit: text(entry.summary?.uom, 'EA'),
+    requestUnitPrice: request.unitPrice,
+    requestTotalPrice: request.totalPrice,
+    requestAttachments: request.attachmentFiles,
     selectedSupplier,
     // ⚠️ 예전에는 이 필드가 아예 채워지지 않아서(타입에는 있는데 여기서
     // 한 번도 값을 안 넣어줌) PO 관리 화면에 협력사 이메일을 보여줄 수가

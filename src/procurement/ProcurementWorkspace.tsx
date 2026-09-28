@@ -2298,6 +2298,7 @@ function ProcurementWorkspaceComponent({
                 onMarkArrived={handleMarkPOArrived}
                 onSubmitScorecard={handleSubmitScorecard}
                 onAnswerTask={handleAnswerWorkflowTask}
+                onDownloadAttachment={(attachment) => void handleDownloadAttachment(attachment)}
                 isApiMode={apiDataEnabled}
               />
             )}
