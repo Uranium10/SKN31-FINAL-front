@@ -12,6 +12,10 @@ const labels: Record<string, string> = {
 const poStages = new Set(['ORDER_START', 'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED', 'PO_CREATION', 'DELIVERY']);
 const waits = new Set(['SUBSTITUTE_DECISION', 'QUOTATION_COLLECTION', 'PR_RESPONSE_WAITING', 'DELIVERY']);
 
+export function dashboardStageLabel(stage?: string): string {
+  return labels[stage || ''] || '상태 확인';
+}
+
 /** Classify once per MR. A human task for an external recipient is not buyer work. */
 export function dashboardTasks(requests: MaterialRequest[]): DashboardTask[] {
   const seen = new Set<string>();

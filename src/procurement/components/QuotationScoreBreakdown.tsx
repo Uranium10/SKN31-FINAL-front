@@ -27,6 +27,8 @@ const scoreColor = (score: number): string => (
  */
 export function QuotationScoreBreakdown({ breakdown, compact = false }: { breakdown: Breakdown; compact?: boolean }) {
   const missing = new Map(breakdown.missingFactors.map((row) => [row.factor, row.reason]));
+  const integrityWarnings = breakdown.warnings.filter(w => /^\[(납기|규격) 확인\]/.test(w));
+  const otherWarnings = breakdown.warnings.filter(w => !integrityWarnings.includes(w));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '5px' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -76,8 +78,9 @@ export function QuotationScoreBreakdown({ breakdown, compact = false }: { breakd
           {breakdown.missingFactors.map((row) => row.reason).join(' · ')} → 나머지 항목 비율로 다시 계산
         </div>
       )}
-      {!compact && breakdown.warnings.length > 0 && (
-        <div style={{ fontSize: '10px', color: 'var(--warning)' }}>참고: {breakdown.warnings.join(' / ')}</div>
+      {integrityWarnings.map(warning => <div key={warning} style={{ fontSize: '12px', lineHeight: 1.6, fontWeight: 600, color: 'var(--danger, #b42318)' }}>{warning}</div>)}
+      {!compact && otherWarnings.length > 0 && (
+        <div style={{ fontSize: '10px', color: 'var(--warning)' }}>참고: {otherWarnings.join(' / ')}</div>
       )}
     </div>
   );

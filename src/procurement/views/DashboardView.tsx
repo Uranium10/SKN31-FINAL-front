@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, ChevronDown, ClipboardCheck, Cpu, Hourglass, FileText, Activity, CircleCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, ClipboardCheck, Cpu, Hourglass, FileText, Activity, CircleCheck } from 'lucide-react';
 import type { MaterialRequest, NavigationTab, POItem, ProcurementNotification } from '../types';
-import { dashboardTasks, issuedPurchaseOrders } from '../utils/dashboardTasks';
+import { dashboardStageLabel, dashboardTasks, issuedPurchaseOrders } from '../utils/dashboardTasks';
 import type { DashboardTask, TaskBucket } from '../utils/dashboardTasks';
 import './DashboardView.css';
 import type { WorkProgress } from '../api/workProgress';
@@ -23,19 +23,19 @@ const groupInfo = {
   other: { title: '그 밖의 진행 작업', icon: FileText, empty: '추가 작업이 없습니다.' },
 };
 
-function TaskSection({ bucket, tasks, onOpenTask, progress }: {
+function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = false, totalCount }: {
   bucket: TaskBucket; tasks: DashboardTask[]; onOpenTask: DashboardViewProps['onOpenTask'];
   progress?: DashboardViewProps['progress'];
+  onMore?: () => void; fullList?: boolean; totalCount?: number;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const group = groupInfo[bucket];
   const Icon = group.icon;
-  const visible = expanded ? tasks : tasks.slice(0, 3);
+  const visible = fullList ? tasks : tasks.slice(0, 3);
   return <section className={`work-section work-section-${bucket}`} id={`work-${bucket}`} aria-labelledby={`work-title-${bucket}`}>
     <header className="work-section-header">
-      <h2 id={`work-title-${bucket}`}><Icon size={18} /><span>{group.title}</span><span className="work-count">{tasks.length}건</span></h2>
-      {tasks.length > 3 && <button className="work-link" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-controls={`work-list-${bucket}`}>
-        {expanded ? '접기' : `더보기 (${tasks.length - 3})`}<ChevronDown size={15} className={expanded ? 'is-expanded' : ''} />
+      <h2 id={`work-title-${bucket}`}><Icon size={18} /><span>{group.title}</span><span className="work-count">{totalCount ?? tasks.length}건</span></h2>
+      {onMore && <button className="work-link" onClick={onMore}>
+        더보기 <ArrowRight size={15} />
       </button>}
     </header>
     <div id={`work-list-${bucket}`} className="work-task-list">
@@ -67,7 +67,7 @@ function TaskSection({ bucket, tasks, onOpenTask, progress }: {
           {progress && <CaseDecisionTimeline caseId={request.id} />}
         </details>
       </article>; })}
-      {!tasks.length && <div className="work-empty"><CircleCheck size={20} /><span>{group.empty}</span></div>}
+      {!tasks.length && <div className="work-empty"><CircleCheck size={20} /><span>{fullList ? '조건에 맞는 작업이 없습니다. 필터를 변경해 주세요.' : group.empty}</span></div>}
     </div>
   </section>;
 }
@@ -80,7 +80,19 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
       : task;
   }), [requests, progress?.items]);
   const issued = useMemo(() => issuedPurchaseOrders(poItems), [poItems]);
-  const [showAllActivity, setShowAllActivity] = useState(false);
+  // A dedicated list view replaces the overview; more never stretches its cards.
+  const [listView, setListView] = useState<TaskBucket | 'activity' | null>(null);
+  const [query, setQuery] = useState('');
+  const [stage, setStage] = useState('');
+  const [sort, setSort] = useState('default');
+  const [page, setPage] = useState(1);
+  const openList = (view: typeof listView) => {
+    setListView(view); setQuery(''); setStage(''); setSort('default'); setPage(1);
+    requestAnimationFrame(() => {
+      const top = document.getElementById('dashboard-view-top');
+      top?.scrollIntoView({ block: 'start' }); top?.focus({ preventScroll: true });
+    });
+  };
   const groups = {
     attention: tasks.filter(t => t.bucket === 'attention'),
     processing: tasks.filter(t => t.bucket === 'processing'),
@@ -89,7 +101,57 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
   };
   // Actual notification records, not invented "AI completed" events.
   const activity = [...notifications].sort((a,b) => (Date.parse(b.createdAt ?? '') || 0) - (Date.parse(a.createdAt ?? '') || 0));
-  return <div className="work-dashboard">
+  const activityList = (rows: ProcurementNotification[]) => <div className="work-activity">
+    {rows.map(n => <button key={n.id} onClick={() => {
+      const mrNo = requests.find(r => r.mrNo === n.reference)?.mrNo
+        ?? poItems.find(p => p.mrNo === n.reference || p.poNo === n.reference)?.mrNo;
+      if (mrNo) onOpenTask(n.targetTab, mrNo); else setCurrentTab(n.targetTab);
+    }}><span>{n.time}</span><strong>{n.title}</strong><p>{n.detail}</p></button>)}
+    {!rows.length && <p className="work-empty">조건에 맞는 알림이 없습니다.</p>}
+  </div>;
+  if (listView) {
+    const isActivity = listView === 'activity';
+    const source = isActivity ? [] : groups[listView];
+    const needle = query.trim().toLocaleLowerCase();
+    const filtered = source.filter(t => (!stage || (t.request.workflowStage || 'UNKNOWN') === stage)
+      && [t.request.mrNo, t.request.itemName, t.request.itemCode, t.request.department, t.request.requester, t.label]
+        .some(value => String(value ?? '').toLocaleLowerCase().includes(needle)));
+    if (sort === 'asc' || sort === 'desc') filtered.sort((a, b) =>
+      a.request.mrNo.localeCompare(b.request.mrNo, 'ko', { numeric: true }) * (sort === 'asc' ? 1 : -1));
+    if (sort === 'due') filtered.sort((a, b) => (a.request.dueDate || '9999').localeCompare(b.request.dueDate || '9999'));
+    const filteredActivity = activity.filter(n => (!stage || n.targetTab === stage)
+      && [n.title, n.detail, n.reference].some(value => String(value ?? '').toLocaleLowerCase().includes(needle)));
+    if (sort === 'oldest') filteredActivity.reverse();
+    const total = isActivity ? filteredActivity.length : filtered.length;
+    const pages = Math.max(1, Math.ceil(total / 25));
+    const currentPage = Math.min(page, pages);
+    const start = (currentPage - 1) * 25;
+    const stages = [...new Map(source.map(t => [t.request.workflowStage || 'UNKNOWN', dashboardStageLabel(t.request.workflowStage)])).entries()];
+    const tabs: Partial<Record<NavigationTab, string>> = { 'mr-list': 'MR 목록', 'vendor-select': '협력사 선정', 'po-manage': 'PO 관리', 'item-register': '아이템 목록', dashboard: '대시보드', 'company-policy': '회사 구매 정책', 'ai-decision-log': 'AI 판단 기록' };
+    return <div className="work-dashboard work-list-page" id="dashboard-view-top" tabIndex={-1}>
+      <button type="button" className="work-back" onClick={() => openList(null)}><ArrowLeft size={17} /> 대시보드로 돌아가기</button>
+      <header className="work-list-heading"><span className="work-eyebrow">WORK LIST</span><h1>{isActivity ? '최근 처리 알림' : groupInfo[listView].title}</h1>
+        <p>현재 조회된 {isActivity ? '알림' : '작업'} 중 {total}건 · 행을 누르면 해당 작업 화면으로 이동합니다.</p></header>
+      <div className="work-list-filters">
+        <label>검색<input type="search" value={query} placeholder={isActivity ? '알림 내용 · 문서 번호' : 'MR 번호 · 품목 · 요청부서'} onChange={e => { setQuery(e.target.value); setPage(1); }} /></label>
+        <label>{isActivity ? '업무 화면' : '단계'}<select value={stage} onChange={e => { setStage(e.target.value); setPage(1); }}>
+          <option value="">전체</option>{isActivity
+            ? [...new Set(activity.map(n => n.targetTab))].map(tab => <option key={tab} value={tab}>{tabs[tab] || tab}</option>)
+            : stages.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select></label>
+        <label>정렬<select value={sort} onChange={e => { setSort(e.target.value); setPage(1); }}>
+          <option value="default">{isActivity ? '최신 알림순' : '기본 순서'}</option>
+          {isActivity ? <option value="oldest">오래된 알림순</option> : <><option value="asc">MR 번호 오름차순</option><option value="desc">MR 번호 내림차순</option><option value="due">요청 납기일순</option></>}
+        </select></label>
+        <button className="work-link" onClick={() => { setQuery(''); setStage(''); setSort('default'); setPage(1); }}>필터 초기화</button>
+      </div>
+      {isActivity ? <section className="work-section">{activityList(filteredActivity.slice(start, start + 25))}</section>
+        : <TaskSection bucket={listView} tasks={filtered.slice(start, start + 25)} totalCount={total} onOpenTask={onOpenTask} progress={progress} fullList />}
+      <nav className="work-pagination" aria-label="목록 페이지"><button disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>이전</button>
+        <span>{currentPage} / {pages} · 페이지당 25건</span><button disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>다음</button></nav>
+    </div>;
+  }
+  return <div className="work-dashboard" id="dashboard-view-top" tabIndex={-1}>
     <div className="work-intro"><div><span className="work-eyebrow">WORK OVERVIEW</span><p>필요한 결정은 한곳에서, 진행 상황은 한눈에.</p></div>
       <button className="work-link" onClick={() => setCurrentTab('mr-list')}>전체 구매 현황 <ArrowRight size={16} /></button></div>
     {progress && <section className="work-live-strip" aria-label="진행 현황 동기화">
@@ -100,7 +162,7 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
     <div className="work-kpis">
       {(['attention', 'processing', 'waiting'] as const).map(key => {
         const Icon = groupInfo[key].icon;
-        return <button key={key} className={`work-kpi work-kpi-${key}`} onClick={() => document.getElementById(`work-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+        return <button key={key} className={`work-kpi work-kpi-${key}`} onClick={() => openList(key)}>
           <span className="work-kpi-icon"><Icon size={23} /></span><span><span className="work-kpi-label">{key === 'attention' ? '사람 확인 필요' : key === 'processing' ? 'AI · 시스템이 처리 중' : '외부 응답 · 입고 대기'}</span>
             <strong>{groups[key].length}<small>건</small></strong><span className="work-kpi-caption">{key === 'attention' ? '검토 · 선택 · 예외 확인' : key === 'processing' ? '실행 중 또는 실행 대기' : '공급사 · 요청부서 · 입고'}</span></span>
         </button>;
@@ -108,22 +170,13 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
       <button className="work-kpi" onClick={() => setCurrentTab('po-manage')}><span className="work-kpi-icon"><FileText size={23} /></span>
         <span><span className="work-kpi-label">발행 PO 금액</span><strong className="work-amount">₩{issued.reduce((sum,p) => sum + p.totalAmount, 0).toLocaleString()}</strong><span className="work-kpi-caption">조회된 발주서 {issued.length}건 기준</span></span></button>
     </div>
-    <TaskSection bucket="attention" tasks={groups.attention} onOpenTask={onOpenTask} progress={progress} />
-    <div className="work-columns"><TaskSection bucket="processing" tasks={groups.processing} onOpenTask={onOpenTask} progress={progress} />
-      <TaskSection bucket="waiting" tasks={groups.waiting} onOpenTask={onOpenTask} progress={progress} /></div>
-    {!!groups.other.length && <TaskSection bucket="other" tasks={groups.other} onOpenTask={onOpenTask} progress={progress} />}
+    <TaskSection bucket="attention" tasks={groups.attention} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('attention')} />
+    <div className="work-columns"><TaskSection bucket="processing" tasks={groups.processing} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('processing')} />
+      <TaskSection bucket="waiting" tasks={groups.waiting} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('waiting')} /></div>
+    {!!groups.other.length && <TaskSection bucket="other" tasks={groups.other} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('other')} />}
     <section className="work-section" aria-labelledby="work-activity-title"><header className="work-section-header">
       <h2 id="work-activity-title"><Activity size={18} />최근 처리 알림</h2>
-      {activity.length > 3 && <button className="work-link" onClick={() => setShowAllActivity(!showAllActivity)} aria-expanded={showAllActivity}>{showAllActivity ? '접기' : '더보기'}<ChevronDown size={15} /></button>}
-    </header><div className="work-activity">
-      {(showAllActivity ? activity : activity.slice(0,3)).map(n => <button key={n.id} onClick={() => {
-        const mrNo = requests.find(r => r.mrNo === n.reference)?.mrNo
-          ?? poItems.find(p => p.mrNo === n.reference || p.poNo === n.reference)?.mrNo;
-        // Item / PO references are not MR identifiers. Avoid an empty MR filter.
-        if (mrNo) onOpenTask(n.targetTab, mrNo); else setCurrentTab(n.targetTab);
-      }}>
-        <span>{n.time}</span><strong>{n.title}</strong><p>{n.detail}</p></button>)}
-      {!activity.length && <p className="work-empty">표시할 최근 알림이 없습니다.</p>}
-    </div></section>
+      <button className="work-link" onClick={() => openList('activity')}>더보기 <ArrowRight size={15} /></button>
+    </header>{activityList(activity.slice(0,3))}</section>
   </div>;
 }

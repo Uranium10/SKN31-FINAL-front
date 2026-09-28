@@ -437,6 +437,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
   // 6. 마감 지남 + 미선정 상태에서 'MR 취소' 모달 (재비딩은 확인창 하나로 바로 실행)
   const [cancellingGroup, setCancellingGroup] = useState<VendorSelectionGroup | null>(null);
+  const [isCancellingMR, setIsCancellingMR] = useState(false);
   const [cancelMrReason, setCancelMrReason] = useState('');
 
   // 7. 차수(라운드) 배지 클릭 시 지난/현재 라운드별 견적 조회 팝업.
@@ -1164,15 +1165,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setShowQuotationModal(true);
   };
 
-  // 6. 마감 지남 + 미선정 상태 - 'MR 취소' 처리
+  // Submitted MRs are cancelled, not deleted. The server preflights all RFQ rounds.
   const handleConfirmCancelMR = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!cancellingGroup || !cancelMrReason.trim()) return;
-    const ok = await onCancelMR(cancellingGroup.id, cancelMrReason.trim());
-    if (ok) {
-      setCancellingGroup(null);
-      setCancelMrReason('');
-    }
+    if (!cancellingGroup || !cancelMrReason.trim() || isCancellingMR) return;
+    setIsCancellingMR(true);
+    try {
+      const ok = await onCancelMR(cancellingGroup.id, cancelMrReason.trim());
+      if (ok) { setCancellingGroup(null); setCancelMrReason(''); }
+    } finally { setIsCancellingMR(false); }
   };
 
   // 마감 전(적극 수집 중)이든 마감 지남 + 미선정 상태든 공통으로 쓰는
@@ -1547,6 +1548,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               // 그 중에서 지금 이 행에서 가장 먼저 해야 할 일(또는 진짜
               // 갈림길이 있으면 둘)만 고르는 것 - 나머지는 전부 ⋯로.
               const overflowItems: RowActionMenuItem[] = [];
+              if (group.backendCaseId && ['RFQ_TARGET_SELECTION', 'QUOTATION_COLLECTION', 'SUPPLIER_SELECTION', 'ORDER_START'].includes(group.workflowStage || '')) {
+                overflowItems.push({
+                  key: 'reject-mr', label: 'MR 반려 · 취소',
+                  disabled: isCancellingMR || ['RUNNING', 'QUEUED'].includes(group.workflowStatus || ''),
+                  onClick: () => { setCancellingGroup(group); setCancelMrReason(''); },
+                });
+              }
               if (hasSelection && group.supplierApprovalStatus === 'pending') {
                 overflowItems.push({
                   key: 'change-selection',
@@ -3674,19 +3682,19 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
       {/* 팝업 모달 6: 마감 지남 + 미선정 상태 - 'MR 취소' 사유 입력 모달 */}
       {cancellingGroup && (
-        <div className="modal-overlay" onClick={() => setCancellingGroup(null)}>
+        <div className="modal-overlay">
           <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ width: '520px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <AlertTriangle size={22} color="var(--danger)" />
                 <div>
-                  <h3 style={{ margin: 0 }}>MR 취소</h3>
+                  <h3 style={{ margin: 0 }}>MR 반려 · 취소</h3>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    {cancellingGroup.mrNo} · 견적 마감이 지났고 제출된 견적이 없습니다.
+                    {cancellingGroup.mrNo} · 이 구매 요청의 진행을 중단합니다.
                   </span>
                 </div>
               </div>
-              <button type="button" className="icon-btn" onClick={() => setCancellingGroup(null)}>
+              <button type="button" className="icon-btn" disabled={isCancellingMR} onClick={() => setCancellingGroup(null)}>
                 <X size={18} />
               </button>
             </div>
@@ -3694,7 +3702,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
             <form onSubmit={handleConfirmCancelMR}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div style={{ fontSize: '13px', color: 'var(--text-main)', backgroundColor: 'var(--danger-bg)', padding: '12px', borderRadius: '6px' }}>
-                  이 MR을 취소하면 발송된 RFQ와 관련 문서가 정리되고 Material Request가 취소 처리됩니다. 이 작업은 되돌릴 수 없습니다.
+                  연결된 모든 차수의 견적과 RFQ를 먼저 확인한 뒤 MR을 취소합니다. 제출된 문서는 삭제하지 않고 취소 이력을 남기며, 초안은 ERP의 폐기 기능으로 처리합니다. 이미 발주되었거나 다른 구매 건과 문서를 공유하면 중단합니다. 사유를 확인한 후 진행해 주세요.
                 </div>
                 <div className="form-group">
                   <label htmlFor="mr-cancel-reason">MR 취소 사유</label>
@@ -3711,11 +3719,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn-outline" onClick={() => setCancellingGroup(null)}>
+                <button type="button" className="btn-outline" disabled={isCancellingMR} onClick={() => setCancellingGroup(null)}>
                   닫기
                 </button>
-                <button type="submit" className="btn-reject" disabled={!cancelMrReason.trim()}>
-                  MR 취소 확정
+                <button type="submit" className="btn-reject" disabled={!cancelMrReason.trim() || isCancellingMR}>
+                  {isCancellingMR ? '연결 문서 확인 · 취소 중…' : 'MR 반려 · 취소 확정'}
                 </button>
               </div>
             </form>
