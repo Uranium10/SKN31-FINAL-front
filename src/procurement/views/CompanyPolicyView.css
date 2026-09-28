@@ -80,3 +80,13 @@
 .policy-section-nav [aria-current='location'] .policy-nav-marker { background: #171717; }
 @media(max-width: 1000px) { .company-policy { grid-template-columns: minmax(0,1fr) 150px; gap: 20px; } .policy-section { padding: 24px; } .policy-heading { align-items: flex-start; flex-direction: column; } }
 @media(max-width: 700px) { .company-policy { display: flex; flex-direction: column; } .policy-content { width: 100%; } .policy-section-nav { order: -1; flex-direction: row; overflow-x: auto; max-width: 100%; top: 0; background: #f7f7f8; z-index: 2; padding: 8px 0; } .policy-nav-caption { display: none; } .company-policy .policy-section-nav button { white-space: nowrap; flex-shrink: 0; } .policy-section h3 { font-size: 21px; } .policy-section { padding: 22px 18px; } .policy-weight-editor { padding: 18px; } }
+.category-assignment-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.category-assignment-heading h3 { margin-bottom: 8px; }
+.category-assignment-heading p { margin: 0; color: #626269; font-size: 13px; line-height: 1.6; }
+.category-assignment-list { max-height: 480px; overflow: auto; margin-top: 18px; border-top: 1px solid #dedee1; }
+.category-assignment-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(220px, 1.4fr); align-items: center; gap: 20px; padding: 10px 4px; border-bottom: 1px solid #e8e8eb; font-size: 13px; }
+.category-assignment-row > strong { overflow-wrap: anywhere; }
+.category-assignment-row select { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #cfcfd4; border-radius: 7px; background: white; color: #18181b; font: inherit; }
+.category-assignment-labels { color: #64646c; }
+.category-assignment-revision { display: block; margin-top: 12px; color: #64646c; }
+@media (max-width: 700px) { .category-assignment-heading { flex-direction: column; } .category-assignment-row { grid-template-columns: 1fr; gap: 7px; } }

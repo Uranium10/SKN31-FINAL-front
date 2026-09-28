@@ -85,6 +85,18 @@ export interface PolicyVersion {
   published_at: string;
 }
 export interface PolicyResponse { active: PolicyVersion; history: PolicyVersion[] }
+export interface ItemGroupAssignment {
+  item_group: string;
+  manager_user_id: string;
+  updated_by?: string;
+  updated_at?: string;
+}
+export interface ItemGroupAssignmentOptions {
+  revision: number;
+  groups: string[];
+  users: Array<{ id: string; name: string; email: string }>;
+  assignments: ItemGroupAssignment[];
+}
 export interface EmailAllowlist {
   revision: string; recipients: string[];
   delivery_mode: 'custom_only' | 'send_all' | 'block_all'; enabled: boolean; editable: boolean;
@@ -128,4 +140,10 @@ export const publishCompanyPolicy = (policy: CompanyPolicy, version: number, rea
   read<PolicyVersion>('/publish', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ policy, expected_version: version, reason }),
+  });
+export const getItemGroupAssignments = () => read<ItemGroupAssignmentOptions>('/category-assignments');
+export const saveItemGroupAssignments = (assignments: ItemGroupAssignment[], revision: number) =>
+  read<{ revision: number; assignments: ItemGroupAssignment[] }>('/category-assignments', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expected_revision: revision, assignments }),
   });

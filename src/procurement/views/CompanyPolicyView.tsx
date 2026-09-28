@@ -8,6 +8,7 @@ import './CompanyPolicyView.css';
 import { EmailAllowlistEditor } from './EmailAllowlistEditor';
 import { RunpodWorkerControl } from './RunpodWorkerControl';
 import { PolicySectionNav } from './PolicySectionNav';
+import { ItemGroupAssignmentEditor } from './ItemGroupAssignmentEditor';
 
 // 자동 진행 설정은 아래에서 따로 다룬다(숫자 입력만 있는 게 아니라 모드
 // 선택과 스위치가 섞여 있다). '구매 판단 기준'의 숫자 표에서는 제외한다.
@@ -185,6 +186,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
     </div>
     {draft && data && <>
       <div id="policy-runtime" className="policy-anchor"><RunpodWorkerControl active={active} /></div>
+      <ItemGroupAssignmentEditor />
       <div id="policy-mail" className="policy-anchor"><EmailAllowlistEditor /></div>
       <form ref={form} onSubmit={e => {
         e.preventDefault();
