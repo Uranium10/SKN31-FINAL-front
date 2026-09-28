@@ -968,16 +968,18 @@
 }
 
 .btn-approve {
-  background-color: var(--success);
+  background-color: #171717;
   color: #fff;
+  border: 1px solid #171717;
 }
-.btn-approve:hover { background-color: #059669; }
+.btn-approve:hover:not(:disabled) { background-color: #333; }
 
 .btn-reject {
-  background-color: var(--danger);
-  color: #fff;
+  background-color: #fff;
+  color: #171717;
+  border: 1px solid #b8b8bd;
 }
-.btn-reject:hover { background-color: #DC2626; }
+.btn-reject:hover:not(:disabled) { background-color: #f2f2f3; }
 
 .btn-outline {
   background-color: transparent;
@@ -1021,12 +1023,8 @@
   vertical-align: middle;
 }
 
-/* Inset lines do not add pixels to saved widths or shift resized boundaries.
-   Apply to each cell (including CSS-reordered MR columns), not DOM last-child.
-   Full-width empty/detail rows are deliberately left unsplit. */
-.custom-table > :is(thead, tbody, tfoot) > tr > :is(th, td):not([colspan]) {
-  box-shadow: inset -1px 0 0 rgba(100, 100, 108, 0.12);
-}
+/* Header-only dividers locate resize handles without gridding every data row.
+   Inset lines do not change stored column widths (including reordered MR columns). */
 .custom-table > thead > tr > th:not([colspan]) {
   box-shadow: inset -1px 0 0 rgba(100, 100, 108, 0.2);
 }
@@ -2194,31 +2192,6 @@ body.is-resizing-table-column {
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
-.procurement-shell .btn-approve {
-  color: var(--success);
-  background: var(--success-bg);
-  border: 1px solid transparent;
-}
-.procurement-shell .btn-approve:hover {
-  color: var(--text-on-color);
-  background: var(--success);
-  border-color: transparent;
-  box-shadow: none;
-  transform: none;
-}
-.procurement-shell .btn-reject {
-  color: var(--danger);
-  background: var(--danger-bg);
-  border: 1px solid transparent;
-}
-.procurement-shell .btn-reject:hover {
-  color: var(--text-on-color);
-  background: var(--danger);
-  border-color: transparent;
-  box-shadow: none;
-  transform: none;
-}
-
 .procurement-shell .btn-outline {
   color: var(--text-muted);
   background: transparent;
@@ -3255,15 +3228,15 @@ body.is-resizing-table-column {
 }
 
 .procurement-shell .btn-approve {
-  color: var(--success);
-  background: var(--success-bg);
-  border-color: rgba(29, 120, 78, 0.12);
+  color: #fff;
+  background: #171717;
+  border-color: #171717;
 }
 
 .procurement-shell .btn-reject {
-  color: var(--danger);
-  background: var(--danger-bg);
-  border-color: rgba(196, 57, 57, 0.12);
+  color: #171717;
+  background: #fff;
+  border-color: #b8b8bd;
 }
 
 .procurement-shell .btn-warning {
@@ -3286,14 +3259,14 @@ body.is-resizing-table-column {
 
 .procurement-shell .btn-approve:hover:not(:disabled) {
   color: #fff;
-  background: var(--success);
-  border-color: var(--success);
+  background: #333;
+  border-color: #333;
 }
 
 .procurement-shell .btn-reject:hover:not(:disabled) {
-  color: #fff;
-  background: var(--danger);
-  border-color: var(--danger);
+  color: #171717;
+  background: #f2f2f3;
+  border-color: #737373;
 }
 
 .procurement-shell .btn-warning:hover:not(:disabled) {

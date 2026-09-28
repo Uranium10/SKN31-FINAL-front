@@ -447,18 +447,18 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                     <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
                       <button
                         type="button"
-                        className="btn-primary"
+                        className="btn-approve"
                         onClick={() => handleSupplierAcceptClick(emailModalItem)}
-                        style={{ padding: '10px 24px', fontSize: '14px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--success)', borderColor: 'var(--success)' }}
+                        style={{ padding: '10px 24px', fontSize: '14px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                       >
                         <CheckCircle2 size={18} />
                         수주 접수 (Order Accept)
                       </button>
                       <button
                         type="button"
-                        className="btn-outline"
+                        className="btn-reject"
                         onClick={() => setShowRejectInput(true)}
-                        style={{ padding: '10px 16px', fontSize: '13px', color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                        style={{ padding: '10px 16px', fontSize: '13px' }}
                       >
                         <XCircle size={16} />
                         수주 거절 (Reject)
