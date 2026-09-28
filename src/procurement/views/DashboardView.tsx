@@ -14,8 +14,8 @@ interface DashboardViewProps {
 }
 const groupInfo = {
   attention: { title: '지금 확인해야 할 작업', icon: ClipboardCheck, empty: '지금 확인할 작업이 없습니다.' },
-  processing: { title: 'AI · 시스템이 처리 중이에요', icon: Cpu, empty: '현재 실행 중인 작업이 없습니다.' },
-  waiting: { title: '외부 응답 · 입고를 기다려요', icon: Hourglass, empty: '외부 응답을 기다리는 작업이 없습니다.' },
+  processing: { title: 'AI · 시스템이 처리 중', icon: Cpu, empty: '현재 실행 중인 작업이 없습니다.' },
+  waiting: { title: '외부 응답 · 입고 대기', icon: Hourglass, empty: '외부 응답을 기다리는 작업이 없습니다.' },
   other: { title: '그 밖의 진행 작업', icon: FileText, empty: '추가 작업이 없습니다.' },
 };
 
@@ -73,7 +73,7 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
       {(['attention', 'processing', 'waiting'] as const).map(key => {
         const Icon = groupInfo[key].icon;
         return <button key={key} className={`work-kpi work-kpi-${key}`} onClick={() => document.getElementById(`work-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-          <span className="work-kpi-icon"><Icon size={23} /></span><span><span className="work-kpi-label">{key === 'attention' ? '사람 확인 필요' : key === 'processing' ? 'AI · 시스템 처리 중' : '외부 응답 · 입고 대기'}</span>
+          <span className="work-kpi-icon"><Icon size={23} /></span><span><span className="work-kpi-label">{key === 'attention' ? '사람 확인 필요' : key === 'processing' ? 'AI · 시스템이 처리 중' : '외부 응답 · 입고 대기'}</span>
             <strong>{groups[key].length}<small>건</small></strong><span className="work-kpi-caption">{key === 'attention' ? '검토 · 선택 · 예외 확인' : key === 'processing' ? '실행 중 또는 실행 대기' : '공급사 · 요청부서 · 입고'}</span></span>
         </button>;
       })}

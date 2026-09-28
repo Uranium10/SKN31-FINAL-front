@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   PackagePlus,
@@ -8,12 +8,20 @@ import {
   Layers,
   LogOut,
   ChevronLeft,
+  ChevronDown,
   PanelLeftOpen,
   Settings,
   BrainCircuit,
 } from 'lucide-react';
 import SailboatIcon from '../../components/common/SailboatIcon';
 import type { NavigationTab } from '../types';
+import './Sidebar.css';
+
+const WORK_STAGES = [
+  { tab: 'mr-list', key: 'mr', label: 'MR 목록', icon: FileText },
+  { tab: 'vendor-select', key: 'vendor', label: 'RFQ·협력사 선정', icon: Users },
+  { tab: 'po-manage', key: 'po', label: 'PO 관리', icon: ShoppingCart },
+] as const;
 
 interface SidebarProps {
   canManagePolicy?: boolean;
@@ -57,6 +65,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const displayName = currentUser?.full_name || currentUser?.username || currentUser?.id || 'ERPNext 사용자';
   const accountLabel = currentUser?.email || currentUser?.username || currentUser?.user_type || 'System User';
   const initial = displayName.trim().charAt(0).toUpperCase() || 'U';
+  const [workExpanded, setWorkExpanded] = useState(true);
+  const isWorkTab = WORK_STAGES.some(stage => stage.tab === currentTab);
+  const newWorkCount = stageTaskCounts.mr + stageTaskCounts.vendor + stageTaskCounts.po;
+  // Dashboard/deep-link navigation also reveals the selected child screen.
+  useEffect(() => {
+    if (WORK_STAGES.some(stage => stage.tab === currentTab)) setWorkExpanded(true);
+  }, [currentTab]);
 
   return (
     <aside className={`sidebar ${collapsed ? 'is-collapsed' : ''}`}>
@@ -121,55 +136,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </li>
 
-        {/* 1-3) MR 목록 */}
-        <li
-          className={`nav-item ${currentTab === 'mr-list' ? 'active' : ''} ${flashingStages.mr ? 'has-new-work' : ''}`}
-          onClick={() => setCurrentTab('mr-list')}
-          title="MR 목록"
-        >
-          <div className="nav-item-left">
-            <FileText size={18} />
-            <span>MR 목록</span>
-          </div>
-          {stageTaskCounts.mr > 0 && (
-            <span className="nav-badge" aria-label={`MR 새 작업 ${stageTaskCounts.mr}건`}>
-              {stageTaskCounts.mr}
-            </span>
-          )}
-        </li>
-
-        {/* 1-4) 협력사 선정 */}
-        <li
-          className={`nav-item ${currentTab === 'vendor-select' ? 'active' : ''} ${flashingStages.vendor ? 'has-new-work' : ''}`}
-          onClick={() => setCurrentTab('vendor-select')}
-          title="RFQ·협력사 선정"
-        >
-          <div className="nav-item-left">
-            <Users size={18} />
-            <span>RFQ·협력사 선정</span>
-          </div>
-          {stageTaskCounts.vendor > 0 && (
-            <span className="nav-badge" aria-label={`협력사 선정 새 작업 ${stageTaskCounts.vendor}건`}>
-              {stageTaskCounts.vendor}
-            </span>
-          )}
-        </li>
-
-        {/* 1-5) PO 관리 */}
-        <li
-          className={`nav-item ${currentTab === 'po-manage' ? 'active' : ''} ${flashingStages.po ? 'has-new-work' : ''}`}
-          onClick={() => setCurrentTab('po-manage')}
-          title="PO 관리"
-        >
-          <div className="nav-item-left">
-            <ShoppingCart size={18} />
-            <span>PO 관리</span>
-          </div>
-          {stageTaskCounts.po > 0 && (
-            <span className="nav-badge" aria-label={`PO 관리 새 작업 ${stageTaskCounts.po}건`}>
-              {stageTaskCounts.po}
-            </span>
-          )}
+        {/* One purchase workflow, three destinations. Numbering is navigation
+            order, not a claim that every MR has completed the earlier stage. */}
+        <li className={`sidebar-work-group${isWorkTab ? ' has-active-stage' : ''}`}>
+          {!collapsed && <button type="button" className="sidebar-work-heading"
+            aria-expanded={workExpanded} aria-controls="sidebar-work-stages"
+            onClick={() => setWorkExpanded(open => !open)}>
+            <Layers size={18} aria-hidden="true" /><span>작업 목록</span>
+            {!workExpanded && newWorkCount > 0 && <span className="nav-badge" aria-label={`새 작업 ${newWorkCount}건`}>{newWorkCount}</span>}
+            <ChevronDown size={15} className={workExpanded ? '' : 'is-folded'} aria-hidden="true" />
+          </button>}
+          <ol id="sidebar-work-stages" className="sidebar-work-stages" aria-label="작업 목록 · 구매 진행 단계" hidden={!collapsed && !workExpanded}>
+            {WORK_STAGES.map(({ tab, key, label, icon: Icon }, index) => <li key={tab}>
+              <button type="button"
+                className={`nav-item sidebar-work-stage ${currentTab === tab ? 'active' : ''} ${flashingStages[key] ? 'has-new-work' : ''}`}
+                onClick={() => setCurrentTab(tab)} aria-current={currentTab === tab ? 'page' : undefined}
+                title={`${index + 1}단계 · ${label}`} aria-label={`${index + 1}단계 · ${label}`}>
+                <span className="sidebar-stage-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                <span className="nav-item-left"><Icon size={18} aria-hidden="true" /><span>{label}</span></span>
+                {stageTaskCounts[key] > 0 && <span className="nav-badge" aria-label={`${label} 새 작업 ${stageTaskCounts[key]}건`}>{stageTaskCounts[key]}</span>}
+              </button>
+            </li>)}
+          </ol>
         </li>
         {canManagePolicy && <li>
           <button type="button" className={`nav-item ${currentTab === 'ai-decision-log' ? 'active' : ''}`}
@@ -179,38 +167,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </li>}
       </ul>
-
-      {/* Process Stages Mini Indicator inside Sidebar */}
-      {!collapsed && (
-        <>
-          <div className="sidebar-section-label">MR 단계 트래킹 시스템</div>
-          <div
-            className="sidebar-process-card"
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.58)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px',
-              fontSize: '11px',
-              color: 'var(--text-muted)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 600 }}>
-              <Layers size={13} />
-              <span>전체 프로세스 4단계</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div>1. 내 승인 여부</div>
-              <div>2. 견적 회신 진행율 (%)</div>
-              <div>3. 협력사 최종 선정</div>
-              <div>4. PO 결재 및 생성</div>
-            </div>
-          </div>
-        </>
-      )}
 
       {/* Keep administrator settings next to the account, outside task navigation. */}
       <div className="sidebar-account-footer">

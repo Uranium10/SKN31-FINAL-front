@@ -1,0 +1,45 @@
+/* Keep workflow hierarchy scoped to the sidebar, not the existing table tabs. */
+.procurement-shell .sidebar-work-group { margin: 8px 0; }
+.procurement-shell .sidebar-work-heading {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px;
+  padding: 10px 12px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--text-muted); font: inherit; font-size: 14px; font-weight: 600; text-align: left;
+}
+.procurement-shell .sidebar-work-heading > span:first-of-type { flex: 1; }
+.procurement-shell .sidebar-work-heading > svg { flex-shrink: 0; }
+.procurement-shell .sidebar-work-heading > svg:last-child { transition: transform 160ms ease; }
+.procurement-shell .sidebar-work-heading > svg.is-folded { transform: rotate(-90deg); }
+.procurement-shell .sidebar-work-heading:hover { background: var(--control-soft); }
+.procurement-shell .has-active-stage > .sidebar-work-heading { color: var(--text-main); }
+.procurement-shell .sidebar-work-stages {
+  position: relative; display: flex; flex-direction: column; gap: 4px;
+  list-style: none; margin: 3px 0 0 12px; padding: 0;
+}
+.procurement-shell .sidebar-work-stages[hidden] { display: none; }
+.procurement-shell .sidebar-work-stages::before {
+  content: ''; position: absolute; left: 20px; top: 20px; bottom: 20px;
+  width: 1px; background: var(--border-highlight); pointer-events: none;
+}
+.procurement-shell .sidebar-work-stage {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px;
+  width: 100%; padding: 10px; background: transparent; text-align: left; font-family: inherit;
+}
+.procurement-shell .sidebar-stage-index {
+  display: grid; place-items: center; height: 22px; border-radius: 5px;
+  background: var(--bg-sidebar); color: var(--text-dim); font-size: 10px;
+  font-weight: 650; font-variant-numeric: tabular-nums;
+}
+.procurement-shell .sidebar-work-stage.active .sidebar-stage-index { background: #292929; }
+.procurement-shell .sidebar-work-stage .nav-item-left { min-width: 0; font-size: 12px; }
+.procurement-shell .sidebar-work-stage .nav-item-left > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.procurement-shell .sidebar-work-stage .nav-item-left > svg { display: none; }
+.procurement-shell :is(.sidebar-work-heading, .sidebar-work-stage):focus-visible { outline: 2px solid var(--text-main); outline-offset: 2px; }
+.procurement-shell .sidebar.is-collapsed .sidebar-work-group { padding-top: 8px; border-top: 1px solid var(--border-color); }
+.procurement-shell .sidebar.is-collapsed .sidebar-work-stages { margin: 0; }
+.procurement-shell .sidebar.is-collapsed .sidebar-work-stages::before,
+.procurement-shell .sidebar.is-collapsed .sidebar-stage-index { display: none; }
+.procurement-shell .sidebar.is-collapsed .sidebar-work-stage { display: flex; }
+.procurement-shell .sidebar.is-collapsed .sidebar-work-stage .nav-item-left > svg { display: block; }
+@media (prefers-reduced-motion: reduce) {
+  .procurement-shell .sidebar-work-heading > svg:last-child { transition: none; }
+}

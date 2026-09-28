@@ -3,6 +3,7 @@
 - 상태 분류 회귀 테스트: `node --test tests/dashboardTasks.test.mjs`
 - 타입 검사 및 운영 빌드: `npm run build`
 - 로컬 화면: `npm run dev` 후 `/tests/dashboard-preview.html`
+- 사이드바 계층 검증: `/tests/sidebar-preview.html` (작업 목록 접기·펼치기, 3단계 이동, 축소 아이콘 및 배지)
 
 로컬 화면은 기존 목업 자료를 사용하며 API 요청, 구매 승인, 메일 발송을 하지 않습니다.
 사람 확인 / 시스템 처리 / 외부 응답·입고 대기를 상호 배타적으로 분류합니다.
