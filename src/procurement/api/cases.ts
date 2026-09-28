@@ -1,4 +1,5 @@
 import { fetchWithAuth } from '../../utils/auth';
+import { normalizeSpecificationText } from '../utils/itemSpecifications';
 import type {
   MaterialRequest,
   MaterialRequestAttachment,
@@ -380,8 +381,7 @@ const numberValue = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const stripHtml = (value: string): string => value
-  .replace(/<[^>]+>/g, ' ')
+const stripHtml = (value: string): string => normalizeSpecificationText(value)
   .replace(/\s+/g, ' ')
   .trim();
 

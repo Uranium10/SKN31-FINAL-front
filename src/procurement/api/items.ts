@@ -1,6 +1,6 @@
 import { fetchWithAuth } from '../../utils/auth';
 import type { ERPItemSpecificationResponse, Item } from '../types';
-import { mapERPItemSpecificationResponse } from '../utils/itemSpecifications';
+import { mapERPItemSpecificationResponse, normalizeSpecificationText } from '../utils/itemSpecifications';
 
 interface ERPItemSummary {
   item_code: string;
@@ -27,8 +27,7 @@ const parseJson = async <T>(response: Response): Promise<T> => {
   return body as T;
 };
 
-const stripHtml = (value?: string | null): string => (value ?? '')
-  .replace(/<[^>]+>/g, ' ')
+const stripHtml = (value?: string | null): string => normalizeSpecificationText(value ?? '')
   .replace(/\s+/g, ' ')
   .trim();
 

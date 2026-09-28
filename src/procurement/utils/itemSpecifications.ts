@@ -41,6 +41,9 @@ export const normalizeSpecificationText = (value: string): string => decodeHtmlE
   .replace(/<\/(?:div|p|li|ul|ol|section)>/gi, '\n')
   .replace(/<li(?:\s[^>]*)?>/gi, '- ')
   .replace(/<[^>]+>/g, ' ')
+  // ERP item-entry guidance is not a specification. Strip only this exact
+  // notice, including old records; preserve labels, missing values and units.
+  .replace(/\[?\s*자동생성\s*[-–—]\s*품목분류\s+필수\s+규격\s*,\s*값을\s*채워주세요\s*\]?/g, '')
   .replace(/\r/g, '')
   .replace(/[\t\f\v]+/g, ' ')
   .replace(/ *\n */g, '\n')
@@ -337,6 +340,8 @@ export const getItemSpecificationFields = (item: Item): ItemSpecificationField[]
 
   const seenLegacyValues = new Set<string>();
   return [...fields]
+    .map(field => typeof field.value === 'string'
+      ? { ...field, value: normalizeSpecificationText(field.value) } : field)
     .filter((field) => hasValue(field.value) || field.required)
     .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER))
     .filter((field) => {
@@ -400,7 +405,7 @@ export const mapERPItemSpecificationResponse = (
     itemCode: payload.item_code,
     department: payload.department ?? fallback?.department ?? '-',
     itemName: payload.item_name,
-    specSummary: fallback?.specSummary ?? payload.description ?? specifications.slice(0, 3).map(formatSpecificationValue).join(' / '),
+    specSummary: normalizeSpecificationText(fallback?.specSummary ?? payload.description ?? specifications.slice(0, 3).map(formatSpecificationValue).join(' / ')),
     specifications,
     // 레거시 화면을 제거하기 전까지 최소 호환값을 함께 유지합니다.
     fullSpec: fallback?.fullSpec ?? {
@@ -409,7 +414,7 @@ export const mapERPItemSpecificationResponse = (
       operatingTemp: byKey.get('operating_temp') ?? byKey.get('custom_operating_temp') ?? '-',
       pressureRating: byKey.get('pressure_rating') ?? byKey.get('custom_pressure_rating') ?? '-',
       manufacturer: byKey.get('manufacturer') ?? byKey.get('brand') ?? '-',
-      notes: payload.description ?? '-',
+      notes: normalizeSpecificationText(payload.description ?? '-') || '-',
     },
     maintainStock: payload.maintain_stock ?? fallback?.maintainStock ?? false,
     isFixedAsset: payload.is_fixed_asset ?? fallback?.isFixedAsset ?? false,
