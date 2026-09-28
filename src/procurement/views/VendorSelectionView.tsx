@@ -33,6 +33,7 @@ import {
 } from '../hooks/useSessionTableState';
 import {
   Sparkles,
+  RotateCcw,
   FileText,
   X,
   Paperclip,
@@ -505,6 +506,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     if (focusedMrNo) setActiveTab(completedGroups.some(group => group.mrNo === focusedMrNo) ? 'completed' : 'progress');
   }, [focusedMrNo, completedGroups]);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const resetTableLayout = () => {
+    tableState.resetWidths();
+    tableState.clearFilters();
+    setRangeFilters({});
+    setSortColumn('roundDeadline');
+    setSortDirection('asc');
+  };
 
   useEffect(() => {
     if (!showRfqModal || !selectedGroup) return;
@@ -1450,6 +1458,13 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       </div>
 
       {/* 요구사항 핵심: 협력사 선정 표 (Table) */}
+      <div className="mr-table-region">
+        <div className="mr-table-action-row">
+          <button type="button" className="mr-table-reset-button" aria-label="협력사 선정 표 레이아웃 초기화"
+            data-tooltip="컬럼 크기·필터·정렬 초기화" onClick={resetTableLayout}>
+            <RotateCcw size={17} aria-hidden="true" />
+          </button>
+        </div>
       <SmartTableContainer style={{ border: '1px solid var(--border-color)', borderRadius: '10px', backgroundColor: 'var(--bg-card)', boxShadow: 'var(--shadow-sm)' }}>
         <table
           className="custom-table configurable-table"
@@ -1969,6 +1984,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
           </tbody>
         </table>
       </SmartTableContainer>
+      </div>
 
       {/* ========================================================================= */}
       {/* 팝업 모달 1: MR 번호 클릭 시 -> MR 상세 정보 모달 */}

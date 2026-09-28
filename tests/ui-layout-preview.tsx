@@ -6,8 +6,9 @@ import '../src/index.css';
 import '../src/procurement/ProcurementWorkspace.css';
 import { CompanyPolicyView } from '../src/procurement/views/CompanyPolicyView';
 import { POManagementView } from '../src/procurement/views/POManagementView';
+import { VendorSelectionView } from '../src/procurement/views/VendorSelectionView';
 import { DEFAULT_AUTOMATION, DEFAULT_QUOTATION_WEIGHTS, type CompanyPolicy } from '../src/procurement/api/companyPolicy';
-import { initialPOItems } from '../src/procurement/mock/data';
+import { initialPOItems, initialVendorGroups } from '../src/procurement/mock/data';
 const policy: CompanyPolicy = {
   supplier_sources: ['tavily', 'narajangteo', 'db'],
   rules: { urgent_lead_days: 3, bidding_amount: 1000000, pattern_min_orders: 3,
@@ -32,9 +33,14 @@ export function LayoutPreview() {
   return <div className="procurement-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
     <header style={{ padding: 14, display: 'flex', gap: 12 }}><strong>로컬 레이아웃 검증 · 저장/발송 차단</strong>
       <button onClick={() => setTab('policy')}>정책 미리보기</button><button onClick={() => setTab('po')}>PO 미리보기</button>
+      <button onClick={() => setTab('vendor')}>협력사 미리보기</button>
     </header>
     <main className="view-content" style={{ minHeight: 0, overflow: 'auto', flex: 1, padding: 28 }}>
-      {tab === 'policy' ? <CompanyPolicyView roles={['Purchase Master Manager']} /> :
+      {tab === 'policy' ? <CompanyPolicyView roles={['Purchase Master Manager']} /> : tab === 'vendor' ?
+        <VendorSelectionView vendorGroups={initialVendorGroups} onSelectSupplier={() => false}
+          onSendPO={noop} onWithdrawSupplierSelection={noop} onCancelMR={() => false}
+          onRebidQuotations={() => false} onOpenSpecModalByItemCode={noop} onExtendDeadline={() => false}
+          onSendRFQ={() => false} onCheckQuotations={() => false} onAutoReview={() => false} /> :
         <POManagementView poItems={initialPOItems.map(row => ({ ...row, itemName: '긴 품목명이 좁은 컬럼에서 말줄임 되는지 확인하는 테스트 품목명' }))}
           onCreatePO={noop} onStartOrder={noop} onRequestPR={noop} onSupplierAcceptOrder={noop}
           onReturnToVendorSelection={noop} onCancelMR={noop} onMarkArrived={noop} onSubmitScorecard={noop} />}

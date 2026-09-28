@@ -16,6 +16,7 @@ import {
   Mail,
   PackageCheck,
   Plus,
+  RotateCcw,
   Send,
   ShoppingCart,
   Star,
@@ -127,7 +128,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onDownloadAttachment,
   isApiMode = false,
 }) => {
-  const tableState = useSessionTableState('po-management', PO_COLUMNS);
+  const tableState = useSessionTableState('po-management', PO_COLUMNS, 'adjacent');
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
   // MRListView와 동일하게, 에러문구 클릭하면 펼쳐서 전체 보이게 (요청별 토글).
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
@@ -160,6 +161,18 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   const [dueDateTo, setDueDateTo] = useState('');
   const [sortOrder, setSortOrder] = useState<'latest' | 'due-date' | 'amount'>('latest');
   const [showCreatePOChooser, setShowCreatePOChooser] = useState(false);
+  const resetTableLayout = () => {
+    tableState.resetWidths();
+    tableState.clearFilters();
+    setSearchText('');
+    setMinAmount('');
+    setMaxAmount('');
+    setDueDateFrom('');
+    setDueDateTo('');
+    setActiveStage('all');
+    setSortOrder('latest');
+    setSearchOpen(false);
+  };
 
   const tabItems = useMemo(() => poItems.filter((item) => (
     activeTab === 'completed' ? isPoComplete(item) : !isPoComplete(item)
@@ -257,7 +270,6 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           {PO_STAGES.map(({ key, label }) => <button type="button" key={key} className={`po-stage-filter ${activeStage === key ? 'is-active' : ''}`} aria-pressed={activeStage === key} onClick={() => setActiveStage(key)}><span className={`po-stage-dot ${stageClass(key)}`} />{label} <span>{stageCounts[key]}</span></button>)}
         </div>
         <div className="po-toolbar-actions">
-          <button type="button" className="po-filter-reset" onClick={tableState.resetWidths} title="컬럼 너비 초기화">너비 초기화</button>
           <label className="po-sort-select"><span className="sr-only">PO 정렬</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)}><option value="latest">요청 최신순</option><option value="due-date">납기 임박순</option><option value="amount">발주 금액순</option></select><ChevronDown size={15} aria-hidden="true" /></label>
           <button type="button" className={`po-filter-button ${searchOpen ? 'is-active' : ''}`} aria-label="PO 검색 필터" aria-expanded={searchOpen} onClick={() => { setSearchOpen((open) => !open); if (searchOpen) setSearchText(''); }}><Filter size={17} /></button>
         </div>
@@ -272,11 +284,18 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           </div>
         </div>
       )}
+      <div className="mr-table-region">
+        <div className="mr-table-action-row">
+          <button type="button" className="mr-table-reset-button" aria-label="PO 표 레이아웃 초기화"
+            data-tooltip="컬럼 크기·필터·정렬 초기화" onClick={resetTableLayout}>
+            <RotateCcw size={17} aria-hidden="true" />
+          </button>
+        </div>
       <SmartTableContainer>
-        <table className="custom-table po-management-table" style={{ width: tableState.totalWidth, minWidth: tableState.totalWidth }}>
-          <colgroup>{PO_COLUMNS.map(column => <col key={column.key} style={{ width: tableState.widths[column.key] }} />)}</colgroup>
-          <thead><tr>{PO_COLUMNS.map(column => <th key={column.key}><span title={column.label}>{column.label}</span>
-            <div className="excel-column-resizer" role="separator" aria-orientation="vertical" aria-label={`${column.label} 너비 조절`} onPointerDown={event => tableState.beginResize(column.key, event)} />
+        <table className="custom-table po-management-table">
+          <colgroup>{PO_COLUMNS.map(column => <col key={column.key} style={{ width: `${tableState.widths[column.key] / tableState.totalWidth * 100}%` }} />)}</colgroup>
+          <thead><tr>{PO_COLUMNS.map((column, index) => <th key={column.key}><span title={column.label}>{column.label}</span>
+            {index < PO_COLUMNS.length - 1 && <div className="excel-column-resizer" role="separator" aria-orientation="vertical" aria-label={`${column.label} 너비 조절`} onPointerDown={event => tableState.beginResize(column.key, event)} />}
           </th>)}</tr></thead>
           <tbody>
             {visiblePOItems.map((item, rowIndex) => {
@@ -361,6 +380,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           </tbody>
         </table>
       </SmartTableContainer>
+      </div>
 
       {showCreatePOChooser && <div className="modal-overlay" onClick={() => setShowCreatePOChooser(false)}><div className="modal-content" onClick={(event) => event.stopPropagation()}><div className="modal-header"><div><ShoppingCart size={20} /><h3>PO 생성 대상</h3></div><button type="button" className="icon-btn" onClick={() => setShowCreatePOChooser(false)}><X size={18} /></button></div><div className="modal-body">{poCreationCandidates.map((item) => <button type="button" className="po-create-candidate" key={item.id} onClick={() => { setApprovalModalItem(item); setShowCreatePOChooser(false); }}><span><strong>{item.mrNo}</strong><small>{item.itemName} · {item.selectedSupplier}</small></span><ChevronDown size={16} /></button>)}</div><div className="modal-footer"><button type="button" className="btn-outline" onClick={() => setShowCreatePOChooser(false)}>닫기</button></div></div></div>}
 

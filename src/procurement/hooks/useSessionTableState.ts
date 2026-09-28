@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { resizeAdjacentColumns } from '../utils/tableResize';
 
 export type TableFilterMode = 'none' | 'values' | 'number-range' | 'date-range';
 
@@ -85,6 +86,7 @@ export const matchesTableRange = (
 export const useSessionTableState = <Key extends string>(
   tableId: string,
   columns: readonly TableColumnDefinition<Key>[],
+  resizeMode: 'independent' | 'adjacent' = 'independent',
 ) => {
   const defaultWidths = useMemo(() => Object.fromEntries(
     columns.map((column) => [column.key, column.defaultWidth]),
@@ -128,9 +130,23 @@ export const useSessionTableState = <Key extends string>(
     const startX = event.clientX;
     const startWidth = widths[key];
     const minimum = minimumWidths[key];
+    const columnIndex = columns.findIndex(column => column.key === key);
+    if (resizeMode === 'adjacent' && columnIndex === columns.length - 1) return;
+    // Percentage columns stretch with the container. Start from rendered pixels,
+    // not persisted widths, so the first drag never jumps after a window resize.
+    const headers = event.currentTarget.closest('tr')?.querySelectorAll('th');
+    const renderedWidths = columns.map((column, index) =>
+      headers?.[index]?.getBoundingClientRect().width || widths[column.key]);
     document.body.classList.add('is-resizing-table-column');
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (resizeMode === 'adjacent') {
+        const resized = resizeAdjacentColumns(renderedWidths,
+          columns.map(column => column.minWidth), columnIndex, moveEvent.clientX - startX);
+        setStoredWidths(Object.fromEntries(columns.map((column, index) =>
+          [column.key, resized[index]])) as Record<Key, number>);
+        return;
+      }
       const nextWidth = Math.max(minimum, Math.round(startWidth + moveEvent.clientX - startX));
       setStoredWidths((current) => ({ ...current, [key]: nextWidth }));
     };
@@ -138,11 +154,13 @@ export const useSessionTableState = <Key extends string>(
       document.body.classList.remove('is-resizing-table-column');
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp, { once: true });
-  }, [minimumWidths, setStoredWidths, widths]);
+    window.addEventListener('pointercancel', handlePointerUp, { once: true });
+  }, [columns, minimumWidths, resizeMode, setStoredWidths, widths]);
 
   const resetWidths = useCallback(() => setStoredWidths({}), [setStoredWidths]);
   const clearFilters = useCallback(() => setFilters({}), [setFilters]);
