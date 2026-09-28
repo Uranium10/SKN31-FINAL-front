@@ -293,6 +293,8 @@ function ProcurementWorkspaceComponent({
     return () => { alive = false; window.removeEventListener('focus', refreshAccess); };
   }, [currentUser?.id, currentUser?.email]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [taskFocus, setTaskFocus] = useState<{ tab: NavigationTab; mrNo: string } | null>(null);
+  useEffect(() => { if (taskFocus && taskFocus.tab !== currentTab) setTaskFocus(null); }, [currentTab, taskFocus]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.localStorage.getItem('biddingflow.sidebar.collapsed') === 'true'
   ));
@@ -2193,6 +2195,7 @@ function ProcurementWorkspaceComponent({
             {canManagePolicy && <div hidden={currentTab !== 'ai-decision-log'}><AiDecisionLogView active={currentTab === 'ai-decision-log'} /></div>}
             {!canManagePolicy && currentTab === 'ai-decision-log' && <p role="alert">AI 판단 로그를 조회할 관리자 권한이 없습니다.</p>}
             {/* Screen 2: 대시보드 */}
+            {taskFocus?.tab === currentTab && <div className="task-focus-banner" role="status"><span><strong>{taskFocus.mrNo}</strong> 선택한 작업을 표시합니다. 기존 필터는 잠시 적용하지 않습니다.</span><button type="button" onClick={() => { setTaskFocus(null); setSearchQuery(''); }}>전체 목록으로</button></div>}
             {currentTab === 'dashboard' && (
               <section
                 className={`dashboard-initial-load-region${initialDashboardLoading ? ' is-loading' : ''}`}
@@ -2206,7 +2209,7 @@ function ProcurementWorkspaceComponent({
                     requests={dashboardRequests}
                     poItems={activePOItems}
                     notifications={notifications}
-                    onOpenTask={(tab, mrNo) => { setSearchQuery(mrNo); setCurrentTab(tab); }}
+                    onOpenTask={(tab, mrNo) => { setTaskFocus({ tab, mrNo }); setSearchQuery(mrNo); setCurrentTab(tab); }}
                     setCurrentTab={setCurrentTab}
                   />
                 </div>
@@ -2233,6 +2236,7 @@ function ProcurementWorkspaceComponent({
             {/* Screen 4: MR 목록 */}
             {currentTab === 'mr-list' && (
               <MRListView
+                focusedMrNo={taskFocus?.tab === currentTab ? taskFocus.mrNo : undefined}
                 requests={animatedMRQueueRequests}
                 movePlaceholders={stageMovePlaceholders.filter((item) => item.sourceTab === 'mr-list')}
                 onDismissMovePlaceholder={dismissStageMovePlaceholder}
@@ -2257,6 +2261,7 @@ function ProcurementWorkspaceComponent({
             {/* Screen 5: 협력사 선정 */}
             {currentTab === 'vendor-select' && (
               <VendorSelectionView
+                focusedMrNo={taskFocus?.tab === currentTab ? taskFocus.mrNo : undefined}
                 vendorGroups={animatedVendorGroups}
                 completedGroups={completedVendorGroups}
                 movePlaceholders={stageMovePlaceholders.filter((item) => item.sourceTab === 'vendor-select')}
@@ -2283,6 +2288,7 @@ function ProcurementWorkspaceComponent({
             {/* Screen 6: PO 관리 */}
             {currentTab === 'po-manage' && (
               <POManagementView
+                focusedMrNo={taskFocus?.tab === currentTab ? taskFocus.mrNo : undefined}
                 poItems={animatedPOItems}
                 movePlaceholders={stageMovePlaceholders.filter((item) => item.sourceTab === 'po-manage')}
                 onDismissMovePlaceholder={dismissStageMovePlaceholder}

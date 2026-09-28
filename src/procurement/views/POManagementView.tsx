@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { MaterialRequestAttachment, POItem, POScorecardScores, SupplierScores, StageMovePlaceholder } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
@@ -23,11 +23,19 @@ import {
   XCircle,
 } from 'lucide-react';
 import './POManagementView.css';
+import { useSessionTableState } from '../hooks/useSessionTableState';
+const PO_COLUMNS = [
+  { key: 'purchase', label: '구매 건', defaultWidth: 320, minWidth: 100 },
+  { key: 'workflow', label: '상태 / 진행', defaultWidth: 460, minWidth: 140 },
+  { key: 'po', label: 'PO', defaultWidth: 210, minWidth: 85 },
+  { key: 'date', label: '납기일정', defaultWidth: 170, minWidth: 85 },
+] as const;
 
 type POStageKey = 'reply' | 'rejected' | 'po' | 'receipt-wait' | 'received';
 type POListTab = 'in-progress' | 'completed';
 
 interface POManagementViewProps {
+  focusedMrNo?: string;
   poItems: POItem[];
   movePlaceholders?: StageMovePlaceholder[];
   onDismissMovePlaceholder?: (id: string) => void;
@@ -102,6 +110,7 @@ const paymentLabel = (item: POItem): string => ({
 
 export const POManagementView: React.FC<POManagementViewProps> = ({
   poItems,
+  focusedMrNo,
   movePlaceholders = [],
   onDismissMovePlaceholder = () => undefined,
   onNavigateMovePlaceholder = () => undefined,
@@ -118,6 +127,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onDownloadAttachment,
   isApiMode = false,
 }) => {
+  const tableState = useSessionTableState('po-management', PO_COLUMNS);
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
   // MRListView와 동일하게, 에러문구 클릭하면 펼쳐서 전체 보이게 (요청별 토글).
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
@@ -137,6 +147,10 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   const [showRejectInput, setShowRejectInput] = useState<boolean>(false);
   const [rejectReasonText, setRejectReasonText] = useState<string>('');
   const [activeTab, setActiveTab] = useState<POListTab>('in-progress');
+  useEffect(() => {
+    const focused = focusedMrNo ? poItems.find(item => item.mrNo === focusedMrNo) : undefined;
+    if (focused) setActiveTab(isPoComplete(focused) ? 'completed' : 'in-progress');
+  }, [focusedMrNo, poItems]);
   const [activeStage, setActiveStage] = useState<POStageKey | 'all'>('all');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -155,6 +169,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
     tabItems.filter((item) => getPOStage(item) === key).length,
   ])) as Record<POStageKey, number>, [tabItems]);
   const visiblePOItems = useMemo(() => {
+    if (focusedMrNo) return poItems.filter(item => item.mrNo === focusedMrNo);
     const query = searchText.trim().toLocaleLowerCase('ko-KR');
     const minimum = minAmount === '' ? undefined : Number(minAmount);
     const maximum = maxAmount === '' ? undefined : Number(maxAmount);
@@ -170,7 +185,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         : sortOrder === 'due-date'
           ? (left.promisedDeliveryDate ?? left.dueDate).localeCompare(right.promisedDeliveryDate ?? right.dueDate)
           : right.mrNo.localeCompare(left.mrNo, 'ko-KR', { numeric: true }));
-  }, [activeStage, dueDateFrom, dueDateTo, maxAmount, minAmount, searchText, sortOrder, tabItems]);
+  }, [activeStage, dueDateFrom, dueDateTo, maxAmount, minAmount, searchText, sortOrder, tabItems, focusedMrNo, poItems]);
   const poCreationCandidates = poItems.filter((item) => !item.poCreated && (
     item.pendingTask?.taskType === 'po_approval'
     || (!isApiMode && item.supplierApprovalStatus === 'approved')
@@ -242,6 +257,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
           {PO_STAGES.map(({ key, label }) => <button type="button" key={key} className={`po-stage-filter ${activeStage === key ? 'is-active' : ''}`} aria-pressed={activeStage === key} onClick={() => setActiveStage(key)}><span className={`po-stage-dot ${stageClass(key)}`} />{label} <span>{stageCounts[key]}</span></button>)}
         </div>
         <div className="po-toolbar-actions">
+          <button type="button" className="po-filter-reset" onClick={tableState.resetWidths} title="컬럼 너비 초기화">너비 초기화</button>
           <label className="po-sort-select"><span className="sr-only">PO 정렬</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)}><option value="latest">요청 최신순</option><option value="due-date">납기 임박순</option><option value="amount">발주 금액순</option></select><ChevronDown size={15} aria-hidden="true" /></label>
           <button type="button" className={`po-filter-button ${searchOpen ? 'is-active' : ''}`} aria-label="PO 검색 필터" aria-expanded={searchOpen} onClick={() => { setSearchOpen((open) => !open); if (searchOpen) setSearchText(''); }}><Filter size={17} /></button>
         </div>
@@ -257,8 +273,11 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         </div>
       )}
       <SmartTableContainer>
-        <table className="custom-table po-management-table">
-          <thead><tr><th>구매 건</th><th>상태 / 진행</th><th>PO</th><th>납기일정</th></tr></thead>
+        <table className="custom-table po-management-table" style={{ width: tableState.totalWidth, minWidth: tableState.totalWidth }}>
+          <colgroup>{PO_COLUMNS.map(column => <col key={column.key} style={{ width: tableState.widths[column.key] }} />)}</colgroup>
+          <thead><tr>{PO_COLUMNS.map(column => <th key={column.key}><span title={column.label}>{column.label}</span>
+            <div className="excel-column-resizer" role="separator" aria-orientation="vertical" aria-label={`${column.label} 너비 조절`} onPointerDown={event => tableState.beginResize(column.key, event)} />
+          </th>)}</tr></thead>
           <tbody>
             {visiblePOItems.map((item, rowIndex) => {
               const stage = getPOStage(item);
@@ -270,8 +289,8 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                   <tr className={`workflow-transition-${item.transitionPhase ?? 'stable'}`}>
                     <td>
                       <div className="po-purchase-cell">
-                        <button type="button" className="po-mr-link" onClick={() => setSelectedMRDetail(item)} title="MR 기본 정보와 선정 협력사 확인">{item.mrNo}</button>
-                        <span className="po-item-summary">{item.itemName}{item.itemCode ? ` · ${item.itemCode}` : ''}</span>
+                        <button type="button" className="po-mr-link" onClick={() => setSelectedMRDetail(item)} title={`${item.mrNo} · MR 기본 정보와 선정 협력사 확인`}>{item.mrNo}</button>
+                        <span className="po-item-summary" title={`${item.itemName} · ${item.itemCode || ''}`}>{item.itemName}{item.itemCode ? ` · ${item.itemCode}` : ''}</span>
                       </div>
                     </td>
                     <td>
@@ -308,7 +327,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         </div>
                       </div>
                     </td>
-                    <td><span className={item.poNo ? 'po-number' : 'po-number is-empty'}>{item.poNo ?? '—'}</span>{item.createdDate && <span className="po-created-date">{formatShortDate(item.createdDate)}</span>}</td>
+                    <td><span title={item.poNo} className={item.poNo ? 'po-number' : 'po-number is-empty'}>{item.poNo ?? '—'}</span>{item.createdDate && <span title={item.createdDate} className="po-created-date">{formatShortDate(item.createdDate)}</span>}</td>
                     <td>
                       <div className="po-date-cell">
                         <span className={item.isUrgent ? 'po-date-urgent' : ''}>{formatShortDate(dueDate)}</span>

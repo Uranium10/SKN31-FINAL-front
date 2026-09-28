@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 
 interface MRListViewProps {
+  focusedMrNo?: string;
   requests: MaterialRequest[];
   movePlaceholders?: StageMovePlaceholder[];
   onDismissMovePlaceholder?: (id: string) => void;
@@ -156,6 +157,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
   onDismissMovePlaceholder = () => undefined,
   onNavigateMovePlaceholder = () => undefined,
   searchQuery,
+  focusedMrNo,
   setSearchQuery,
   onOpenSpecModalByItemCode,
   onApprove,
@@ -253,6 +255,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
 
   // 4-1) 검색어 필터링: MR번호, 품목명, 요청부서, 요청자, 아이템코드, 카테고리 등 모든 필드 대상
   const baseRequests = useMemo(() => {
+    if (focusedMrNo) return requests.filter(request => request.mrNo === focusedMrNo);
     const query = searchQuery.toLocaleLowerCase('ko-KR');
     return requests
       .filter((request) => {
@@ -269,7 +272,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
         const matchesDept = deptFilter === '전체' || request.department === deptFilter;
         return matchesSearch && matchesStatus && matchesDept;
       });
-  }, [deptFilter, requests, searchQuery, statusFilter]);
+  }, [deptFilter, requests, searchQuery, statusFilter, focusedMrNo]);
 
   const columnFilterOptions = useMemo(() => Object.fromEntries(MR_COLUMNS.map((column) => [
     column.key,
@@ -278,12 +281,12 @@ export const MRListView: React.FC<MRListViewProps> = ({
 
   const sortedRequests = useMemo(() => (
     baseRequests
-      .filter((request) => MR_COLUMNS.every((column) => {
+      .filter((request) => focusedMrNo || MR_COLUMNS.every((column) => {
         if (column.filterMode && column.filterMode !== 'values') return true;
         const selected = tableState.filters[column.key];
         return selected === undefined || selected.includes(mrFilterValue(request, column.key));
       }))
-      .filter((request) => MR_COLUMNS.every((column) => (
+      .filter((request) => focusedMrNo || MR_COLUMNS.every((column) => (
         column.filterMode === 'number-range' || column.filterMode === 'date-range'
           ? matchesTableRange(sortableValue(request, column.key), rangeFilters[column.key], column.filterMode)
           : true
@@ -296,7 +299,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
           : String(left).localeCompare(String(right), 'ko-KR', { numeric: true });
         return sortDirection === 'asc' ? compared : -compared;
       })
-  ), [baseRequests, rangeFilters, sortDirection, sortKey, tableState.filters]);
+  ), [baseRequests, rangeFilters, sortDirection, sortKey, tableState.filters, focusedMrNo]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRequests.length / PAGE_SIZE));
   const pageRequests = useMemo(() => {
@@ -306,7 +309,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [deptFilter, rangeFilters, searchQuery, sortDirection, sortKey, statusFilter, tableState.filters]);
+  }, [deptFilter, rangeFilters, searchQuery, sortDirection, sortKey, statusFilter, tableState.filters, focusedMrNo]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);

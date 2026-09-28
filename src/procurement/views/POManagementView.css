@@ -267,10 +267,33 @@
   table-layout: fixed;
 }
 
-.po-management-table th:nth-child(1) { width: 28%; }
-.po-management-table th:nth-child(2) { width: 45%; }
-.po-management-table th:nth-child(3) { width: 13%; }
-.po-management-table th:nth-child(4) { width: 14%; }
+.po-management-table th { position: relative; }
+.po-management-table th > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 10px; }
+.po-management-table th .excel-column-resizer { touch-action: none; }
+.po-management-table td { overflow: hidden; }
+.po-management-table :is(.po-mr-link, .po-number, .po-created-date, .po-receipt-date, .po-inline-note) { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-management-table .po-state-line { flex-wrap: wrap; min-width: 0; }
+.po-management-table .po-state-badge { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-management-table .po-state-badge .po-stage-dot { display: inline-block; margin-right: 6px; vertical-align: middle; }
+.po-management-table .po-row-actions .btn-sm { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-management-table .po-row-actions .btn-sm svg { vertical-align: middle; margin-right: 4px; }
+.po-management-table .po-progress-track { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* Native controls must inherit the application's Korean typeface too. */
+.po-management-view :is(button, input, select, textarea, option) { font-family: var(--font-family, inherit); letter-spacing: normal; }
+.po-list-toolbar { flex-wrap: wrap; }
+.po-toolbar-actions { flex-wrap: wrap; margin-left: auto; }
+.po-sort-select select, .po-range-field input, .po-search-field input { font-size: 13px; font-weight: 500; line-height: 1.5; box-sizing: border-box; }
+.po-sort-select select { min-width: 150px; }
+.po-sort-select { font-size: 13px; font-weight: 500; }
+.po-range-field { font-size: 12px; font-weight: 600; }
+.po-stage-filter { font-size: 13px; font-weight: 600; }
+.po-range-field input { min-height: 38px; }
+.po-range-field > span { flex-wrap: wrap; }
+.po-search-field { width: min(420px, 100%); }
+.po-search-field input { width: 100%; }
+.po-management-view :is(button, input, select):focus-visible { outline: 2px solid #333; outline-offset: 2px; }
+.po-date-cell > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .po-management-table td {
   height: 69px;

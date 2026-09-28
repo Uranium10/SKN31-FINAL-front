@@ -157,6 +157,7 @@ const vendorSortValue = (group: VendorSelectionGroup, key: VendorColumnKey): str
 };
 
 interface VendorSelectionViewProps {
+  focusedMrNo?: string;
   vendorGroups: VendorSelectionGroup[];
   /** '완료' 탭에 보여줄 건들 - 발주 시작을 눌러 PO 관리로 넘어간 케이스.
    * 진행중 목록(vendorGroups)은 백엔드 stage가 ORDER_START까지인 건만
@@ -322,6 +323,7 @@ const safeExternalUrl = (value?: string): string | null => {
 
 export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   vendorGroups,
+  focusedMrNo,
   completedGroups = [],
   movePlaceholders = [],
   onDismissMovePlaceholder = () => undefined,
@@ -499,6 +501,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   );
   const [sortColumn, setSortColumn] = useState<VendorColumnKey>('roundDeadline');
   const [activeTab, setActiveTab] = useState<'progress' | 'completed'>('progress');
+  useEffect(() => {
+    if (focusedMrNo) setActiveTab(completedGroups.some(group => group.mrNo === focusedMrNo) ? 'completed' : 'progress');
+  }, [focusedMrNo, completedGroups]);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
@@ -626,7 +631,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   };
 
   // 표에 실제로 들어갈 원본 목록 - 탭에 따라 진행중/완료 목록을 바꿔 끼운다.
-  const sourceGroups = activeTab === 'completed' ? completedGroups : vendorGroups;
+  const sourceGroups = focusedMrNo ? [...vendorGroups, ...completedGroups].filter(group => group.mrNo === focusedMrNo)
+    : activeTab === 'completed' ? completedGroups : vendorGroups;
 
   const vendorFilterOptions = useMemo(() => Object.fromEntries(VENDOR_COLUMNS.map((column) => [
     column.key,
@@ -634,7 +640,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   ])) as Record<VendorColumnKey, string[]>, [sourceGroups]);
 
   const visibleVendorGroups = useMemo(() => sourceGroups
-    .filter((group) => VENDOR_COLUMNS.every((column) => {
+    .filter((group) => focusedMrNo || VENDOR_COLUMNS.every((column) => {
       if (column.filterMode === 'number-range' || column.filterMode === 'date-range') {
         return matchesTableRange(
           vendorRangeValue(group, column.key),
@@ -654,7 +660,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
         ? leftValue - rightValue
         : String(leftValue).localeCompare(String(rightValue), 'ko-KR', { numeric: true });
       return sortDirection === 'asc' ? compared : -compared;
-    }), [rangeFilters, sortColumn, sortDirection, tableState.filters, sourceGroups]);
+    }), [rangeFilters, sortColumn, sortDirection, tableState.filters, sourceGroups, focusedMrNo]);
 
   // 진행중 / 완료 탭 - PO 관리 페이지와 같은 방식. 발주까지 넘어간 건을
   // 목록에서 분리해서, 아직 구매팀이 손볼 게 남은 건만 기본으로 보인다.
@@ -1853,6 +1859,17 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         >
                           <Send size={12} />
                           <span>발주 시작</span>
+                        </button>
+                      ) : (!hasSelection && group.workflowStage === 'SUPPLIER_SELECTION') ? (
+                        // A final-selection interrupt remains actionable even after
+                        // the deadline. Never hide a recoverable selection behind —.
+                        <button
+                          type="button"
+                          className="btn-sm btn-primary"
+                          onClick={() => handleOpenQuotationModal(group)}
+                          title="견적 비교 화면에서 최종 공급사 선정을 완료합니다."
+                        >
+                          최종 업체 선정
                         </button>
                       ) : (!hasSelection && group.deadlineDDay <= 0 && group.workflowStage === 'QUOTATION_COLLECTION') ? (
                         isPastTargetDueDate ? (

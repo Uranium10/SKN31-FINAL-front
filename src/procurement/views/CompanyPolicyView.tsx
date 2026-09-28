@@ -7,6 +7,7 @@ import {
 import './CompanyPolicyView.css';
 import { EmailAllowlistEditor } from './EmailAllowlistEditor';
 import { RunpodWorkerControl } from './RunpodWorkerControl';
+import { PolicySectionNav } from './PolicySectionNav';
 
 // 자동 진행 설정은 아래에서 따로 다룬다(숫자 입력만 있는 게 아니라 모드
 // 선택과 스위치가 섞여 있다). '구매 판단 기준'의 숫자 표에서는 제외한다.
@@ -159,6 +160,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
   }
 
   return <section className="company-policy" aria-busy={busy}>
+    <div className="policy-content">
     <header className="policy-heading">
       <div><p className="policy-eyebrow"><ShieldCheck size={15} /> 관리자 환경설정</p>
         <h2>회사 구매 정책</h2><p>구매 기준은 숫자로, AI 판단 지침은 문장으로 관리합니다.</p></div>
@@ -182,8 +184,8 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
       {message && <p role="status" className="policy-success">{message}</p>}
     </div>
     {draft && data && <>
-      <RunpodWorkerControl active={active} />
-      <EmailAllowlistEditor />
+      <div id="policy-runtime" className="policy-anchor"><RunpodWorkerControl active={active} /></div>
+      <div id="policy-mail" className="policy-anchor"><EmailAllowlistEditor /></div>
       <form ref={form} onSubmit={e => {
         e.preventDefault();
         if (!quotationWeightsValid) {
@@ -193,7 +195,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
         if (form.current?.reportValidity()) setConfirming(true);
       }}>
         <fieldset disabled={busy || confirming}>
-          <section className="policy-section"><h3>신규 공급사 탐색 소스</h3>
+          <section id="policy-sources" className="policy-section"><h3>신규 공급사 탐색 소스</h3>
             <p>복수 선택할 수 있습니다. 최소 1개를 선택하세요. 기존 ERP 협력사 조회는 그대로 유지됩니다.</p>
             <div className="policy-source-options">{([
               ['tavily', 'Tavily', '웹 검색 기반 공급사 탐색'],
@@ -210,7 +212,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
             </label>)}</div>
             <p>선택한 소스에서 후보를 모은 뒤 기존 검증·연락처 보완 과정을 거칩니다. DB만 선택해도 연락처 보완 등에 외부 API가 사용될 수 있습니다.</p>
           </section>
-          <section className="policy-section"><h3>구매 판단 기준</h3>
+          <section id="policy-rules" className="policy-section"><h3>구매 판단 기준</h3>
             <div className="policy-grid">{fields.map(field => <label className="policy-field" key={field.key}>
               <strong>{field.label}</strong><code className="policy-rule-name">{ruleNames[field.key]}</code><div className="policy-number">
                 <input type="number" required min={field.min} max={field.max} step={field.step}
@@ -225,7 +227,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
                 <option value="delivery_then_price">납기 우선 → 같은 납기이면 금액 비교</option></select>
               <small>규격·수량 검증을 통과한 견적만 비교합니다. 가격과 납기가 모두 같으면 기존 공급사 평가를 보조 기준으로 사용합니다.</small>
             </label>
-            <div className="policy-weight-editor">
+            <div id="policy-weights" className="policy-weight-editor">
               <div className="policy-weight-heading">
                 <div>
                   <strong>견적 종합평가 가중치</strong>
@@ -257,7 +259,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
               )}
             </div>
           </section>
-          <section className="policy-section"><h3>자동 진행</h3>
+          <section id="policy-automation" className="policy-section"><h3>자동 진행</h3>
             <p>
               사람이 멈추는 지점을 줄이되, 조건에 하나라도 걸리면 그 자리에서 멈추고 담당자를 부릅니다.
               판단이 애매하면 통과가 아니라 정지입니다.
@@ -316,7 +318,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
               </div>
             </fieldset>
           </section>
-          <section className="policy-section"><h3>AI 보조 판단 지침</h3>
+          <section id="policy-guidance" className="policy-section"><h3>AI 보조 판단 지침</h3>
             <p>회사별 용도·검토 관점을 입력하세요. 필수 검증을 없애거나 응답 형식을 변경하는 명령은 넣지 않습니다.</p>
             <div className="policy-grid">{([
               ['item_specification', '품목 규격 검토', '예: 전기 부품은 정격 전압과 사용 환경을 중점적으로 확인합니다.'],
@@ -327,7 +329,8 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
               <small>{draft.guidance[key].length} / 2,000자 · 비워두면 기존 지침만 사용</small>
             </label>)}</div>
           </section>
-          <section className="policy-section policy-publish">
+          <section id="policy-publish" className="policy-section policy-publish">
+            <h3>변경 내용 검토</h3>
             <label className="policy-field"><strong>변경 사유</strong><input required minLength={3} maxLength={500}
               value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 긴급구매 기준을 운영팀 합의에 따라 조정" /></label>
             <button className="policy-primary" type="submit" disabled={!dirty || !quotationWeightsValid || reason.trim().length < 3}>
@@ -351,7 +354,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
         <div className="policy-actions"><button disabled={busy} onClick={() => setConfirming(false)}>계속 수정</button>
           <button className="policy-primary" disabled={busy} onClick={() => void publish()}>{busy ? '게시 중…' : '정책 게시'}</button></div>
       </section>}
-      <section className="policy-section"><h3><History size={18} /> 게시 이력</h3>
+      <section id="policy-history" className="policy-section"><h3><History size={18} /> 게시 이력</h3>
         <p>이전 버전을 불러온 뒤 다시 게시하면 새 버전으로 복원됩니다. 기존 이력은 삭제되지 않습니다.</p>
         <div className="policy-history">{data.history.map(row => <article key={row.version}>
           <strong>v{row.version}</strong><div><b>{row.reason}</b><small>{row.published_by} · {new Date(row.published_at).toLocaleString('ko-KR')}</small></div>
@@ -362,5 +365,7 @@ export function CompanyPolicyView({ roles = [], active = true }: { roles?: strin
         </article>)}</div>
       </section>
     </>}
+    </div>
+    <PolicySectionNav active={active} ready={Boolean(draft && data)} />
   </section>;
 }

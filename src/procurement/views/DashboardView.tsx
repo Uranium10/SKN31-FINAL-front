@@ -35,11 +35,11 @@ function TaskSection({ bucket, tasks, onOpenTask }: {
     </header>
     <div id={`work-list-${bucket}`} className="work-task-list">
       {visible.map(({ request, label, detail, tab }) => <article className="work-task" key={request.mrNo}>
-        <div className="work-task-main">
+        <button type="button" className="work-task-main work-task-link" onClick={() => onOpenTask(tab, request.mrNo)} aria-label={`${request.mrNo} ${label} 작업 열기`}>
           <span className="work-stage">{label}</span>
-          <div className="work-item"><strong>{request.itemName}</strong><span>{request.mrNo}</span></div>
-          <p>{detail}</p>
-        </div>
+          <span className="work-item"><strong>{request.itemName}</strong><span>{request.mrNo}</span></span>
+          <span className="work-task-description">{detail}</span><ArrowRight className="work-task-arrow" size={16} aria-hidden="true" />
+        </button>
         <details className="work-detail">
           <summary>상세 정보 <ChevronDown size={14} /></summary>
           <dl><div><dt>요청부서 · 요청자</dt><dd>{request.department} · {request.requester}</dd></div>
@@ -88,7 +88,12 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
       <h2 id="work-activity-title"><Activity size={18} />최근 처리 알림</h2>
       {activity.length > 3 && <button className="work-link" onClick={() => setShowAllActivity(!showAllActivity)} aria-expanded={showAllActivity}>{showAllActivity ? '접기' : '더보기'}<ChevronDown size={15} /></button>}
     </header><div className="work-activity">
-      {(showAllActivity ? activity : activity.slice(0,3)).map(n => <button key={n.id} onClick={() => n.reference ? onOpenTask(n.targetTab, n.reference) : setCurrentTab(n.targetTab)}>
+      {(showAllActivity ? activity : activity.slice(0,3)).map(n => <button key={n.id} onClick={() => {
+        const mrNo = requests.find(r => r.mrNo === n.reference)?.mrNo
+          ?? poItems.find(p => p.mrNo === n.reference || p.poNo === n.reference)?.mrNo;
+        // Item / PO references are not MR identifiers. Avoid an empty MR filter.
+        if (mrNo) onOpenTask(n.targetTab, mrNo); else setCurrentTab(n.targetTab);
+      }}>
         <span>{n.time}</span><strong>{n.title}</strong><p>{n.detail}</p></button>)}
       {!activity.length && <p className="work-empty">표시할 최근 알림이 없습니다.</p>}
     </div></section>
