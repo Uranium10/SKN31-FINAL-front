@@ -23,7 +23,7 @@ test('delivery is external wait even with legacy RUNNING status', () => {
 });
 test('failed work takes priority over stage', () => {
   const result = dashboardTasks([mr('QUOTATION_COLLECTION', 'FAILED', { workflowError: '실패 사유' })])[0];
-  assert.equal(result.bucket, 'attention');
+  assert.equal(result.bucket, 'blocked');
   assert.equal(result.detail, '실패 사유');
 });
 test('terminal work and duplicate MR rows are excluded', () => {
@@ -49,4 +49,56 @@ test('issued PO count excludes draft, cancelled and duplicate documents', () => 
   ]);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].totalAmount, 10);
+});
+
+const now = Date.parse('2026-09-28T10:00:00+09:00');
+test('sorts blocked, due today, then ordinary approvals with stable tie breaks', () => {
+  const rows = dashboardTasks([
+    mr('MR_REVIEW', 'WAITING_INPUT', { mrNo: 'MR-3', dueDate: '2026-09-30' }),
+    mr('QUOTATION_COLLECTION', 'WAITING_INPUT', { mrNo: 'MR-2', quotationDeadlineAt: '2026-09-28T13:00:00+09:00' }),
+    mr('PR_REJECTED', 'WAITING_INPUT', { mrNo: 'MR-1', dueDate: '2026-10-10' }),
+  ], [], now);
+  assert.deepEqual(rows.map(r => r.priority), [0, 1, 2]);
+  assert.deepEqual(rows.map(r => r.request.mrNo), ['MR-1', 'MR-2', 'MR-3']);
+  assert.equal(rows[2].urgency, 'neutral');
+  assert.match(rows[1].deadlineLabel, /3시간 남음/);
+});
+test('KST midnight, missing/invalid dates, overdue and later stages are explicit', () => {
+  const today = dashboardTasks([mr('MR_REVIEW', 'WAITING_INPUT', { dueDate: '2026-09-28' })], [], Date.parse('2026-09-27T15:01:00Z'))[0];
+  assert.equal(today.deadlineLabel, '납기 오늘');
+  assert.equal(today.priority, 1);
+  const past = dashboardTasks([mr('MR_REVIEW', 'WAITING_INPUT', { dueDate: '2026-09-27' })], [], now)[0];
+  assert.equal(past.urgency, 'danger');
+  for (const dueDate of ['', 'invalid', '2026-02-30']) {
+    const row = dashboardTasks([mr('PRE_PO_APPROVAL', 'WAITING_INPUT', { dueDate, quotationDeadlineAt: '2026-09-26T00:00:00Z' })], [], now)[0];
+    assert.equal(row.deadlineLabel, '기한 미지정');
+    assert.equal(row.priority, 2);
+  }
+});
+test('stale running gets a review flag, not an unproven stopped execution claim', () => {
+  const updated = '2026-09-28T05:00:00+09:00';
+  const row = dashboardTasks([mr('SUPPLIER_RECOMMENDATION', 'RUNNING', { workflowUpdatedAt: updated })], [], now)[0];
+  assert.equal(row.bucket, 'blocked');
+  assert.equal(row.urgencyLabel, '장시간 미갱신 · 점검 필요');
+  assert.equal(row.elapsedLabel, '최근 갱신 후 5시간');
+  assert.doesNotMatch(row.detail, /멈췄/);
+  assert.equal(dashboardTasks([mr('DELIVERY', 'RUNNING', { workflowUpdatedAt: updated })], [], now)[0].bucket, 'waiting');
+  assert.equal(dashboardTasks([mr('QUOTATION_COLLECTION', 'WAITING_INPUT', { workflowUpdatedAt: updated })], [], now)[0].bucket, 'waiting');
+});
+test('old progress from a different stage/status cannot mark a task blocked', () => {
+  const request = mr('SUPPLIER_SELECTION', 'WAITING_INPUT', { id: '1' });
+  const observed = { case_id: '1', stage: 'SUPPLIER_SELECTION', status: 'RUNNING', updated_at: '2026-09-28T05:00:00+09:00', deadline_status: 'BLOCKED' };
+  assert.equal(dashboardTasks([request], [observed], now)[0].bucket, 'attention');
+  assert.equal(dashboardTasks([request], [{ ...observed, status: 'WAITING_INPUT' }], now)[0].bucket, 'blocked');
+});
+test('minute boundary changes urgency without a backend refresh', () => {
+  const request = mr('QUOTATION_COLLECTION', 'WAITING_INPUT', { quotationDeadlineAt: '2026-09-28T13:00:00+09:00' });
+  assert.equal(dashboardTasks([request], [], now)[0].urgency, 'warning');
+  assert.equal(dashboardTasks([request], [], now + 3 * 3600000)[0].urgency, 'danger');
+});
+
+test('legacy due-date fallback cannot invent urgency for an unset server date', () => {
+  const row = dashboardTasks([mr('MR_REVIEW', 'WAITING_INPUT', { dueDate: '2026-09-28', requestedDueDate: '' })], [], now)[0];
+  assert.equal(row.priority, 2);
+  assert.equal(row.deadlineLabel, '기한 미지정');
 });

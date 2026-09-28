@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, ChevronDown, ClipboardCheck, Cpu, Hourglass, FileText, Activity, CircleCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, ChevronDown, ClipboardCheck, Cpu, Hourglass, FileText, Activity, CircleCheck, AlertTriangle, Clock } from 'lucide-react';
 import type { MaterialRequest, NavigationTab, POItem, ProcurementNotification } from '../types';
-import { dashboardStageLabel, dashboardTasks, issuedPurchaseOrders } from '../utils/dashboardTasks';
+import { dashboardStageLabel, dashboardTasks } from '../utils/dashboardTasks';
 import type { DashboardTask, TaskBucket } from '../utils/dashboardTasks';
 import './DashboardView.css';
 import type { WorkProgress } from '../api/workProgress';
@@ -17,14 +17,17 @@ interface DashboardViewProps {
   onOpenTask: (tab: NavigationTab, mrNo: string) => void;
 }
 const groupInfo = {
-  attention: { title: '지금 확인해야 할 작업', icon: ClipboardCheck, empty: '지금 확인할 작업이 없습니다.' },
+  blocked: { title: '막힌 작업 · 점검 필요', icon: AlertTriangle, empty: '막힌 작업은 모두 처리됐습니다.' },
+  today: { title: '오늘 안에 · 기한 경과', icon: Clock, empty: '오늘 확인할 기한 작업은 모두 처리됐습니다.' },
+  attention: { title: '결정을 기다리는 작업', icon: ClipboardCheck, empty: '필요한 결정은 모두 처리됐습니다.' },
   processing: { title: 'AI · 시스템이 처리 중', icon: Cpu, empty: '현재 실행 중인 작업이 없습니다.' },
   waiting: { title: '외부 응답 · 입고 대기', icon: Hourglass, empty: '외부 응답을 기다리는 작업이 없습니다.' },
   other: { title: '그 밖의 진행 작업', icon: FileText, empty: '추가 작업이 없습니다.' },
 };
+type TaskSectionKey = TaskBucket | 'today';
 
 function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = false, totalCount }: {
-  bucket: TaskBucket; tasks: DashboardTask[]; onOpenTask: DashboardViewProps['onOpenTask'];
+  bucket: TaskSectionKey; tasks: DashboardTask[]; onOpenTask: DashboardViewProps['onOpenTask'];
   progress?: DashboardViewProps['progress'];
   onMore?: () => void; fullList?: boolean; totalCount?: number;
 }) {
@@ -39,24 +42,24 @@ function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = f
       </button>}
     </header>
     <div id={`work-list-${bucket}`} className="work-task-list">
-      {visible.map(({ request, label, detail, tab }) => {
+      {visible.map(({ request, label, detail, tab, urgency, urgencyLabel, deadlineLabel, elapsedLabel }) => {
         const state = progress?.items.find(p => p.case_id === request.id);
         // Never reuse a previous stage's waiting reason while list refresh catches up.
-        const matched = state?.stage === request.workflowStage ? state : undefined;
+        const matched = state && state.stage === request.workflowStage && state.status === request.workflowStatus ? state : undefined;
         const reason = request.workflowError || request.workflowStatus === 'FAILED' ? undefined : progressReason(matched);
-        return <article className={`work-task ${needsProgressReview(matched) ? 'work-task-review' : ''}`} key={request.mrNo}>
+        return <article className={`work-task work-urgency-${urgency}`} key={request.mrNo}>
         <button type="button" className="work-task-main work-task-link" onClick={() => onOpenTask(tab, request.mrNo)} aria-label={`${request.mrNo} ${label} 작업 열기`}>
           <span className="work-stage">{label}</span>
           <span className="work-item"><strong>{request.itemName}</strong><span>{request.mrNo}</span></span>
           <span className="work-task-description">{reason || detail}
+            <span className="work-time-evidence"><strong>{urgency === 'danger' ? <AlertTriangle size={13} /> : <Clock size={13} />}{urgencyLabel}</strong><span>{deadlineLabel}</span><span>{elapsedLabel}</span></span>
             {needsProgressReview(matched) && <strong className="work-review-label">담당자 점검 필요 · 자동 재실행하지 않습니다</strong>}
-            {matched && <small className="work-observed-time">구매 건 최근 갱신 후 {progressAge(matched.updated_at)}</small>}
           </span><ArrowRight className="work-task-arrow" size={16} aria-hidden="true" />
         </button>
         <details className="work-detail">
           <summary>상세 정보 <ChevronDown size={14} /></summary>
           <dl><div><dt>요청부서 · 요청자</dt><dd>{request.department} · {request.requester}</dd></div>
-            <div><dt>요청 납기일</dt><dd>{request.dueDate || '미지정'}</dd></div>
+            <div><dt>요청 납기일</dt><dd>{(request.requestedDueDate ?? request.dueDate) || '미지정'}</dd></div>
             <div><dt>품목 코드</dt><dd>{request.itemCode}</dd></div>
             <div><dt>요청 금액</dt><dd>₩{request.totalPrice.toLocaleString()}</dd></div></dl>
           <button className="work-open" onClick={() => onOpenTask(tab, request.mrNo)}>해당 작업 열기 <ArrowRight size={14} /></button>
@@ -67,21 +70,21 @@ function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = f
           {progress && <CaseDecisionTimeline caseId={request.id} />}
         </details>
       </article>; })}
-      {!tasks.length && <div className="work-empty"><CircleCheck size={20} /><span>{fullList ? '조건에 맞는 작업이 없습니다. 필터를 변경해 주세요.' : group.empty}</span></div>}
+      {!tasks.length && <div className={`work-empty ${!fullList ? 'work-empty-success' : ''}`}><CircleCheck size={20} /><span>{fullList ? '조건에 맞는 작업이 없습니다. 필터를 변경해 주세요.' : group.empty}</span></div>}
     </div>
   </section>;
 }
 
 export function DashboardView({ requests, poItems = [], notifications = [], setCurrentTab, onOpenTask, progress }: DashboardViewProps) {
-  const tasks = useMemo(() => dashboardTasks(requests).map(task => {
-    const state = progress?.items.find(p => p.case_id === task.request.id && p.stage === task.request.workflowStage);
-    return needsProgressReview(state) && task.bucket !== 'attention'
-      ? { ...task, bucket: 'attention' as const, label: '자동 진행 점검 필요' }
-      : task;
-  }), [requests, progress?.items]);
-  const issued = useMemo(() => issuedPurchaseOrders(poItems), [poItems]);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    // Clock-only refresh; never add ERP/API polling to keep countdowns fresh.
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const tasks = useMemo(() => dashboardTasks(requests, progress?.items, now), [requests, progress?.items, now]);
   // A dedicated list view replaces the overview; more never stretches its cards.
-  const [listView, setListView] = useState<TaskBucket | 'activity' | null>(null);
+  const [listView, setListView] = useState<TaskSectionKey | 'activity' | null>(null);
   const [query, setQuery] = useState('');
   const [stage, setStage] = useState('');
   const [sort, setSort] = useState('default');
@@ -94,11 +97,15 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
     });
   };
   const groups = {
-    attention: tasks.filter(t => t.bucket === 'attention'),
-    processing: tasks.filter(t => t.bucket === 'processing'),
-    waiting: tasks.filter(t => t.bucket === 'waiting'),
-    other: tasks.filter(t => t.bucket === 'other'),
+    blocked: tasks.filter(t => t.priority === 0),
+    today: tasks.filter(t => t.priority === 1),
+    attention: tasks.filter(t => t.priority === 2 && t.bucket === 'attention'),
+    processing: tasks.filter(t => t.priority === 2 && t.bucket === 'processing'),
+    waiting: tasks.filter(t => t.priority === 2 && t.bucket === 'waiting'),
+    other: tasks.filter(t => t.priority === 2 && t.bucket === 'other'),
   };
+  const needsAttention = tasks.filter(t => t.priority < 2 || t.bucket === 'attention');
+  const firstTask = needsAttention[0];
   // Actual notification records, not invented "AI completed" events.
   const activity = [...notifications].sort((a,b) => (Date.parse(b.createdAt ?? '') || 0) - (Date.parse(a.createdAt ?? '') || 0));
   const activityList = (rows: ProcurementNotification[]) => <div className="work-activity">
@@ -118,7 +125,7 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
         .some(value => String(value ?? '').toLocaleLowerCase().includes(needle)));
     if (sort === 'asc' || sort === 'desc') filtered.sort((a, b) =>
       a.request.mrNo.localeCompare(b.request.mrNo, 'ko', { numeric: true }) * (sort === 'asc' ? 1 : -1));
-    if (sort === 'due') filtered.sort((a, b) => (a.request.dueDate || '9999').localeCompare(b.request.dueDate || '9999'));
+    if (sort === 'due') filtered.sort((a, b) => ((a.request.requestedDueDate ?? a.request.dueDate) || '9999').localeCompare((b.request.requestedDueDate ?? b.request.dueDate) || '9999'));
     const filteredActivity = activity.filter(n => (!stage || n.targetTab === stage)
       && [n.title, n.detail, n.reference].some(value => String(value ?? '').toLocaleLowerCase().includes(needle)));
     if (sort === 'oldest') filteredActivity.reverse();
@@ -140,7 +147,7 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
             : stages.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label>
         <label>정렬<select value={sort} onChange={e => { setSort(e.target.value); setPage(1); }}>
-          <option value="default">{isActivity ? '최신 알림순' : '기본 순서'}</option>
+          <option value="default">{isActivity ? '최신 알림순' : '긴급도 → 기한순'}</option>
           {isActivity ? <option value="oldest">오래된 알림순</option> : <><option value="asc">MR 번호 오름차순</option><option value="desc">MR 번호 내림차순</option><option value="due">요청 납기일순</option></>}
         </select></label>
         <button className="work-link" onClick={() => { setQuery(''); setStage(''); setSort('default'); setPage(1); }}>필터 초기화</button>
@@ -159,17 +166,16 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
       <div><span>{progress.error || (progress.checkedAt ? `마지막 확인 ${new Date(progress.checkedAt).toLocaleTimeString('ko-KR')}` : '진행 현황 연결 중')}{progress.truncated ? ' · 최근 200건 기준' : ''}</span>
         <button type="button" className="work-link" onClick={progress.refresh}>현황 새로고침</button></div>
     </section>}
-    <div className="work-kpis">
-      {(['attention', 'processing', 'waiting'] as const).map(key => {
-        const Icon = groupInfo[key].icon;
-        return <button key={key} className={`work-kpi work-kpi-${key}`} onClick={() => openList(key)}>
-          <span className="work-kpi-icon"><Icon size={23} /></span><span><span className="work-kpi-label">{key === 'attention' ? '사람 확인 필요' : key === 'processing' ? 'AI · 시스템이 처리 중' : '외부 응답 · 입고 대기'}</span>
-            <strong>{groups[key].length}<small>건</small></strong><span className="work-kpi-caption">{key === 'attention' ? '검토 · 선택 · 예외 확인' : key === 'processing' ? '실행 중 또는 실행 대기' : '공급사 · 요청부서 · 입고'}</span></span>
-        </button>;
-      })}
-      <button className="work-kpi" onClick={() => setCurrentTab('po-manage')}><span className="work-kpi-icon"><FileText size={23} /></span>
-        <span><span className="work-kpi-label">발행 PO 금액</span><strong className="work-amount">₩{issued.reduce((sum,p) => sum + p.totalAmount, 0).toLocaleString()}</strong><span className="work-kpi-caption">조회된 발주서 {issued.length}건 기준</span></span></button>
-    </div>
+    <section className="work-today" aria-label="오늘의 한 줄">
+      <div><span className="work-eyebrow">오늘의 한 줄</span>
+        <h1>{firstTask ? `지금 우선 확인할 작업은 ${needsAttention.length}건입니다.` : tasks.length ? '지금 필요한 결정은 모두 처리됐습니다.' : '모든 작업이 처리됐습니다.'}</h1>
+        <p>{firstTask ? <><strong>{firstTask.request.mrNo}</strong> — {firstTask.urgencyLabel} · {firstTask.deadlineLabel} · {firstTask.label}</> : tasks.length ? `${tasks.length}건의 처리 또는 외부 응답을 기다리고 있습니다.` : <><CircleCheck size={16} /> 새로운 요청이 들어오면 이곳에서 안내합니다.</>}</p>
+        <small>막힘·점검 필요 → 오늘 안에·기한 경과 → 나머지 · 각 그룹 안에서는 기한순</small>
+      </div>
+      {firstTask && <button className="work-open" onClick={() => onOpenTask(firstTask.tab, firstTask.request.mrNo)}>바로 열기 <ArrowRight size={15} /></button>}
+    </section>
+    <TaskSection bucket="blocked" tasks={groups.blocked} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('blocked')} />
+    {!!groups.today.length && <TaskSection bucket="today" tasks={groups.today} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('today')} />}
     <TaskSection bucket="attention" tasks={groups.attention} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('attention')} />
     <div className="work-columns"><TaskSection bucket="processing" tasks={groups.processing} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('processing')} />
       <TaskSection bucket="waiting" tasks={groups.waiting} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('waiting')} /></div>

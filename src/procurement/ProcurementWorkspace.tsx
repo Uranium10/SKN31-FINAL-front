@@ -273,20 +273,23 @@ function ProcurementWorkspaceComponent({
   // Navigation & Search
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
   const [canManagePolicy, setCanManagePolicy] = useState(false);
+  const [canApprovePO, setCanApprovePO] = useState(false);
   const [policyRoles, setPolicyRoles] = useState<string[]>([]);
   useEffect(() => {
     let alive = true;
     setCanManagePolicy(false);
+    setCanApprovePO(false);
     setPolicyRoles([]);
     const refreshAccess = () => {
       getPolicyCapabilities().then(result => {
         if (alive) {
           setCanManagePolicy(result.can_manage);
+          setCanApprovePO(result.can_approve_po === true);
           setPolicyRoles(result.roles || []);
         }
       }).catch(() => {
         // An unavailable ERP role lookup must not leave stale privileges visible.
-        if (alive) { setCanManagePolicy(false); setPolicyRoles([]); }
+        if (alive) { setCanManagePolicy(false); setCanApprovePO(false); setPolicyRoles([]); }
       });
     };
     refreshAccess();
@@ -1718,6 +1721,10 @@ function ProcurementWorkspaceComponent({
   };
 
   const handleCreatePO = async (poId: string) => {
+    if (!canApprovePO) {
+      showToast('PO 승인은 Purchase Manager 또는 Purchase Master Manager 역할이 필요합니다.');
+      return;
+    }
     const targetPO = poItems.find((item) => item.id === poId);
     if (!targetPO) return;
 
@@ -2281,6 +2288,7 @@ function ProcurementWorkspaceComponent({
             {/* Screen 6: PO 관리 */}
             {currentTab === 'po-manage' && (
               <POManagementView
+                canApprovePO={canApprovePO}
                 focusedMrNo={taskFocus?.tab === currentTab ? taskFocus.mrNo : undefined}
                 poItems={animatedPOItems}
                 movePlaceholders={stageMovePlaceholders.filter((item) => item.sourceTab === 'po-manage')}

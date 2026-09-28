@@ -118,7 +118,7 @@ async function read<T>(path: string, options?: RequestInit): Promise<T> {
   }
   return body as T;
 }
-export const getPolicyCapabilities = () => read<{ can_manage: boolean; roles: string[]; source: 'erpnext'; enabled: boolean }>('/capabilities');
+export const getPolicyCapabilities = () => read<{ can_manage: boolean; can_approve_po?: boolean; roles: string[]; source: 'erpnext'; enabled: boolean }>('/capabilities');
 export const getCompanyPolicy = async (): Promise<PolicyResponse> => {
   const response = await read<PolicyResponse>('');
   return {

@@ -128,6 +128,11 @@ export interface MaterialRequest {
   workflowStatus?: string;
   workflowStage?: string;
   workflowError?: string;
+  /** Server timestamps; never infer an execution start from the request date. */
+  workflowUpdatedAt?: string;
+  quotationDeadlineAt?: string;
+  /** Actual server due date; empty means unset (legacy dueDate can default to today). */
+  requestedDueDate?: string;
   /** 실패한 그래프가 실행 가능한 next 체크포인트를 보유한 경우에만 true입니다. */
   canRetry?: boolean;
   pendingTaskCount?: number;

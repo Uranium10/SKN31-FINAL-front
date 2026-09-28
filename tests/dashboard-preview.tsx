@@ -4,9 +4,14 @@ import { createRoot } from 'react-dom/client';
 import { DashboardView } from '../src/procurement/views/DashboardView';
 import { initialMaterialRequests, initialPOItems, initialNotifications } from '../src/procurement/mock/data';
 const stages = ['MR_REVIEW', 'RFQ_TARGET_SELECTION', 'SUPPLIER_SELECTION', 'PRE_PO_APPROVAL', 'SUPPLIER_RECOMMENDATION', 'PO_CREATION', 'SUBSTITUTE_DECISION', 'QUOTATION_COLLECTION', 'PR_RESPONSE_WAITING', 'DELIVERY'];
+const qaNow = Date.now();
+const dateKst = (days: number) => new Date(qaNow + (days * 24 + 9) * 3600000).toISOString().slice(0, 10);
 const requests = stages.map((stage, index) => ({
   ...initialMaterialRequests[index % initialMaterialRequests.length], id: String(index), mrNo: 'QA-MR-' + index,
   workflowStage: stage, workflowStatus: index === 4 || index === 5 ? 'RUNNING' : 'WAITING_INPUT',
+  dueDate: dateKst(3),
+  quotationDeadlineAt: index === 7 ? new Date(qaNow + 3600000).toISOString() : undefined,
+  workflowError: index === 0 ? '요청 규격 확인이 필요합니다.' : undefined,
 }));
 // All timeline requests stay inside this fixture: never contact real APIs.
 window.fetch = async () => new Response(JSON.stringify({ count: 2, items: [
@@ -16,7 +21,7 @@ window.fetch = async () => new Response(JSON.stringify({ count: 2, items: [
 const progress = {
   error: '', checkedAt: new Date().toISOString(), truncated: false, refresh: () => {},
   items: requests.map(r => ({ case_id: r.id, mr_name: r.mrNo, status: r.workflowStatus,
-    stage: r.workflowStage, version: 1, updated_at: new Date(Date.now() - 180000).toISOString(),
+    stage: r.workflowStage, version: 1, updated_at: new Date(qaNow - (r.id === '4' ? 5 * 3600000 : 180000)).toISOString(),
     ...(r.workflowStage === 'QUOTATION_COLLECTION' ? { deadline_status: 'WAITING', waiting_reason: '마감 전 제출 견적 2건의 규격 평가가 끝나지 않았습니다. 평가 완료 후 조건을 다시 확인합니다.', checked_at: new Date().toISOString(), metrics: { elapsed_ms: 850, erp_calls: 4 } } : {}),
   })),
 };

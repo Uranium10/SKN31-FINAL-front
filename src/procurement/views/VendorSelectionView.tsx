@@ -1391,28 +1391,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* 안내 상단 바 */}
-      <div
-        style={{
-          backgroundColor: 'var(--primary-soft)',
-          border: '1px solid rgba(60, 60, 67, 0.12)',
-          borderRadius: 'var(--radius-md)',
-          padding: '14px 20px',
-          fontSize: '13px',
-          color: 'var(--primary-hover)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}
-      >
-        <Sparkles size={20} color="var(--accent)" />
-        <span>
-          <strong>RFQ 발송·협력사 선정 관리 (표 형식)</strong>: 각 행에서 지금 해야 할 일은{' '}
-          <strong>주 액션</strong> 한 곳에 모았고, 마감 연장·회신 새로 확인·선정 변경 같은 부가 액션은{' '}
-          <strong>⋯</strong> 메뉴에 있습니다. <strong>상세</strong>를 누르면 AI 추천 근거·협력사 회신 현황·차수 이력을 한 번에 볼 수 있습니다.
-        </span>
-      </div>
-
       {/* 진행중 / 완료 탭 - 발주 시작까지 끝난 건은 완료 탭으로 분리 */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)' }}>
         <div style={{ display: 'flex', gap: '4px' }}>

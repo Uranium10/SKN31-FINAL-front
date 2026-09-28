@@ -36,6 +36,7 @@ type POStageKey = 'reply' | 'rejected' | 'po' | 'receipt-wait' | 'received';
 type POListTab = 'in-progress' | 'completed';
 
 interface POManagementViewProps {
+  canApprovePO?: boolean;
   focusedMrNo?: string;
   poItems: POItem[];
   movePlaceholders?: StageMovePlaceholder[];
@@ -127,6 +128,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   onAnswerTask,
   onDownloadAttachment,
   isApiMode = false,
+  canApprovePO = false,
 }) => {
   const tableState = useSessionTableState('po-management', PO_COLUMNS, 'adjacent');
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
@@ -250,7 +252,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
     <div className="po-management-view">
       <header className="po-management-heading">
         <div><h2>PO 관리</h2><p>구매 요청(MR)부터 PO 발행, 입고까지 진행 현황을 확인할 수 있습니다.</p></div>
-        <button type="button" className="po-create-button" disabled={poCreationCandidates.length === 0} onClick={() => setShowCreatePOChooser(true)}>
+        <button type="button" className="po-create-button" disabled={!canApprovePO || poCreationCandidates.length === 0} title={!canApprovePO ? 'Purchase Manager 또는 Purchase Master Manager 역할이 필요합니다.' : undefined} onClick={() => setShowCreatePOChooser(true)}>
           <Plus size={17} /> PO 생성
         </button>
       </header>
@@ -272,6 +274,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         <div className="po-toolbar-actions">
           <label className="po-sort-select"><span className="sr-only">PO 정렬</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)}><option value="latest">요청 최신순</option><option value="due-date">납기 임박순</option><option value="amount">발주 금액순</option></select><ChevronDown size={15} aria-hidden="true" /></label>
           <button type="button" className={`po-filter-button ${searchOpen ? 'is-active' : ''}`} aria-label="PO 검색 필터" aria-expanded={searchOpen} onClick={() => { setSearchOpen((open) => !open); if (searchOpen) setSearchText(''); }}><Filter size={17} /></button>
+          <button type="button" className="po-filter-button" aria-label="PO 표 레이아웃 초기화" title="컬럼 크기·필터·정렬 초기화" onClick={resetTableLayout}><RotateCcw size={17} aria-hidden="true" /></button>
         </div>
       </div>
       {searchOpen && (
@@ -285,12 +288,6 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         </div>
       )}
       <div className="mr-table-region">
-        <div className="mr-table-action-row">
-          <button type="button" className="mr-table-reset-button" aria-label="PO 표 레이아웃 초기화"
-            data-tooltip="컬럼 크기·필터·정렬 초기화" onClick={resetTableLayout}>
-            <RotateCcw size={17} aria-hidden="true" />
-          </button>
-        </div>
       <SmartTableContainer>
         <table className="custom-table po-management-table">
           <colgroup>{PO_COLUMNS.map(column => <col key={column.key} style={{ width: `${tableState.widths[column.key] / tableState.totalWidth * 100}%` }} />)}</colgroup>
@@ -331,13 +328,13 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                           ))}
                         </div>
                         <div className="po-row-actions">
-                          {item.pendingTask?.taskType === 'po_creation_failed' && onAnswerTask && <WorkflowInterruptForm task={item.pendingTask} onSubmit={onAnswerTask} />}
+                          {item.pendingTask?.taskType === 'po_creation_failed' && onAnswerTask && (canApprovePO ? <WorkflowInterruptForm task={item.pendingTask} onSubmit={onAnswerTask} /> : <span className="po-inline-note">발주 승인 권한자의 재처리가 필요합니다.</span>)}
                           {!item.poCreated && item.pendingTask?.taskType === 'order_start' && <button className="btn-sm btn-primary" onClick={() => onStartOrder(item.id)}><Send size={13} />발주 시작</button>}
                           {!item.poCreated && (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') && <button className="btn-sm btn-primary" onClick={() => handleRequestPRClick(item)}><ShoppingCart size={13} />PR 요청</button>}
                           {!item.poCreated && (item.prStatus === 'SENT' || item.supplierApprovalStatus === 'pr_requested') && !isApiMode && <button className="btn-sm btn-outline" onClick={() => setEmailModalItem(item)}><Mail size={12} />이메일/수주접수</button>}
                           {!item.poCreated && (item.prStatus === 'REJECTED' || item.supplierApprovalStatus === 'rejected') && <button className="btn-sm btn-reject" onClick={() => { setSelectedRejectReason(item); setShowReselectList(false); }}><AlertTriangle size={13} />사유 보기</button>}
                           {!item.poCreated && item.prStatus === 'PO_FAILED' && <button className="btn-sm btn-reject" onClick={() => setSelectedRejectReason(item)}><AlertTriangle size={13} />PO 오류 확인</button>}
-                          {!item.poCreated && item.pendingTask?.taskType === 'po_approval' && <button className="btn-sm btn-primary" onClick={() => setApprovalModalItem(item)}><ShoppingCart size={13} />PO 발송 최종 승인</button>}
+                          {!item.poCreated && item.pendingTask?.taskType === 'po_approval' && <><button className="btn-sm btn-primary" disabled={!canApprovePO} onClick={() => setApprovalModalItem(item)}><ShoppingCart size={13} />PO 발송 최종 승인</button>{!canApprovePO && <span className="po-inline-note">구매 관리자 승인 대기</span>}</>}
                           {item.poCreated && !item.arrived && !isApiMode && <button className="btn-sm btn-outline" onClick={() => onMarkArrived(item.id)}><PackageCheck size={13} />목업 입고 확인</button>}
                           {item.poCreated && item.arrived && !item.scorecardCompleted && <button className="btn-sm btn-primary" onClick={() => openScorecard(item)}><ClipboardList size={13} />평가하기</button>}
                           {item.scorecardCompleted && <span className="po-score-summary"><CheckCircle2 size={13} />평가 완료{item.scorecardScores && ` · 평균 ${getScoreAverage(item.scorecardScores).toFixed(1)}점`}{item.scorecardScores?.price == null && ' (가격 제외)'}</span>}
@@ -760,7 +757,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
       )}
 
       {/* PO 생성 (결재권자 결재) Modal */}
-      {approvalModalItem && (
+      {approvalModalItem && canApprovePO && (
         <div className="modal-overlay" onClick={() => setApprovalModalItem(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '500px' }}>
             <div className="modal-header">

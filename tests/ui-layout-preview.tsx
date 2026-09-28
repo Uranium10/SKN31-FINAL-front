@@ -30,10 +30,12 @@ const noop = () => {};
 // Exported for Fast Refresh lint; this is a development-only entry.
 export function LayoutPreview() {
   const [tab, setTab] = useState('policy');
+  const [approver, setApprover] = useState(false);
   return <div className="procurement-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
     <header style={{ padding: 14, display: 'flex', gap: 12 }}><strong>로컬 레이아웃 검증 · 저장/발송 차단</strong>
       <button onClick={() => setTab('policy')}>정책 미리보기</button><button onClick={() => setTab('po')}>PO 미리보기</button>
       <button onClick={() => setTab('vendor')}>협력사 미리보기</button>
+      <button onClick={() => setApprover(value => !value)}>모의 PO 승인 권한: {approver ? '있음' : '없음'}</button>
     </header>
     <main className="view-content" style={{ minHeight: 0, overflow: 'auto', flex: 1, padding: 28 }}>
       {tab === 'policy' ? <CompanyPolicyView roles={['Purchase Master Manager']} /> : tab === 'vendor' ?
@@ -41,7 +43,7 @@ export function LayoutPreview() {
           onSendPO={noop} onWithdrawSupplierSelection={noop} onCancelMR={() => false}
           onRebidQuotations={() => false} onOpenSpecModalByItemCode={noop} onExtendDeadline={() => false}
           onSendRFQ={() => false} onCheckQuotations={() => false} onAutoReview={() => false} /> :
-        <POManagementView poItems={initialPOItems.map(row => ({ ...row, itemName: '긴 품목명이 좁은 컬럼에서 말줄임 되는지 확인하는 테스트 품목명' }))}
+        <POManagementView canApprovePO={approver} poItems={initialPOItems.map((row, index) => ({ ...row, itemName: '긴 품목명이 좁은 컬럼에서 말줄임 되는지 확인하는 테스트 품목명', ...(index === 0 ? { poCreated: false, pendingTask: { taskId: 'qa', taskType: 'po_approval', title: '모의 승인', inputSchema: {}, payload: {} } } : {}) }))}
           onCreatePO={noop} onStartOrder={noop} onRequestPR={noop} onSupplierAcceptOrder={noop}
           onReturnToVendorSelection={noop} onCancelMR={noop} onMarkArrived={noop} onSubmitScorecard={noop} />}
     </main>
