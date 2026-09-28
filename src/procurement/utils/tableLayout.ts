@@ -1,7 +1,13 @@
 /** Stored layouts survive column additions/removals without duplicating or losing cells. */
 export const normalizeColumnOrder = <K extends string>(stored: unknown, keys: readonly K[]): K[] => {
   const valid = Array.isArray(stored) ? stored.filter((key): key is K => keys.includes(key)) : [];
-  return [...new Set([...valid, ...keys])];
+  const result = [...new Set(valid)];
+  for (const [index, key] of keys.entries()) {
+    if (result.includes(key)) continue;
+    const following = keys.slice(index + 1).find(candidate => result.includes(candidate));
+    result.splice(following === undefined ? result.length : result.indexOf(following), 0, key);
+  }
+  return result;
 };
 
 export const moveColumn = <K extends string>(keys: readonly K[], source: K, target: K, after = false): K[] => {

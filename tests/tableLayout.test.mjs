@@ -17,6 +17,10 @@ test('drag before/after keeps every column exactly once in either direction', ()
   assert.deepEqual(moveColumn(['mr', 'status'], 'mr', 'mr'), ['mr', 'status']);
   assert.deepEqual(moveColumn(['mr', 'status'], 'unknown', 'mr'), ['mr', 'status']);
 });
+test('a new round column is inserted next to deadline without discarding saved order', () => {
+  assert.deepEqual(normalizeColumnOrder(['status', 'mr', 'deadline', 'more'], ['mr', 'round', 'deadline', 'status', 'more']),
+    ['status', 'mr', 'round', 'deadline', 'more']);
+});
 test('header starts naturally, pins at nested viewport top, stops at table bottom', () => {
   assert.equal(stickyHeaderOffset(200, 1000, 48, 80), 0);
   assert.equal(stickyHeaderOffset(-200, 1000, 48, 80), 280);

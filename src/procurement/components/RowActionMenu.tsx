@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import './RowActionMenu.css';
 
 export interface RowActionMenuItem {
   key: string;
@@ -94,6 +95,7 @@ export function RowActionMenu({ items, ariaLabel }: RowActionMenuProps) {
         <div
           ref={menuRef}
           role="menu"
+          className="row-action-menu-popover"
           style={{
             position: 'fixed',
             top: position.top,
@@ -104,7 +106,9 @@ export function RowActionMenu({ items, ariaLabel }: RowActionMenuProps) {
             borderRadius: 'var(--radius-md)',
             boxShadow: 'var(--shadow-lg)',
             padding: '6px',
-            zIndex: 200,
+            zIndex: 10030,
+            maxHeight: 'calc(100vh - 20px)',
+            overflowY: 'auto',
           }}
         >
           {items.map((item) => (

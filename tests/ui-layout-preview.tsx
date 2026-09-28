@@ -35,6 +35,10 @@ const vendorColorCases: VendorSelectionGroup[] = [
     rfqSent: false, workflowStage: 'RFQ_TARGET_SELECTION', targetDueDate: '2099-10-10' },
   { ...initialVendorGroups[0], id: 'qa-selection', mrNo: 'QA-RFQ-SELECTION', selectedSupplierId: undefined,
     rfqSent: true, workflowStage: 'SUPPLIER_SELECTION', deadlineDDay: 0, isExtended: true },
+  { ...initialVendorGroups[0], id: 'qa-sending', mrNo: 'QA-RFQ-SENDING', selectedSupplierId: undefined,
+    rfqSent: true, workflowStage: 'RFQ_SENDING', deadlineDDay: 5 },
+  { ...initialVendorGroups[1], id: 'qa-round', mrNo: 'QA-RFQ-ROUND', deadlineDDay: 5,
+    rfqRounds: [{ round: 1, rfqName: 'QA-RFQ-OLD', deadline: '2026-09-26T18:00:00', closedAt: '2026-09-26T18:00:00' }] },
 ];
 // Exported for Fast Refresh lint; this is a development-only entry.
 export function LayoutPreview() {

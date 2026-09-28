@@ -1,0 +1,19 @@
+/* Portal renders under body, outside .procurement-shell's token scope.
+   Give the menu its own opaque light surface so table text never shows through. */
+.row-action-menu-popover {
+  color-scheme: light;
+  --bg-card: #fff;
+  --bg-input: #f2f2f4;
+  --border-color: #d9d9de;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --shadow-lg: 0 10px 32px #00000024, 0 2px 6px #0000000d;
+  --text-main: #1d1d1f;
+  --text-dim: #98989d;
+  --danger: #d70015;
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', Pretendard, 'Segoe UI', sans-serif;
+  isolation: isolate;
+}
+.row-action-menu-popover .row-action-menu-item:hover:not(:disabled) { background: #f2f2f4 !important; }
+.row-action-menu-popover .row-action-menu-item:focus-visible { outline: 2px solid #555; outline-offset: -2px; }

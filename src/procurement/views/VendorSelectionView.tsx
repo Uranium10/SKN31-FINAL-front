@@ -36,6 +36,7 @@ import {
 } from '../hooks/useSessionTableState';
 import {
   Sparkles,
+  Search,
   RotateCcw,
   FileText,
   X,
@@ -52,29 +53,31 @@ import {
   Award
 } from 'lucide-react';
 
-type VendorColumnKey = 'mr' | 'roundDeadline' | 'response' | 'status' | 'detail' | 'action' | 'more';
+type VendorColumnKey = 'mr' | 'round' | 'roundDeadline' | 'response' | 'status' | 'detail' | 'action' | 'more';
 
 // v2 컬럼 정리 - 예전엔 납기요청일/RFQ협력사/차수/마감시간이 각각 컬럼
 // 하나씩 차지하고 '다음 행동'엔 버튼이 최대 3개까지 쌓여 있었다(구매팀
 // 피드백: 컬럼도 너무 많고 행동 버튼도 한 행에 여러 개라 뭘 먼저 봐야
 // 할지 안 보임). 납기요청일/RFQ협력사 개수 같은 부가정보는 '상세'
-// 패널(RFQ 상세 요약)로 옮기고, 차수+마감시간은 '차수·마감' 한 컬럼으로
-// 합쳤다. 그리고 그 행에서 지금 당장 할 일 하나(또는 진짜 갈림길이 있는
+// 패널(RFQ 상세 요약)로 옮겼다. 차수는 MR 목록과 동일한 숫자/조회 형식의
+// 별도 열로 표시한다. 그 행에서 지금 당장 할 일 하나(또는 진짜 갈림길이 있는
 // 행만 둘)만 '주 액션'에 남기고, 나머지 부가 액션(마감연장·회신 새로
 // 확인·선정 변경 등)은 '⋯' 메뉴로 모았다 - 버튼 자체를 없앤 게 아니라
 // 위치만 정리한 것, 조건/핸들러는 전부 그대로다.
 const VENDOR_COLUMNS: readonly TableColumnDefinition<VendorColumnKey>[] = [
-  { key: 'mr', label: 'MR / 품목', defaultWidth: 260, minWidth: 190 },
-  { key: 'roundDeadline', label: '차수 · 마감', defaultWidth: 165, minWidth: 140, filterMode: 'date-range' },
-  { key: 'status', label: '상태 / 진행', defaultWidth: 320, minWidth: 240 },
+  { key: 'mr', label: '구매 건', defaultWidth: 260, minWidth: 190 },
+  { key: 'round', label: '차수', defaultWidth: 82, minWidth: 68, align: 'center', filterMode: 'number-range' },
+  // Keep the existing storage key so saved deadline filters/widths still work.
+  { key: 'roundDeadline', label: '견적 마감', defaultWidth: 165, minWidth: 140, filterMode: 'date-range' },
+  { key: 'status', label: '진행', defaultWidth: 320, minWidth: 240 },
   // 와이어프레임의 '상세보기 패널' 아이디어 - MR번호/차수/회신율 클릭으로
   // 나뉘어 있던 기존 상세 정보(기본정보/RFQ 협력사 현황/마감정보/차수이력)를
   // 한 화면에서 요약해서 보여주는 통합 패널을 여는 버튼. 기존 3개 모달은
   // 그대로 남겨두고(각자 실제 조작 기능이 있어서 제거하지 않음), 빠르게
   // 훑어보기용 요약 + 각 상세 모달로 바로가기를 추가한 것.
   { key: 'detail', label: '상세', defaultWidth: 90, minWidth: 70, align: 'center', filterMode: 'none' },
-  { key: 'action', label: '주 액션', defaultWidth: 220, minWidth: 170, filterMode: 'none' },
-  { key: 'more', label: '', defaultWidth: 52, minWidth: 52, align: 'center', filterMode: 'none' },
+  { key: 'action', label: '작업', defaultWidth: 220, minWidth: 170, filterMode: 'none' },
+  { key: 'more', label: '더보기', defaultWidth: 72, minWidth: 64, align: 'center', filterMode: 'none' },
 ] as const;
 
 type VendorRangeFilters = Partial<Record<VendorColumnKey, TableColumnRangeFilter>>;
@@ -135,12 +138,11 @@ const vendorFilterValue = (group: VendorSelectionGroup, key: VendorColumnKey): s
   const selected = group.quotations.find((quotation) => quotation.supplierId === group.selectedSupplierId);
   switch (key) {
     case 'mr': return `${group.mrNo} · ${group.itemName}`;
-    // 차수 + 마감시간을 한 컬럼으로 합쳤다(둘 다 '지금 몇 차수, 언제까지'라는
-    // 같은 맥락의 정보라 따로 컬럼을 나눌 필요가 없었음 - 나머지 정보인
-    // 납기요청일/RFQ협력사 수는 '상세' 패널로 옮겼다).
-    case 'roundDeadline': return `${closedRoundCount(group)}차 · ${!group.rfqSent ? 'RFQ 발송 전' : selected ? '마감 완료' : `${group.deadlineDate} ${group.deadlineTime}`}`;
+    case 'round': return closedRoundCount(group);
+    // 저장된 날짜 필터를 유지하기 위해 기존 roundDeadline 키를 재사용한다.
+    case 'roundDeadline': return !group.rfqSent ? 'RFQ 발송 전' : selected ? '마감 완료' : `${group.deadlineDate} ${group.deadlineTime}`;
     case 'response': return responsePercent(group) >= 50 ? '50% 이상' : '50% 미만';
-    case 'status': return selected ? '업체 선정완료' : !group.rfqSent ? 'RFQ 발송 준비' : group.workflowStage === 'SUPPLIER_SELECTION' ? '최종 선정 대기' : '견적 회신 대기';
+    case 'status': return selected ? '업체 선정완료' : group.workflowStage === 'RFQ_SENDING' ? 'RFQ 발송 중' : !group.rfqSent ? 'RFQ 발송 준비' : group.workflowStage === 'SUPPLIER_SELECTION' ? '최종 선정 대기' : '견적 회신 대기';
     case 'detail': return '';
     case 'action': return selected && (!group.workflowStage || group.workflowStage === 'ORDER_START') ? '발주 가능' : '대기';
     case 'more': return '';
@@ -1469,10 +1471,11 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
               // 'YYYY-MM-DD' 형식이라 사전식 비교로 충분함).
               const isPastTargetDueDate = group.targetDueDate < todayIso;
               const isOverdueUnsentRfq = !rfqActive && isPastTargetDueDate;
-              // Visual state only: PO's blue / amber / purple / green / red palette.
+              // Visual state only: sending blue, collection amber, selection green.
               // Workflow conditions and actions below are deliberately unchanged.
+              const isRfqSending = !rfqActive || group.workflowStage === 'RFQ_SENDING';
               const visualStage = isOverdueUnsentRfq ? 'issue' : hasSelection ? 'complete'
-                : group.workflowStage === 'SUPPLIER_SELECTION' ? 'selection' : rfqActive ? 'collection' : 'preparation';
+                : isRfqSending ? 'preparation' : group.workflowStage === 'SUPPLIER_SELECTION' ? 'selection' : 'collection';
               // 납기요청일이 이미 지난 건은 RFQ를 새로 보내는 것 자체가
               // 의미가 없으므로(제때 납품이 불가능) 대상 선택 버튼을 막는다.
               const canConfigureRFQ = (
@@ -1612,6 +1615,15 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     </div>
                   </td>
 
+                  <td data-column-key="round" style={{ textAlign: 'center' }}>
+                    <div className="mr-revision-cell">
+                      <span className="mr-revision-value">{closedRoundCount(group) > 0 ? closedRoundCount(group) : '-'}</span>
+                      {closedRoundCount(group) > 0 && <button type="button" className="revision-history-button"
+                        onClick={() => handleOpenRoundsModal(group)} aria-label={`${group.mrNo} 차수별 견적 보기`} title="차수별 견적 보기">
+                        <Search size={13} />
+                      </button>}
+                    </div>
+                  </td>
                   <td data-column-key="roundDeadline">
                     <div className="vendor-deadline-cell">
                       <div className="vendor-deadline-date">
@@ -1619,11 +1631,6 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           : <span className="vendor-deadline-unset">RFQ 발송 전</span>}
                       </div>
                       <div className="vendor-deadline-meta">
-                        {closedRoundCount(group) > 0 ? <button type="button" className="vendor-round-link"
-                          onClick={() => handleOpenRoundsModal(group)} title="지난 차수별 견적 보기">
-                          {closedRoundCount(group)}차 이력 <ExternalLink size={11} aria-hidden="true" />
-                        </button> : <span className="vendor-round-first">첫 요청</span>}
-                        {rfqActive && <span className="vendor-meta-divider" aria-hidden="true" />}
                         {rfqActive && !hasSelection && <span className={`vendor-dday ${group.deadlineDDay < 0 ? 'is-overdue' : group.deadlineDDay <= 1 ? 'is-soon' : ''}`}
                           title={`견적 마감 ${group.deadlineDate} ${group.deadlineTime}`}>
                           {group.deadlineDDay === 0 ? 'D-day' : group.deadlineDDay > 0 ? `D-${group.deadlineDDay}` : `D+${Math.abs(group.deadlineDDay)}`}
@@ -1643,20 +1650,20 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       </div>
                       <div className="vendor-progress-track" aria-label={`진행 상태: ${String(vendorFilterValue(group, 'status'))}`}>
                         {['RFQ 발송', '견적 수집', '업체 선정'].map((label, index) => {
-                          const current = hasSelection ? 3 : group.workflowStage === 'SUPPLIER_SELECTION' ? 2 : rfqActive ? 1 : 0;
+                          const current = hasSelection ? 3 : isRfqSending ? 0 : group.workflowStage === 'SUPPLIER_SELECTION' ? 2 : 1;
                           return <span key={label} className={`vendor-progress-step ${index < current ? 'is-complete' : index === current ? 'is-current' : ''}`}>
                             <i aria-hidden="true" /><span>{label}</span>
                           </span>;
                         })}
                       </div>
-                      <button type="button" className="vendor-response-link" disabled={!canReviewQuotations}
+                      {!isRfqSending && <button type="button" className="vendor-response-link" disabled={!canReviewQuotations}
                         onClick={() => handleOpenQuotationModal(group)}
                         title={canReviewQuotations ? '공급사별 견적 비교 및 업체 선정' : '견적 수집/선정 단계에서 이용할 수 있습니다.'}>
                         <span>회신 <strong>{respondedCount}</strong> / {totalSuppliers}개사</span>
                         <span className="vendor-response-meter" aria-hidden="true"><i style={{ width: `${percent}%` }} /></span>
                         <span>{percent}%</span>
                         {canReviewQuotations && <span className="vendor-response-hint">견적 비교 →</span>}
-                      </button>
+                      </button>}
                     </div>
                   </td>
 
