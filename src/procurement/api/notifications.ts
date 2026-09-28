@@ -109,6 +109,7 @@ export const subscribeProcurementEvents = async (
   signal: AbortSignal,
   onEvent: (event: ProcurementEvent) => void,
   onConnected?: () => void,
+  onProgress?: () => void,
 ): Promise<void> => {
   const response = await fetchWithAuth('/api/procurement/events', {
     headers: { Accept: 'text/event-stream' },
@@ -143,6 +144,7 @@ export const subscribeProcurementEvents = async (
           // Ignore one malformed frame and keep the long-lived stream alive.
         }
       }
+      if (eventType === 'progress') onProgress?.();
       boundary = buffer.indexOf('\n\n');
     }
   }

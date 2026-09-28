@@ -1,4 +1,19 @@
 .work-dashboard { display: grid; gap: 20px; color: var(--text-main, #171717); }
+.work-live-strip { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 18px; background:#fafafa; border:1px solid #dedede; border-radius:10px; font-size:12px; }
+.work-live-strip > div { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.work-live-strip span { color:#666; }
+.work-observed-time { display:block; color:#767676; margin-top:5px; font-size:11px; }
+.work-review-label { display:block; color:#9c4949; margin-top:5px; font-size:12px; }
+.work-task-review { border-left:3px solid #a86565; }
+.work-task .work-check-note { margin:12px 0; color:#767676; }
+.work-decisions { margin-top:14px; border-top:1px solid #e5e5e5; padding-top:8px; }
+.work-decisions-toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; color:#737373; }
+.work-decisions button:disabled { opacity:.45; cursor:default; }
+.work-timeline { list-style:none; padding:0 0 0 14px; margin:12px 0; max-height:360px; overflow:auto; }
+.work-timeline li { border-left:2px solid #d5d5d5; padding:0 12px 22px 18px; }
+.work-timeline time { display:block; font-size:11px; color:#777; margin-bottom:6px; }
+.work-timeline strong { display:block; font-size:13px; margin-bottom:6px; overflow-wrap:anywhere; }
+.work-timeline p { white-space:pre-wrap; }
 .work-task-link { position: relative; border: 0; background: transparent; color: inherit; text-align: left; width: 100%; padding: 6px 28px 6px 0; cursor: pointer; font: inherit; border-radius: 6px; }
 .work-task-link:hover { background: #f7f7f7; }
 .work-task-arrow { position: absolute; right: 0; color: #737373; }

@@ -6,6 +6,7 @@ import { RejectReasonModal } from './components/RejectReasonModal';
 import { NewMRModal } from './components/NewMRModal';
 
 import { DashboardView } from './views/DashboardView';
+import { useWorkProgress } from './hooks/useWorkProgress';
 import { ItemRegistrationView } from './views/ItemRegistrationView';
 import { MRListView } from './views/MRListView';
 import { VendorSelectionView } from './views/VendorSelectionView';
@@ -809,9 +810,11 @@ function ProcurementWorkspaceComponent({
         setMrApiError(message);
         if (procurementDataMode === 'api') setRequests([]);
       }
+      return false;
     } finally {
       if (!silent) setMrApiLoading(false);
     }
+    return true;
   }, []);
 
   // Item is an ERPNext master-data view. Load it independently from MR case
@@ -833,13 +836,19 @@ function ProcurementWorkspaceComponent({
     }
   }, []);
 
+  const refreshChangedCases = useCallback(async () => {
+    if (await loadMRsFromApi(false, true) === false) throw new Error('구매 목록 갱신이 지연되고 있습니다. 다시 확인합니다.');
+  }, [loadMRsFromApi]);
+  const workProgress = useWorkProgress(apiDataEnabled, refreshChangedCases);
+  const { invalidateCases: invalidateProgressCases } = workProgress;
+
   const handleRealtimeNotification = useCallback((event: { title: string; notification_type: string }) => {
     showToast(event.title);
     // SSE is only an invalidation signal. Cases and items are re-read from
     // their authoritative APIs instead of being reconstructed from the event.
-    void loadMRsFromApi(false, true);
+    invalidateProgressCases();
     if (event.notification_type.startsWith('ITEM_')) void loadItemsFromApi();
-  }, [loadItemsFromApi, loadMRsFromApi, showToast]);
+  }, [loadItemsFromApi, invalidateProgressCases, showToast]);
 
   const {
     notifications,
@@ -851,6 +860,7 @@ function ProcurementWorkspaceComponent({
     enabled: apiDataEnabled,
     mockNotifications: initialNotifications,
     onRealtimeEvent: handleRealtimeNotification,
+    onProgress: workProgress.refresh,
   });
 
   // 웹훅이 누락된 비접속 시간대의 Draft MR을 로그인 후 최초 한 번 대사합니다.
@@ -879,26 +889,8 @@ function ProcurementWorkspaceComponent({
     void loadItemsFromApi();
   }, [loadItemsFromApi]);
 
-  // FastAPI BackgroundTasks에서 실행되는 AI 그래프는 시작 응답보다 늦게
-  // 완료됩니다. QUEUED/RUNNING이 하나라도 있는 동안만 조용히 재조회하여
-  // 성공·인터럽트·실패 상태를 놓치지 않고, 종료되면 폴링도 자동 중단합니다.
-  const hasActiveWorkflow = requests.some((request) => (
-    request.workflowStatus === 'QUEUED' || request.workflowStatus === 'RUNNING'
-  ));
-  useEffect(() => {
-    if (!apiDataEnabled || !hasActiveWorkflow) return undefined;
-    let disposed = false;
-    let timer: number | undefined;
-    const poll = async () => {
-      await loadMRsFromApi(false, true);
-      if (!disposed) timer = window.setTimeout(poll, 1800);
-    };
-    timer = window.setTimeout(poll, 1000);
-    return () => {
-      disposed = true;
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [hasActiveWorkflow, loadMRsFromApi]);
+  // Progress SSE + a 30-second DB-only recovery snapshot replace the former
+  // 1.8-second full-case polling. See useWorkProgress for coalescing/recovery.
 
   useEffect(() => {
     window.localStorage.setItem('biddingflow.sidebar.collapsed', String(sidebarCollapsed));
@@ -2206,6 +2198,7 @@ function ProcurementWorkspaceComponent({
                   aria-hidden={initialDashboardLoading || undefined}
                 >
                   <DashboardView
+                    progress={apiDataEnabled ? workProgress : undefined}
                     requests={dashboardRequests}
                     poItems={activePOItems}
                     notifications={notifications}

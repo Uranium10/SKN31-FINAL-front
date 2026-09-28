@@ -12,6 +12,7 @@ interface UseProcurementNotificationsOptions {
   enabled: boolean;
   mockNotifications: ProcurementNotification[];
   onRealtimeEvent: (event: ProcurementEvent) => void;
+  onProgress?: () => void;
 }
 
 /**
@@ -23,6 +24,7 @@ export function useProcurementNotifications({
   enabled,
   mockNotifications,
   onRealtimeEvent,
+  onProgress,
 }: UseProcurementNotificationsOptions) {
   const [notifications, setNotifications] = useState<ProcurementNotification[]>(
     enabled ? [] : mockNotifications,
@@ -90,7 +92,9 @@ export function useProcurementNotifications({
               connected = true;
               retryDelay = 1_000;
               scheduleRefresh(0);
+              onProgress?.();
             },
+            onProgress,
           );
         } catch {
           if (controller.signal.aborted || disposed) break;
@@ -113,7 +117,7 @@ export function useProcurementNotifications({
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       finishRetryWait?.();
     };
-  }, [enabled, onRealtimeEvent, scheduleRefresh]);
+  }, [enabled, onRealtimeEvent, onProgress, scheduleRefresh]);
 
   useEffect(() => {
     if (!enabled) return undefined;
