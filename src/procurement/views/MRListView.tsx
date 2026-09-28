@@ -416,7 +416,7 @@ export const MRListView: React.FC<MRListViewProps> = ({
             <RotateCcw size={17} aria-hidden="true" />
           </button>
         </div>
-        <SmartTableContainer>
+        <SmartTableContainer stickyHeader>
         <table
           className="custom-table configurable-table"
           style={{ width: `${tableState.totalWidth}px`, minWidth: '100%' }}

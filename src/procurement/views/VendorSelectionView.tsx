@@ -19,6 +19,9 @@ import {
   type QuotationValidationRow,
 } from '../api/cases';
 import { SmartTableContainer } from '../components/SmartTableContainer';
+import { OrderedTableRow } from '../components/OrderedTableRow';
+import { useTableColumnOrder } from '../hooks/useTableColumnOrder';
+import './VendorSelectionView.css';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
 import { RowActionMenu, type RowActionMenuItem } from '../components/RowActionMenu';
@@ -63,8 +66,7 @@ type VendorColumnKey = 'mr' | 'roundDeadline' | 'response' | 'status' | 'detail'
 const VENDOR_COLUMNS: readonly TableColumnDefinition<VendorColumnKey>[] = [
   { key: 'mr', label: 'MR / 품목', defaultWidth: 260, minWidth: 190 },
   { key: 'roundDeadline', label: '차수 · 마감', defaultWidth: 165, minWidth: 140, filterMode: 'date-range' },
-  { key: 'response', label: '견적 회신율 (%)', defaultWidth: 185, minWidth: 145, align: 'center' },
-  { key: 'status', label: '진행상태', defaultWidth: 175, minWidth: 135 },
+  { key: 'status', label: '상태 / 진행', defaultWidth: 320, minWidth: 240 },
   // 와이어프레임의 '상세보기 패널' 아이디어 - MR번호/차수/회신율 클릭으로
   // 나뉘어 있던 기존 상세 정보(기본정보/RFQ 협력사 현황/마감정보/차수이력)를
   // 한 화면에서 요약해서 보여주는 통합 패널을 여는 버튼. 기존 3개 모달은
@@ -138,7 +140,7 @@ const vendorFilterValue = (group: VendorSelectionGroup, key: VendorColumnKey): s
     // 납기요청일/RFQ협력사 수는 '상세' 패널로 옮겼다).
     case 'roundDeadline': return `${closedRoundCount(group)}차 · ${!group.rfqSent ? 'RFQ 발송 전' : selected ? '마감 완료' : `${group.deadlineDate} ${group.deadlineTime}`}`;
     case 'response': return responsePercent(group) >= 50 ? '50% 이상' : '50% 미만';
-    case 'status': return selected ? '업체 선정완료' : '견적 요청상태';
+    case 'status': return selected ? '업체 선정완료' : !group.rfqSent ? 'RFQ 발송 준비' : group.workflowStage === 'SUPPLIER_SELECTION' ? '최종 선정 대기' : '견적 회신 대기';
     case 'detail': return '';
     case 'action': return selected && (!group.workflowStage || group.workflowStage === 'ORDER_START') ? '발주 가능' : '대기';
     case 'more': return '';
@@ -160,9 +162,7 @@ const vendorSortValue = (group: VendorSelectionGroup, key: VendorColumnKey): str
 interface VendorSelectionViewProps {
   focusedMrNo?: string;
   vendorGroups: VendorSelectionGroup[];
-  /** '완료' 탭에 보여줄 건들 - 발주 시작을 눌러 PO 관리로 넘어간 케이스.
-   * 진행중 목록(vendorGroups)은 백엔드 stage가 ORDER_START까지인 건만
-   * 담고 있어서, 선정이 끝난 건은 이 목록으로 따로 받는다. */
+  /** Compatibility input only. Completed records are no longer rendered in this workspace. */
   completedGroups?: VendorSelectionGroup[];
   movePlaceholders?: StageMovePlaceholder[];
   onDismissMovePlaceholder?: (id: string) => void;
@@ -325,7 +325,6 @@ const safeExternalUrl = (value?: string): string | null => {
 export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   vendorGroups,
   focusedMrNo,
-  completedGroups = [],
   movePlaceholders = [],
   onDismissMovePlaceholder = () => undefined,
   onNavigateMovePlaceholder = () => undefined,
@@ -498,18 +497,33 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   } | null>(null);
   // Keep the outer edges stable; use measured widths when the table has stretched
   // to fill its container rather than resizing from the smaller stored defaults.
-  const tableState = useSessionTableState('vendor-selection', VENDOR_COLUMNS, 'adjacent');
+  const columnLayout = useTableColumnOrder('vendor-selection', VENDOR_COLUMNS);
+  const tableState = useSessionTableState('vendor-selection', columnLayout.orderedColumns, 'adjacent');
+  const { filters: persistedFilters, setFilter: updatePersistedFilter } = tableState;
+  useEffect(() => {
+    // Preserve pre-redesign filter intent instead of leaving a hidden stale value
+    // that silently filters every active row out after deployment.
+    if (persistedFilters.status?.includes('견적 요청상태')) {
+      updatePersistedFilter('status', [...new Set(persistedFilters.status.flatMap(value =>
+        value === '견적 요청상태' ? ['RFQ 발송 준비', '견적 회신 대기', '최종 선정 대기'] : [value]))]);
+    }
+  }, [persistedFilters.status, updatePersistedFilter]);
+  useEffect(() => {
+    // The old checkbox menu could store both choices or none. The new select has
+    // a single explicit value; map non-single selections to its visible '전체'.
+    if (persistedFilters.response && (persistedFilters.response.length !== 1
+      || !['50% 이상', '50% 미만'].includes(persistedFilters.response[0]))) {
+      updatePersistedFilter('response', undefined);
+    }
+  }, [persistedFilters.response, updatePersistedFilter]);
   const [rangeFilters, setRangeFilters] = useSessionStoredState<VendorRangeFilters>(
     'biddingflow.table.vendor-selection.ranges',
     {},
   );
   const [sortColumn, setSortColumn] = useState<VendorColumnKey>('roundDeadline');
-  const [activeTab, setActiveTab] = useState<'progress' | 'completed'>('progress');
-  useEffect(() => {
-    if (focusedMrNo) setActiveTab(completedGroups.some(group => group.mrNo === focusedMrNo) ? 'completed' : 'progress');
-  }, [focusedMrNo, completedGroups]);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const resetTableLayout = () => {
+    columnLayout.resetOrder();
     tableState.resetWidths();
     tableState.clearFilters();
     setRangeFilters({});
@@ -641,9 +655,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
     setShowEmailSuggestions(false);
   };
 
-  // 표에 실제로 들어갈 원본 목록 - 탭에 따라 진행중/완료 목록을 바꿔 끼운다.
-  const sourceGroups = focusedMrNo ? [...vendorGroups, ...completedGroups].filter(group => group.mrNo === focusedMrNo)
-    : activeTab === 'completed' ? completedGroups : vendorGroups;
+  // Only current work belongs here; completed records remain in PO/history.
+  const sourceGroups = focusedMrNo ? vendorGroups.filter(group => group.mrNo === focusedMrNo) : vendorGroups;
 
   const vendorFilterOptions = useMemo(() => Object.fromEntries(VENDOR_COLUMNS.map((column) => [
     column.key,
@@ -651,6 +664,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   ])) as Record<VendorColumnKey, string[]>, [sourceGroups]);
 
   const visibleVendorGroups = useMemo(() => sourceGroups
+    .filter(group => focusedMrNo || tableState.filters.response === undefined || tableState.filters.response.includes(String(vendorFilterValue(group, 'response'))))
     .filter((group) => focusedMrNo || VENDOR_COLUMNS.every((column) => {
       if (column.filterMode === 'number-range' || column.filterMode === 'date-range') {
         return matchesTableRange(
@@ -673,23 +687,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       return sortDirection === 'asc' ? compared : -compared;
     }), [rangeFilters, sortColumn, sortDirection, tableState.filters, sourceGroups, focusedMrNo]);
 
-  // 진행중 / 완료 탭 - PO 관리 페이지와 같은 방식. 발주까지 넘어간 건을
-  // 목록에서 분리해서, 아직 구매팀이 손볼 게 남은 건만 기본으로 보인다.
-  const progressCount = vendorGroups.length;
-  const completedCount = completedGroups.length;
-  // 필터/정렬은 이미 sourceGroups(=활성 탭 목록) 기준으로 적용돼 있다.
   const tabFilteredGroups = visibleVendorGroups;
-  // 완료 탭 요약 - 끝난 건들 중 AI 추천 1순위를 그대로 선정한 비율.
-  // (aiRank는 견적 랭킹 결과라 이미 내려오는 값이고, 새로 계산하는 건 없다.)
-  const completedAiFollow = useMemo(() => {
-    const decided = completedGroups
-      .map((group) => group.quotations.find((quotation) => quotation.supplierId === group.selectedSupplierId))
-      .filter((quotation): quotation is SupplierQuotation => Boolean(quotation));
-    return {
-      total: decided.length,
-      followed: decided.filter((quotation) => quotation.aiRank === 1).length,
-    };
-  }, [completedGroups]);
 
   const rfqCandidateRows = useMemo<RfqCandidateRow[]>(() => {
     if (!selectedGroup) return [];
@@ -1390,77 +1388,37 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   const quotationAnalysisRunning = selectedGroup?.workflowStatus === 'RUNNING';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* 진행중 / 완료 탭 - 발주 시작까지 끝난 건은 완료 탭으로 분리 */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('progress')}
-            style={{
-              padding: '10px 18px',
-              fontSize: '14px',
-              fontWeight: 700,
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: activeTab === 'progress' ? 'var(--primary)' : 'var(--text-dim)',
-              borderBottom: activeTab === 'progress' ? '2px solid var(--primary)' : '2px solid transparent',
-            }}
-          >
-            진행중 &nbsp;{progressCount}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('completed')}
-            style={{
-              padding: '10px 18px',
-              fontSize: '14px',
-              fontWeight: 700,
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: activeTab === 'completed' ? 'var(--primary)' : 'var(--text-dim)',
-              borderBottom: activeTab === 'completed' ? '2px solid var(--primary)' : '2px solid transparent',
-            }}
-          >
-            완료 &nbsp;{completedCount}
-          </button>
-        </div>
-        {activeTab === 'completed' && completedAiFollow.total > 0 && (
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', paddingBottom: '10px' }}>
-            완료 {completedAiFollow.total}건 중{' '}
-            <strong style={{ color: 'var(--primary-hover)' }}>
-              {Math.round((completedAiFollow.followed / completedAiFollow.total) * 100)}%
-            </strong>
-            {' '}({completedAiFollow.followed}건)는 AI 추천 1순위를 그대로 선정
-          </div>
-        )}
-      </div>
-
+    <div className="vendor-selection-view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* 요구사항 핵심: 협력사 선정 표 (Table) */}
       <div className="mr-table-region">
-        <div className="mr-table-action-row">
+        <div className="mr-table-action-row vendor-table-toolbar">
+          <span className="vendor-list-count">진행 중 <strong>{sourceGroups.length}건</strong></span>
+          <label className="vendor-response-filter">회신율
+            <select aria-label="견적 회신율 필터" value={tableState.filters.response?.[0] ?? ''} onChange={event => tableState.setFilter('response', event.target.value ? [event.target.value] : undefined)}>
+              <option value="">전체</option><option value="50% 이상">50% 이상</option><option value="50% 미만">50% 미만</option>
+            </select>
+          </label>
           <button type="button" className="mr-table-reset-button" aria-label="협력사 선정 표 레이아웃 초기화"
-            data-tooltip="컬럼 크기·필터·정렬 초기화" onClick={resetTableLayout}>
+            data-tooltip="컬럼 순서·크기·필터·정렬 초기화" onClick={resetTableLayout}>
             <RotateCcw size={17} aria-hidden="true" />
           </button>
         </div>
-      <SmartTableContainer style={{ border: '1px solid var(--border-color)', borderRadius: '10px', backgroundColor: 'var(--bg-card)', boxShadow: 'var(--shadow-sm)' }}>
+      <SmartTableContainer stickyHeader style={{ border: '1px solid var(--border-color)', borderRadius: '10px', backgroundColor: 'var(--bg-card)', boxShadow: 'var(--shadow-sm)' }}>
         <table
-          className="custom-table configurable-table"
+          className="custom-table configurable-table vendor-selection-table"
           style={{ width: `${tableState.totalWidth}px`, minWidth: '100%' }}
         >
           <colgroup>
-            {VENDOR_COLUMNS.map((column) => (
+            {columnLayout.orderedColumns.map((column) => (
               <col key={column.key} style={{ width: tableState.widths[column.key] }} />
             ))}
           </colgroup>
           <thead>
             <tr>
-              {VENDOR_COLUMNS.map((column) => (
+              {columnLayout.orderedColumns.map((column, index) => (
                 <ExcelColumnHeader
                   key={column.key}
+                  {...columnLayout.headerProps(column.key)}
                   columnKey={column.key}
                   label={column.label}
                   width={tableState.widths[column.key]}
@@ -1477,9 +1435,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     else delete next[column.key];
                     return next;
                   })}
-                  onResizeStart={column.key === 'more' ? undefined : (event) => tableState.beginResize(column.key, event)}
+                  onResizeStart={index === columnLayout.orderedColumns.length - 1 ? undefined : (event) => tableState.beginResize(column.key, event)}
                   activeSort={sortColumn === column.key ? sortDirection : undefined}
-                  onSort={(direction) => { setSortColumn(column.key); setSortDirection(direction); }}
+                  onSort={column.filterMode === 'none' ? undefined : (direction) => { setSortColumn(column.key); setSortDirection(direction); }}
                 />
               ))}
             </tr>
@@ -1606,23 +1564,23 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
               return (
                 <React.Fragment key={group.id}>
-                  {(activeTab === 'progress' ? movePlaceholders : [])
+                  {movePlaceholders
                     .filter((placeholder) => placeholder.index === rowIndex)
                     .map((placeholder) => (
                       <StageMovePlaceholderRow
                         key={placeholder.id}
                         placeholder={placeholder}
-                        colSpan={7}
+                        colSpan={VENDOR_COLUMNS.length}
                         onNavigate={onNavigateMovePlaceholder}
                         onDismiss={onDismissMovePlaceholder}
                       />
                     ))}
-                  <tr
+                  <OrderedTableRow columnOrder={columnLayout.keys}
                   className={`workflow-transition-${group.transitionPhase ?? 'stable'}`}
                   style={{ height: '64px' }}
                 >
                   {/* 1. MR 번호 (클릭 시 MR 목록 내용 다 확인 가능) */}
-                  <td>
+                  <td data-column-key="mr">
                     <button
                       type="button"
                       onClick={() => handleOpenMRDetail(group)}
@@ -1650,140 +1608,53 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     </div>
                   </td>
 
-                  {/* 2. 차수 · 마감 - 예전엔 '차수'와 '마감시간 (마감연장)'이
-                      각각 컬럼 하나씩이었는데, '지금 몇 차수인지 / 언제까지
-                      받는지'는 같은 맥락이라 한 셀로 합쳤다. 차수 배지 클릭 =
-                      지난 라운드별 견적 보기(원래 동작 그대로), 마감 연장
-                      버튼은 '⋯' 메뉴로 옮겼다. 납기요청일 · 요청부서 ·
-                      RFQ 협력사 수는 '상세' 패널(RFQ 상세 요약)로 옮겼다. */}
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                      {(() => {
-                        const rounds = closedRoundCount(group);
-                        return (
-                          <button
-                            type="button"
-                            className="badge badge-purple"
-                            disabled={rounds === 0}
-                            onClick={() => handleOpenRoundsModal(group)}
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              border: 'none',
-                              cursor: rounds === 0 ? 'not-allowed' : 'pointer',
-                              opacity: rounds === 0 ? 0.4 : 1,
-                            }}
-                            title={rounds === 0
-                              ? '아직 재비딩한 적이 없어 지난 차수 기록이 없습니다.'
-                              : `재비딩으로 마감된 지난 라운드가 ${rounds}건 있습니다. 클릭하면 차수별로 받았던 견적을 볼 수 있습니다.`}
-                          >
-                            {rounds}차
-                          </button>
-                        );
-                      })()}
-                      <div
-                        style={{ opacity: rfqActive ? 1 : 0.4 }}
-                        title={rfqActive ? undefined : 'RFQ 발송 후 이용할 수 있습니다.'}
-                      >
-                        {hasSelection ? (
-                          <span className="badge badge-gray" style={{ fontSize: '11px' }}>
-                            <CheckCircle2 size={11} /> 마감 완료
-                          </span>
-                        ) : group.deadlineDDay <= 0 ? (
-                          <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <span>{rfqActive ? `${group.deadlineDate} ${group.deadlineTime}` : 'RFQ 발송 전'}</span>
-                            {rfqActive && (
-                              <span className="badge badge-red" style={{ fontSize: '11px', fontWeight: 600, width: 'fit-content' }}>
-                                마감 지남
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: '12px', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <span>{rfqActive ? `${group.deadlineDate} ${group.deadlineTime}` : 'RFQ 발송 전'}</span>
-                            {rfqActive && (
-                              <span style={{ fontSize: '11px', color: 'var(--warning)', fontWeight: 600 }}>
-                                (D-{group.deadlineDDay}일 마감){group.isExtended ? ' · 연장됨' : ''}
-                              </span>
-                            )}
-                          </div>
-                        )}
+                  <td data-column-key="roundDeadline">
+                    <div className="vendor-deadline-cell">
+                      <div className="vendor-deadline-meta">
+                        <button type="button" className="vendor-round-link" disabled={closedRoundCount(group) === 0}
+                          onClick={() => handleOpenRoundsModal(group)} title="지난 차수별 견적 보기">
+                          {closedRoundCount(group)}차
+                        </button>
+                        {rfqActive && !hasSelection && <span className={`vendor-dday ${group.deadlineDDay < 0 ? 'is-overdue' : group.deadlineDDay <= 1 ? 'is-soon' : ''}`}
+                          title={`견적 마감 ${group.deadlineDate} ${group.deadlineTime}`}>
+                          {group.deadlineDDay === 0 ? 'D-day' : group.deadlineDDay > 0 ? `D-${group.deadlineDDay}` : `D+${Math.abs(group.deadlineDDay)}`}
+                        </span>}
+                        {group.isExtended && rfqActive && <span className="vendor-muted">연장</span>}
                       </div>
+                      <span className="vendor-deadline-date">{rfqActive ? `${group.deadlineDate} ${group.deadlineTime}` : 'RFQ 발송 전'}</span>
                     </div>
                   </td>
 
-                  {/* 5. 견적 회신율(%) - 클릭 시 상세사항 확인 및 업체 선정.
-                      '회신 새로 확인' 버튼은 '다음 행동' 컬럼으로 옮겼다. */}
-                  <td style={{ textAlign: 'center' }}>
-                    <button
-                      type="button"
-                      disabled={!canReviewQuotations}
-                      onClick={() => handleOpenQuotationModal(group)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: canReviewQuotations ? 'pointer' : 'not-allowed',
-                        display: 'inline-flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        padding: '4px 8px',
-                        borderRadius: '6px',
-                        opacity: canReviewQuotations ? 1 : 0.4,
-                      }}
-                      title={canReviewQuotations ? '클릭하여 공급사별 견적 상세 비교 및 업체 선정' : '견적 수집/선정 단계에서 이용할 수 있습니다.'}
-                    >
-                      <span
-                        className={`badge ${percent === 100 ? 'badge-green' : percent > 0 ? 'badge-purple' : 'badge-yellow'}`}
-                        style={{ fontSize: '12px', fontWeight: 700, padding: '5px 10px', textDecoration: 'underline' }}
-                      >
-                        {percent}% ({respondedCount}/{totalSuppliers}개사)
-                      </span>
-                      <div style={{ width: '84px', height: '5px', borderRadius: '3px', backgroundColor: 'var(--border-color)', overflow: 'hidden', marginTop: '4px' }}>
-                        <div
-                          style={{
-                            width: `${percent}%`,
-                            height: '100%',
-                            backgroundColor: percent === 100 ? 'var(--success)' : percent > 0 ? 'var(--primary)' : 'var(--warning)',
-                          }}
-                        />
+                  <td data-column-key="status">
+                    <div className="vendor-workflow-cell">
+                      <div className={`vendor-state-line ${isOverdueUnsentRfq ? 'is-warning' : ''}`}>
+                        <span className="vendor-state-dot" />
+                        <strong>{isOverdueUnsentRfq ? '납기 초과 · RFQ 미발송' : String(vendorFilterValue(group, 'status'))}</strong>
+                        {selectedQuotation && <span className="vendor-selected-supplier" title={selectedQuotation.supplierName}>{selectedQuotation.supplierName}</span>}
                       </div>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                        [상세보기 & 업체선정]
-                      </span>
-                    </button>
-                  </td>
-
-                  {/* 6. 진행상태 - 배지/공급사명만. '선정 변경' 버튼은
-                      '다음 행동' 컬럼으로 옮겼다. */}
-                  <td>
-                    {selectedQuotation ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700, width: 'fit-content' }}>
-                          <CheckCircle2 size={13} /> 업체 선정완료
-                        </span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {selectedQuotation.supplierName}
-                        </span>
+                      <div className="vendor-progress-track" aria-label={`진행 상태: ${String(vendorFilterValue(group, 'status'))}`}>
+                        {['RFQ 발송', '견적 수집', '업체 선정'].map((label, index) => {
+                          const current = hasSelection ? 3 : group.workflowStage === 'SUPPLIER_SELECTION' ? 2 : rfqActive ? 1 : 0;
+                          return <span key={label} className={`vendor-progress-step ${index < current ? 'is-complete' : index === current ? 'is-current' : ''}`}>
+                            <i aria-hidden="true" /><span>{label}</span>
+                          </span>;
+                        })}
                       </div>
-                    ) : isOverdueUnsentRfq ? (
-                      <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', width: 'fit-content' }}>
-                        <AlertTriangle size={11} /> 납기 초과 · RFQ 미발송
-                      </span>
-                    ) : !rfqActive ? (
-                      <span className="badge badge-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
-                        <Clock size={11} /> RFQ 미발송
-                      </span>
-                    ) : (
-                      <span className="badge badge-yellow" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
-                        <Clock size={11} /> 견적 요청상태
-                      </span>
-                    )}
+                      <button type="button" className="vendor-response-link" disabled={!canReviewQuotations}
+                        onClick={() => handleOpenQuotationModal(group)}
+                        title={canReviewQuotations ? '공급사별 견적 비교 및 업체 선정' : '견적 수집/선정 단계에서 이용할 수 있습니다.'}>
+                        <span>회신 <strong>{respondedCount}</strong> / {totalSuppliers}개사</span>
+                        <span className="vendor-response-meter" aria-hidden="true"><i style={{ width: `${percent}%` }} /></span>
+                        <span>{percent}%</span>
+                        {canReviewQuotations && <span className="vendor-response-hint">견적 비교 →</span>}
+                      </button>
+                    </div>
                   </td>
 
                   {/* 6.5. 상세 - MR번호/차수/회신율 클릭으로 나뉘어 있던 정보를
                       한 화면에서 요약해서 보여주는 통합 패널. 와이어프레임의
                       '상세보기' 버튼에 대응한다. */}
-                  <td style={{ textAlign: 'center' }}>
+                  <td data-column-key="detail" style={{ textAlign: 'center' }}>
                     <button
                       type="button"
                       className="btn-outline btn-sm"
@@ -1803,26 +1674,9 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                       바이어가 다른 선택지를 아예 모르게 됨). 마감연장 ·
                       회신 새로 확인 · 선정 변경 같은 부가 액션은 옆
                       '⋯' 메뉴(overflowItems)로 옮겼다. */}
-                  <td>
+                  <td data-column-key="action">
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                      {activeTab === 'completed' ? (
-                        // 완료 탭 - 더 누를 버튼이 없는 대신, 이 건이 AI 추천
-                        // 1순위를 그대로 따른 건지 담당자가 직접 바꾼 건지를
-                        // 보여준다(선정 근거는 회신율 클릭 → 비교 모달).
-                        selectedQuotation ? (
-                          selectedQuotation.aiRank === 1 ? (
-                            <span className="badge badge-blue" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              <Sparkles size={11} /> AI 추천 그대로
-                            </span>
-                          ) : (
-                            <span className="badge badge-gray" style={{ fontSize: '11px' }}>
-                              담당자 직접 선정{selectedQuotation.aiRank > 0 ? ` (AI ${selectedQuotation.aiRank}순위)` : ''}
-                            </span>
-                          )
-                        ) : (
-                          <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>—</span>
-                        )
-                      ) : isOverdueUnsentRfq ? (
+                      {isOverdueUnsentRfq ? (
                         <button
                           type="button"
                           className="btn-sm btn-reject"
@@ -1940,32 +1794,30 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
 
                   {/* 7. ⋯ 더보기 - 그 행 상태에 해당하는 부가 액션만 담긴다.
                       담길 게 없으면 버튼 자체가 안 보인다(RowActionMenu). */}
-                  <td style={{ textAlign: 'center' }}>
+                  <td data-column-key="more" style={{ textAlign: 'center' }}>
                     <RowActionMenu items={overflowItems} ariaLabel={`${group.mrNo} 부가 액션`} />
                   </td>
-                  </tr>
+                  </OrderedTableRow>
                 </React.Fragment>
               );
             })}
 
-            {(activeTab === 'progress' ? movePlaceholders : [])
+            {movePlaceholders
               .filter((placeholder) => placeholder.index >= tabFilteredGroups.length)
               .map((placeholder) => (
                 <StageMovePlaceholderRow
                   key={placeholder.id}
                   placeholder={placeholder}
-                  colSpan={7}
+                  colSpan={VENDOR_COLUMNS.length}
                   onNavigate={onNavigateMovePlaceholder}
                   onDismiss={onDismissMovePlaceholder}
                 />
               ))}
 
-            {tabFilteredGroups.length === 0 && (activeTab === 'completed' || movePlaceholders.length === 0) && (
+            {tabFilteredGroups.length === 0 && movePlaceholders.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
-                  {activeTab === 'completed'
-                    ? '아직 발주 시작까지 넘어간 건이 없습니다.'
-                    : '현재 협력사 선정 대기 건이 없습니다.'}
+                <td colSpan={VENDOR_COLUMNS.length} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+                  현재 협력사 선정 대기 건이 없습니다.
                 </td>
               </tr>
             )}

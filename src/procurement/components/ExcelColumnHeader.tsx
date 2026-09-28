@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -36,6 +37,7 @@ interface ExcelColumnHeaderProps<Key extends string> {
   onDragOver?: (event: DragEvent<HTMLTableCellElement>) => void;
   onDrop?: (event: DragEvent<HTMLTableCellElement>) => void;
   onDragEnd?: () => void;
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLTableCellElement>) => void;
   filterMode?: TableFilterMode;
   rangeValue?: TableColumnRangeFilter;
   onRangeFilterChange?: (range: TableColumnRangeFilter | undefined) => void;
@@ -71,6 +73,7 @@ export const ExcelColumnHeader = <Key extends string>({
   onDragOver,
   onDrop,
   onDragEnd,
+  onKeyDown,
   filterMode = 'values',
   rangeValue,
   onRangeFilterChange,
@@ -165,11 +168,13 @@ export const ExcelColumnHeader = <Key extends string>({
       className={`excel-table-header${dragState ? ` is-${dragState}` : ''}`}
       style={{ width, minWidth, textAlign: align, order }}
       draggable={draggable}
+      tabIndex={draggable ? 0 : undefined}
+      onKeyDown={onKeyDown}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      title={draggable ? '드래그하여 열 위치 변경' : undefined}
+      title={draggable ? (onKeyDown ? '드래그 또는 Alt+방향키로 열 위치 변경' : '드래그하여 열 위치 변경') : undefined}
     >
       <div className={`excel-table-header-content align-${align}`}>
         <button

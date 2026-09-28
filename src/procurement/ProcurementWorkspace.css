@@ -1053,6 +1053,15 @@
   cursor: grab;
 }
 
+/* Preserve the real header and its controls while the page scrolls past it. */
+.has-sticky-header > table > thead { position: relative; z-index: 15; background: #f7f7f8; }
+.has-sticky-header > table > thead > tr > th { background: #f7f7f8; }
+.has-sticky-header > table > thead.is-pinned { box-shadow: 0 3px 6px #0000000d; }
+.excel-table-header[tabindex]:focus-visible { outline: 2px solid #555; outline-offset: -3px; }
+@media print {
+  .has-sticky-header > table > thead { transform: none !important; box-shadow: none !important; }
+}
+
 .excel-table-header.is-dragging {
   opacity: 0.42;
   cursor: grabbing;

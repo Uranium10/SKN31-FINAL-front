@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { MaterialRequestAttachment, POItem, POScorecardScores, SupplierScores, StageMovePlaceholder } from '../types';
 import { SmartTableContainer } from '../components/SmartTableContainer';
+import { OrderedTableRow } from '../components/OrderedTableRow';
+import { useTableColumnOrder } from '../hooks/useTableColumnOrder';
+import { formatDeliveryDateTime } from '../utils/tableLayout';
 import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { WorkflowInterruptForm } from '../components/WorkflowInterruptForm';
 import {
@@ -130,7 +133,8 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   isApiMode = false,
   canApprovePO = false,
 }) => {
-  const tableState = useSessionTableState('po-management', PO_COLUMNS, 'adjacent');
+  const columnLayout = useTableColumnOrder('po-management', PO_COLUMNS);
+  const tableState = useSessionTableState('po-management', columnLayout.orderedColumns, 'adjacent');
   const [selectedMRDetail, setSelectedMRDetail] = useState<POItem | null>(null);
   // MRListView와 동일하게, 에러문구 클릭하면 펼쳐서 전체 보이게 (요청별 토글).
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
@@ -164,6 +168,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
   const [sortOrder, setSortOrder] = useState<'latest' | 'due-date' | 'amount'>('latest');
   const [showCreatePOChooser, setShowCreatePOChooser] = useState(false);
   const resetTableLayout = () => {
+    columnLayout.resetOrder();
     tableState.resetWidths();
     tableState.clearFilters();
     setSearchText('');
@@ -288,12 +293,17 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
         </div>
       )}
       <div className="mr-table-region">
-      <SmartTableContainer>
+      <SmartTableContainer stickyHeader>
         <table className="custom-table po-management-table">
-          <colgroup>{PO_COLUMNS.map(column => <col key={column.key} style={{ width: `${tableState.widths[column.key] / tableState.totalWidth * 100}%` }} />)}</colgroup>
-          <thead><tr>{PO_COLUMNS.map((column, index) => <th key={column.key}><span title={column.label}>{column.label}</span>
-            {index < PO_COLUMNS.length - 1 && <div className="excel-column-resizer" role="separator" aria-orientation="vertical" aria-label={`${column.label} 너비 조절`} onPointerDown={event => tableState.beginResize(column.key, event)} />}
-          </th>)}</tr></thead>
+          <colgroup>{columnLayout.orderedColumns.map(column => <col key={column.key} style={{ width: `${tableState.widths[column.key] / tableState.totalWidth * 100}%` }} />)}</colgroup>
+          <thead><tr>{columnLayout.orderedColumns.map((column, index) => {
+            const { dragState, ...dragProps } = columnLayout.headerProps(column.key);
+            return <th key={column.key} {...dragProps} tabIndex={0}
+              className={`excel-table-header ${dragState ? `is-${dragState}` : ''}`}
+              title="드래그 또는 Alt+방향키로 열 위치 변경"><span>{column.label}</span>
+              {index < PO_COLUMNS.length - 1 && <div className="excel-column-resizer" role="separator" aria-orientation="vertical" aria-label={`${column.label} 너비 조절`} onDragStart={event => event.preventDefault()} onPointerDown={event => tableState.beginResize(column.key, event)} />}
+            </th>;
+          })}</tr></thead>
           <tbody>
             {visiblePOItems.map((item, rowIndex) => {
               const stage = getPOStage(item);
@@ -302,14 +312,14 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
               return (
                 <React.Fragment key={item.id}>
                   {movePlaceholders.filter((placeholder) => placeholder.index === rowIndex).map((placeholder) => <StageMovePlaceholderRow key={placeholder.id} placeholder={placeholder} colSpan={4} onNavigate={onNavigateMovePlaceholder} onDismiss={onDismissMovePlaceholder} />)}
-                  <tr className={`workflow-transition-${item.transitionPhase ?? 'stable'}`}>
-                    <td>
+                  <OrderedTableRow columnOrder={columnLayout.keys} className={`workflow-transition-${item.transitionPhase ?? 'stable'}`}>
+                    <td data-column-key="purchase">
                       <div className="po-purchase-cell">
                         <button type="button" className="po-mr-link" onClick={() => setSelectedMRDetail(item)} title={`${item.mrNo} · MR 기본 정보와 선정 협력사 확인`}>{item.mrNo}</button>
                         <span className="po-item-summary" title={`${item.itemName} · ${item.itemCode || ''}`}>{item.itemName}{item.itemCode ? ` · ${item.itemCode}` : ''}</span>
                       </div>
                     </td>
-                    <td>
+                    <td data-column-key="workflow">
                       <div className="po-workflow-cell">
                         <div className="po-state-line">
                           <span className={`po-state-badge ${stageClass(stage)}`}><span className="po-stage-dot" />{stageLabel(stage)}</span>
@@ -343,16 +353,16 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                         </div>
                       </div>
                     </td>
-                    <td><span title={item.poNo} className={item.poNo ? 'po-number' : 'po-number is-empty'}>{item.poNo ?? '—'}</span>{item.createdDate && <span title={item.createdDate} className="po-created-date">{formatShortDate(item.createdDate)}</span>}</td>
-                    <td>
+                    <td data-column-key="po"><span title={item.poNo} className={item.poNo ? 'po-number' : 'po-number is-empty'}>{item.poNo ?? '—'}</span>{item.createdDate && <span title={item.createdDate} className="po-created-date">{formatShortDate(item.createdDate)}</span>}</td>
+                    <td data-column-key="date">
                       <div className="po-date-cell">
-                        <span className={item.isUrgent ? 'po-date-urgent' : ''}>{formatShortDate(dueDate)}</span>
+                        <span title={formatDeliveryDateTime(dueDate)} className={item.isUrgent ? 'po-date-urgent' : ''}>{formatDeliveryDateTime(dueDate)}</span>
                         {item.isUrgent && <span className="po-urgent-badge">긴급</span>}
-                        {(item.fullReceiptDate ?? item.arrivedDate) && <span className="po-receipt-date">입고 {formatShortDate(item.fullReceiptDate ?? item.arrivedDate)}</span>}
-                        {item.deliveryStatus === 'PARTIAL' && item.firstReceiptDate && <span className="po-receipt-date">부분 입고 {formatShortDate(item.firstReceiptDate)}</span>}
+                        {(item.fullReceiptDate ?? item.arrivedDate) && <span className="po-receipt-date" title={formatDeliveryDateTime(item.fullReceiptDate ?? item.arrivedDate)}>입고 {formatDeliveryDateTime(item.fullReceiptDate ?? item.arrivedDate)}</span>}
+                        {item.deliveryStatus === 'PARTIAL' && item.firstReceiptDate && <span className="po-receipt-date" title={formatDeliveryDateTime(item.firstReceiptDate)}>부분 입고 {formatDeliveryDateTime(item.firstReceiptDate)}</span>}
                       </div>
                     </td>
-                  </tr>
+                  </OrderedTableRow>
                 </React.Fragment>
               );
             })}

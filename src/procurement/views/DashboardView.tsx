@@ -42,12 +42,12 @@ function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = f
       </button>}
     </header>
     <div id={`work-list-${bucket}`} className="work-task-list">
-      {visible.map(({ request, label, detail, tab, urgency, urgencyLabel, deadlineLabel, elapsedLabel }) => {
+      {visible.map(({ request, label, detail, tab, bucket: taskBucket, urgency, urgencyLabel, deadlineLabel, elapsedLabel }) => {
         const state = progress?.items.find(p => p.case_id === request.id);
         // Never reuse a previous stage's waiting reason while list refresh catches up.
         const matched = state && state.stage === request.workflowStage && state.status === request.workflowStatus ? state : undefined;
         const reason = request.workflowError || request.workflowStatus === 'FAILED' ? undefined : progressReason(matched);
-        return <article className={`work-task work-urgency-${urgency}`} key={request.mrNo}>
+        return <article className={`work-task work-urgency-${urgency}${urgency !== 'danger' && (taskBucket === 'attention' || taskBucket === 'waiting') ? ' work-waiting-tag' : ''}`} key={request.mrNo}>
         <button type="button" className="work-task-main work-task-link" onClick={() => onOpenTask(tab, request.mrNo)} aria-label={`${request.mrNo} ${label} 작업 열기`}>
           <span className="work-stage">{label}</span>
           <span className="work-item"><strong>{request.itemName}</strong><span>{request.mrNo}</span></span>

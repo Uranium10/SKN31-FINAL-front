@@ -1,7 +1,9 @@
 import React, { useEffect, useRef } from 'react';
+import { stickyHeaderOffset } from '../utils/tableLayout';
 
 interface SmartTableContainerProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
+  stickyHeader?: boolean;
 }
 
 /**
@@ -15,6 +17,7 @@ interface SmartTableContainerProps extends React.HTMLAttributes<HTMLDivElement> 
 export const SmartTableContainer: React.FC<SmartTableContainerProps> = ({
   children,
   className = '',
+  stickyHeader = false,
   ...props
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -29,6 +32,7 @@ export const SmartTableContainer: React.FC<SmartTableContainerProps> = ({
 
     let frame = 0;
     let syncingFromFloating = false;
+    let headerOffset = 0;
     const verticalScroller = content.closest<HTMLElement>('.view-content') ?? window;
 
     const measure = () => {
@@ -40,6 +44,19 @@ export const SmartTableContainer: React.FC<SmartTableContainerProps> = ({
       const nativeScrollbarBelowViewport = rect.bottom > viewportHeight;
       const tableIsVisible = rect.top < viewportHeight - 24 && rect.bottom > 24;
       const show = overflowing && nativeScrollbarBelowViewport && tableIsVisible;
+
+      // overflow-x wrappers prevent native position:sticky from tracking the page.
+      // Translate the real header instead, preserving filters, drag handlers and focus.
+      const header = content.querySelector('thead');
+      const table = content.querySelector('table');
+      if (stickyHeader && header && table) {
+        const headerRect = header.getBoundingClientRect();
+        const viewportTop = verticalScroller instanceof HTMLElement
+          ? Math.max(0, verticalScroller.getBoundingClientRect().top + verticalScroller.clientTop) : 0;
+        headerOffset = stickyHeaderOffset(headerRect.top - headerOffset, table.getBoundingClientRect().bottom, headerRect.height, viewportTop);
+        header.style.transform = `translateY(${headerOffset}px)`;
+        header.classList.toggle('is-pinned', headerOffset > 0);
+      }
 
       floating.classList.toggle('is-visible', show);
       spacer.style.width = `${content.scrollWidth}px`;
@@ -72,6 +89,7 @@ export const SmartTableContainer: React.FC<SmartTableContainerProps> = ({
     floating.addEventListener('scroll', syncFromFloating, { passive: true });
     verticalScroller.addEventListener('scroll', scheduleMeasure, { passive: true });
     window.addEventListener('resize', scheduleMeasure, { passive: true });
+    if (verticalScroller !== window) window.addEventListener('scroll', scheduleMeasure, { passive: true });
     measure();
 
     return () => {
@@ -81,12 +99,15 @@ export const SmartTableContainer: React.FC<SmartTableContainerProps> = ({
       floating.removeEventListener('scroll', syncFromFloating);
       verticalScroller.removeEventListener('scroll', scheduleMeasure);
       window.removeEventListener('resize', scheduleMeasure);
+      window.removeEventListener('scroll', scheduleMeasure);
+      const header = content.querySelector('thead');
+      if (header) { header.style.transform = ''; header.classList.remove('is-pinned'); }
     };
-  }, []);
+  }, [stickyHeader]);
 
   return (
     <>
-      <div ref={contentRef} className={`table-container ${className}`.trim()} {...props}>
+      <div ref={contentRef} className={`table-container ${stickyHeader ? 'has-sticky-header' : ''} ${className}`.trim()} {...props}>
         {children}
       </div>
       <div ref={floatingRef} className="smart-horizontal-scroll" aria-hidden="true">

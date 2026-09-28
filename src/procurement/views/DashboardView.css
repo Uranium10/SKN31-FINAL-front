@@ -55,6 +55,7 @@
 .work-task { padding: 17px 20px; border-bottom: 1px solid #eee; border-left: 4px solid #d7d7d7; }
 .work-urgency-danger { border-left-color: var(--danger, #b34d4d); }
 .work-urgency-warning { border-left-color: var(--warning, #b07829); }
+.work-waiting-tag { border-left-color: #bca04e; }
 .work-time-evidence { display:flex; flex-wrap:wrap; align-items:center; gap:5px 12px; margin-top:7px; color:#737373; font-size:11px; }
 .work-time-evidence strong { display:inline-flex; align-items:center; gap:4px; font-weight:650; }
 .work-urgency-danger .work-time-evidence strong { color:var(--danger, #b34d4d); }
