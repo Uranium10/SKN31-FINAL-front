@@ -2211,6 +2211,7 @@ function ProcurementWorkspaceComponent({
                     notifications={notifications}
                     onOpenTask={(tab, mrNo) => { setTaskFocus({ tab, mrNo }); setSearchQuery(mrNo); setCurrentTab(tab); }}
                     setCurrentTab={setCurrentTab}
+                    canApprovePO={canApprovePO}
                   />
                 </div>
                 {initialDashboardLoading && <DashboardDatabaseLoader />}

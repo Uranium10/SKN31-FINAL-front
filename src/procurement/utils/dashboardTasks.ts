@@ -6,7 +6,16 @@ export interface DashboardTask {
   request: MaterialRequest; bucket: TaskBucket; label: string; detail: string; tab: NavigationTab;
   priority: 0 | 1 | 2; urgency: 'danger' | 'warning' | 'neutral'; urgencyLabel: string;
   deadlineLabel: string; elapsedLabel: string; deadlineAt: number;
+  /** 자동 진행이 멈춘 이유. AI 판단 기록과 같은 문구를 행에서 바로 보여준다. */
+  autoBlockers: { code: string; label: string; detail: string }[];
 }
+
+/** 화면 표시 기준일 뿐, 워크플로 타임아웃이나 독촉 규칙이 아니다.
+ *  독촉 메일은 이미 자동으로 나가므로 평소에는 알리지 않고, 마감이 코앞인데
+ *  회신이 모자랄 때만 띄운다 - 그때는 마감 연장이나 재비딩이라는 할 일이 있다. */
+export const QUOTATION_RISK_WINDOW_MS = 24 * 60 * 60_000;
+export const QUOTATION_RISK_RATE = 0.7;
+export const QUOTATION_RISK_MISSING = 2;
 
 // UI observation threshold only, not a workflow timeout or automatic retry rule.
 export const STALE_RUNNING_MS = 60 * 60_000;
@@ -66,7 +75,12 @@ export function dashboardStageLabel(stage?: string): string {
 }
 
 /** Classify once per MR. A human task for an external recipient is not buyer work. */
-export function dashboardTasks(requests: MaterialRequest[], progress: WorkProgress[] = [], now = Date.now()): DashboardTask[] {
+export function dashboardTasks(
+  requests: MaterialRequest[],
+  progress: WorkProgress[] = [],
+  now = Date.now(),
+  { canApprovePO = false }: { canApprovePO?: boolean } = {},
+): DashboardTask[] {
   const seen = new Set<string>();
   return requests.flatMap(request => {
     const status = request.workflowStatus ?? '';
@@ -81,26 +95,71 @@ export function dashboardTasks(requests: MaterialRequest[], progress: WorkProgre
     const review = !!observed && ['QUOTATION_COLLECTION', 'SUPPLIER_SELECTION'].includes(stage)
       && ['BLOCKED', 'UNCERTAIN'].includes(observed.deadline_status || '');
     const tab: NavigationTab = poStages.has(stage) ? 'po-manage' : ['QUOTATION_COLLECTION', 'SUPPLIER_SELECTION'].includes(stage) ? 'vendor-select' : 'mr-list';
+    const time = timeEvidence(request, now);
+    // 자동 진행이 조건에 걸려 멈춘 것은 '고장'이 아니라 설계대로 사람을 부른
+    // 것이다. last_error에도 판정 요약이 들어가므로 그것만 보면 시스템 오류와
+    // 구분되지 않는다. 판정 원본으로 갈라서 결정 대기로 보낸다.
+    const autoBlockers = status === 'FAILED' ? [] : (request.autoProgress?.checks ?? [])
+      .filter((check) => check.status === 'blocked')
+      .map(({ code, label, detail: reason }) => ({ code, label, detail: reason }));
+    const autoHeld = autoBlockers.length > 0;
+    // PO 승인은 Purchase Manager 권한이 있어야 누를 수 있다. 권한이 없는
+    // 담당자에게는 '내 할 일'이 아니라 '승인 대기'로 보여야 한다.
+    const approvalOnly = stage === 'PRE_PO_APPROVAL' && !canApprovePO;
+    const missing = Math.max(0, (request.quotationRecipientCount ?? 0) - (request.quotationRespondedCount ?? 0));
+    const quotationRisk = stage === 'QUOTATION_COLLECTION' && !autoHeld
+      && (request.quotationRecipientCount ?? 0) > 0
+      && Number.isFinite(time.deadlineAt) && time.deadlineAt > now
+      && time.deadlineAt - now <= QUOTATION_RISK_WINDOW_MS
+      && (request.quotationRespondedCount ?? 0) < (request.quotationRecipientCount ?? 0) * QUOTATION_RISK_RATE
+      && missing >= QUOTATION_RISK_MISSING;
+
     let bucket: TaskBucket = 'other';
     let detail = request.pendingTask?.description || '상세 화면에서 현재 상태를 확인하세요.';
-    if (request.workflowError || status === 'FAILED' || ['HUMAN_REVIEW', 'PR_REJECTED'].includes(stage)) {
+    // 기한과 별개로 '오늘 봐야 하는' 결정. 고장은 아니지만 미루면 건 전체가 선다.
+    let pressing = autoHeld || quotationRisk;
+    if (autoHeld) {
+      bucket = 'attention';
+      detail = request.autoProgress?.summary || autoBlockers[0].detail;
+    } else if (status === 'FAILED' || stage === 'HUMAN_REVIEW' || (request.workflowError && !waits.has(stage))) {
       bucket = 'blocked'; detail = request.workflowError || '진행이 멈췄습니다. 사유를 확인해 주세요.';
     } else if (review || stale) {
-      bucket = 'blocked'; detail = review ? observed?.waiting_reason || '자동 진행 조건을 점검해 주세요.'
+      bucket = 'blocked'; detail = review ? observed?.waiting_reason || '자동 판정이 멈췄습니다. 실행 상태를 확인해 주세요.'
         : '상태가 오랫동안 갱신되지 않았습니다. 실제 실행 상태를 확인해 주세요.';
+    } else if (stage === 'PR_REJECTED') {
+      // 공급사가 반려한 것은 고장이 아니라 사람이 수습해야 하는 결정이다.
+      bucket = 'attention'; pressing = true;
+      detail = request.workflowError || '공급사가 발주를 반려했습니다. 다른 공급사 선정 또는 재비딩이 필요합니다.';
+    } else if (approvalOnly) {
+      bucket = 'waiting'; detail = '발주 승인 권한자의 확인을 기다립니다.';
     } else if (stage === 'DELIVERY' || (status === 'WAITING_INPUT' && waits.has(stage))) {
-      bucket = 'waiting'; detail = stage === 'QUOTATION_COLLECTION' ? `견적 회신율 ${Math.round(request.processStage.quotationProgressPercent)}% · 회신과 마감 조건 확인 중`
-        : stage === 'SUBSTITUTE_DECISION' ? '요청부서의 대체품 사용 여부를 기다립니다.' : stage === 'DELIVERY' ? '발주 후 입고를 기다립니다.' : '공급사의 발주 확인 응답을 기다립니다.';
+      bucket = 'waiting';
+      detail = stage === 'QUOTATION_COLLECTION'
+        ? (quotationRisk
+          ? `마감이 하루도 남지 않았는데 ${missing}곳이 미회신입니다 (회신 ${request.quotationRespondedCount}/${request.quotationRecipientCount}). 마감 연장이나 재비딩을 검토하세요.`
+          : `견적 회신율 ${Math.round(request.processStage.quotationProgressPercent)}% · 회신과 마감 조건 확인 중`)
+        : stage === 'SUBSTITUTE_DECISION' ? '요청부서의 대체품 사용 여부를 기다립니다.'
+        : stage === 'DELIVERY' ? '발주 후 입고를 기다립니다.' : '공급사의 발주 확인 응답을 기다립니다.';
     } else if (['RUNNING', 'QUEUED'].includes(status)) {
-      bucket = 'processing'; detail = status === 'QUEUED' ? '실행 순서를 기다리고 있습니다.' : '시스템이 처리 중입니다. 완료되면 상태가 갱신됩니다.';
+      // '처리 중'만으로는 무엇을 하는지 알 수 없다. 단계 이름을 그대로 보여준다.
+      bucket = 'processing';
+      detail = status === 'QUEUED' ? '실행 순서를 기다리고 있습니다.'
+        : `${labels[stage] || '워크플로'} 진행 중입니다. 완료되면 상태가 갱신됩니다.`;
     } else if (request.pendingTask || status === 'WAITING_INPUT' || request.status === '승인대기') {
       bucket = 'attention'; detail = request.pendingTask?.description || '담당자의 검토 또는 선택이 필요합니다.';
     }
-    const time = timeEvidence(request, now);
-    const priority: 0 | 1 | 2 = bucket === 'blocked' ? 0 : time.urgent ? 1 : 2;
+    // 고장이 0순위. 조건 미달과 회신 부족은 사람이 오늘 봐야 하는 일이라 1순위.
+    const priority: 0 | 1 | 2 = bucket === 'blocked' ? 0 : (pressing || time.urgent) ? 1 : 2;
+    const urgencyLabel = bucket === 'blocked'
+      ? (stale && !request.workflowError && status !== 'FAILED' ? '장시간 미갱신 · 점검 필요' : '막힘 · 확인 필요')
+      : autoHeld ? '조건 미달 · 확인 필요'
+      : quotationRisk ? '회신 부족 · 마감 임박'
+      : stage === 'PR_REJECTED' ? '공급사 반려 · 확인 필요'
+      : time.overdue ? '기한 경과' : time.urgent ? '오늘 안에'
+      : bucket === 'attention' ? '결정 대기' : '진행 중';
     return [{ request, bucket, label: labels[stage] || (request.status === '승인대기' ? '구매 요청 검토' : '상태 확인'), detail, tab,
       priority, urgency: (priority === 0 || time.overdue ? 'danger' : priority === 1 ? 'warning' : 'neutral') as DashboardTask['urgency'],
-      urgencyLabel: bucket === 'blocked' ? (stale && !request.workflowError && status !== 'FAILED' ? '장시간 미갱신 · 점검 필요' : '막힘 · 확인 필요') : time.overdue ? '기한 경과' : time.urgent ? '오늘 안에' : bucket === 'attention' ? '결정 대기' : '진행 중',
+      urgencyLabel, autoBlockers,
       deadlineLabel: time.deadlineLabel, deadlineAt: time.deadlineAt,
       elapsedLabel: elapsed === undefined ? '최근 갱신 시각 없음' : `최근 갱신 후 ${duration(elapsed)}` }];
   }).sort((a, b) => a.priority - b.priority || (a.deadlineAt === b.deadlineAt ? 0 : a.deadlineAt - b.deadlineAt)

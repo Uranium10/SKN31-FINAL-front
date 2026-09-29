@@ -15,16 +15,19 @@ interface DashboardViewProps {
   notifications?: ProcurementNotification[];
   setCurrentTab: (tab: NavigationTab) => void;
   onOpenTask: (tab: NavigationTab, mrNo: string) => void;
+  /** ERPNext Purchase Manager 권한. 발주 승인이 '내 할 일'인지 '승인 대기'인지를 가른다. */
+  canApprovePO?: boolean;
 }
 const groupInfo = {
-  blocked: { title: '막힌 작업 · 점검 필요', icon: AlertTriangle, empty: '막힌 작업은 모두 처리됐습니다.' },
-  today: { title: '오늘 안에 · 기한 경과', icon: Clock, empty: '오늘 확인할 기한 작업은 모두 처리됐습니다.' },
-  attention: { title: '결정을 기다리는 작업', icon: ClipboardCheck, empty: '필요한 결정은 모두 처리됐습니다.' },
+  blocked: { title: '막힌 작업 · 점검 필요', icon: AlertTriangle,
+    empty: '중단되거나 실패한 작업이 없습니다.' },
+  attention: { title: '내가 결정할 작업', icon: ClipboardCheck,
+    empty: '지금 결정할 작업이 없습니다.' },
   processing: { title: 'AI · 시스템이 처리 중', icon: Cpu, empty: '현재 실행 중인 작업이 없습니다.' },
-  waiting: { title: '외부 응답 · 입고 대기', icon: Hourglass, empty: '외부 응답을 기다리는 작업이 없습니다.' },
+  waiting: { title: '외부 · 상위 응답 대기', icon: Hourglass, empty: '응답을 기다리는 작업이 없습니다.' },
   other: { title: '그 밖의 진행 작업', icon: FileText, empty: '추가 작업이 없습니다.' },
 };
-type TaskSectionKey = TaskBucket | 'today';
+type TaskSectionKey = TaskBucket;
 
 function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = false, totalCount }: {
   bucket: TaskSectionKey; tasks: DashboardTask[]; onOpenTask: DashboardViewProps['onOpenTask'];
@@ -42,11 +45,14 @@ function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = f
       </button>}
     </header>
     <div id={`work-list-${bucket}`} className="work-task-list">
-      {visible.map(({ request, label, detail, tab, bucket: taskBucket, urgency, urgencyLabel, deadlineLabel, elapsedLabel }) => {
+      {visible.map(({ request, label, detail, tab, bucket: taskBucket, urgency, urgencyLabel, deadlineLabel, elapsedLabel, autoBlockers }) => {
         const state = progress?.items.find(p => p.case_id === request.id);
         // Never reuse a previous stage's waiting reason while list refresh catches up.
         const matched = state && state.stage === request.workflowStage && state.status === request.workflowStatus ? state : undefined;
-        const reason = request.workflowError || request.workflowStatus === 'FAILED' ? undefined : progressReason(matched);
+        // 조건 미달로 멈춘 건은 판정 요약이 가장 정확하다. 목록 갱신이 늦어
+        // 이전 단계의 대기 사유가 덮어쓰는 일이 없게 여기서는 쓰지 않는다.
+        const reason = autoBlockers.length || request.workflowError || request.workflowStatus === 'FAILED'
+          ? undefined : progressReason(matched);
         return <article className={`work-task work-urgency-${urgency}${urgency !== 'danger' && (taskBucket === 'attention' || taskBucket === 'waiting') ? ' work-waiting-tag' : ''}`} key={request.mrNo}>
         <button type="button" className="work-task-main work-task-link" onClick={() => onOpenTask(tab, request.mrNo)} aria-label={`${request.mrNo} ${label} 작업 열기`}>
           <span className="work-stage">{label}</span>
@@ -56,6 +62,16 @@ function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = f
             {needsProgressReview(matched) && <strong className="work-review-label">담당자 점검 필요 · 자동 재실행하지 않습니다</strong>}
           </span><ArrowRight className="work-task-arrow" size={16} aria-hidden="true" />
         </button>
+        {!!autoBlockers.length && <div className="work-blockers">
+          <strong>자동 진행 조건 미달</strong>
+          <ul>{autoBlockers.slice(0, 2).map(blocker => <li key={blocker.code}>
+            <span>{blocker.label}</span>{blocker.detail && <em>{blocker.detail}</em>}</li>)}</ul>
+          {autoBlockers.length > 2 && <details className="work-blockers-more">
+            <summary>외 {autoBlockers.length - 2}건 보기 <ChevronDown size={13} /></summary>
+            <ul>{autoBlockers.slice(2).map(blocker => <li key={blocker.code}>
+              <span>{blocker.label}</span>{blocker.detail && <em>{blocker.detail}</em>}</li>)}</ul>
+          </details>}
+        </div>}
         <details className="work-detail">
           <summary>상세 정보 <ChevronDown size={14} /></summary>
           <dl><div><dt>요청부서 · 요청자</dt><dd>{request.department} · {request.requester}</dd></div>
@@ -75,14 +91,15 @@ function TaskSection({ bucket, tasks, onOpenTask, progress, onMore, fullList = f
   </section>;
 }
 
-export function DashboardView({ requests, poItems = [], notifications = [], setCurrentTab, onOpenTask, progress }: DashboardViewProps) {
+export function DashboardView({ requests, poItems = [], notifications = [], setCurrentTab, onOpenTask, progress, canApprovePO = false }: DashboardViewProps) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     // Clock-only refresh; never add ERP/API polling to keep countdowns fresh.
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
-  const tasks = useMemo(() => dashboardTasks(requests, progress?.items, now), [requests, progress?.items, now]);
+  const tasks = useMemo(() => dashboardTasks(requests, progress?.items, now, { canApprovePO }),
+    [requests, progress?.items, now, canApprovePO]);
   // A dedicated list view replaces the overview; more never stretches its cards.
   const [listView, setListView] = useState<TaskSectionKey | 'activity' | null>(null);
   const [query, setQuery] = useState('');
@@ -97,14 +114,15 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
     });
   };
   const groups = {
-    blocked: tasks.filter(t => t.priority === 0),
-    today: tasks.filter(t => t.priority === 1),
-    attention: tasks.filter(t => t.priority === 2 && t.bucket === 'attention'),
-    processing: tasks.filter(t => t.priority === 2 && t.bucket === 'processing'),
-    waiting: tasks.filter(t => t.priority === 2 && t.bucket === 'waiting'),
-    other: tasks.filter(t => t.priority === 2 && t.bucket === 'other'),
+    blocked: tasks.filter(t => t.bucket === 'blocked'),
+    attention: tasks.filter(t => t.bucket === 'attention'),
+    processing: tasks.filter(t => t.bucket === 'processing'),
+    waiting: tasks.filter(t => t.bucket === 'waiting'),
+    other: tasks.filter(t => t.bucket === 'other'),
   };
-  const needsAttention = tasks.filter(t => t.priority < 2 || t.bucket === 'attention');
+  // 사람이 지금 손대야 하는 것: 막힌 것, 내가 결정할 것, 그리고 기한이 급해
+  // 마감 연장이나 재비딩 같은 할 일이 생긴 대기 건.
+  const needsAttention = tasks.filter(t => t.bucket === 'blocked' || t.bucket === 'attention' || t.priority < 2);
   const firstTask = needsAttention[0];
   // Actual notification records, not invented "AI completed" events.
   const activity = [...notifications].sort((a,b) => (Date.parse(b.createdAt ?? '') || 0) - (Date.parse(a.createdAt ?? '') || 0));
@@ -170,12 +188,11 @@ export function DashboardView({ requests, poItems = [], notifications = [], setC
       <div><span className="work-eyebrow">오늘의 한 줄</span>
         <h1>{firstTask ? `지금 우선 확인할 작업은 ${needsAttention.length}건입니다.` : tasks.length ? '지금 필요한 결정은 모두 처리됐습니다.' : '모든 작업이 처리됐습니다.'}</h1>
         <p>{firstTask ? <><strong>{firstTask.request.mrNo}</strong> — {firstTask.urgencyLabel} · {firstTask.deadlineLabel} · {firstTask.label}</> : tasks.length ? `${tasks.length}건의 처리 또는 외부 응답을 기다리고 있습니다.` : <><CircleCheck size={16} /> 새로운 요청이 들어오면 이곳에서 안내합니다.</>}</p>
-        <small>막힘·점검 필요 → 오늘 안에·기한 경과 → 나머지 · 각 그룹 안에서는 기한순</small>
+        <small>막힌 작업 → 내가 결정할 작업 → 처리 중 · 대기 · 각 목록 안에서는 급한 기한순</small>
       </div>
       {firstTask && <button className="work-open" onClick={() => onOpenTask(firstTask.tab, firstTask.request.mrNo)}>바로 열기 <ArrowRight size={15} /></button>}
     </section>
-    <TaskSection bucket="blocked" tasks={groups.blocked} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('blocked')} />
-    {!!groups.today.length && <TaskSection bucket="today" tasks={groups.today} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('today')} />}
+    {!!groups.blocked.length && <TaskSection bucket="blocked" tasks={groups.blocked} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('blocked')} />}
     <TaskSection bucket="attention" tasks={groups.attention} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('attention')} />
     <div className="work-columns"><TaskSection bucket="processing" tasks={groups.processing} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('processing')} />
       <TaskSection bucket="waiting" tasks={groups.waiting} onOpenTask={onOpenTask} progress={progress} onMore={() => openList('waiting')} /></div>

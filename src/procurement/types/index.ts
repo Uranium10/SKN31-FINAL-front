@@ -95,6 +95,18 @@ export interface PendingHumanTask {
   version?: number;
 }
 
+/** 백엔드 auto_progress 페이로드를 그대로 옮긴 것입니다. */
+export interface AutoProgressCheck {
+  code: string; label: string; detail: string;
+  status: 'passed' | 'blocked' | 'waiting' | string;
+}
+export interface AutoProgressVerdict {
+  allowed: boolean; mode: string; node: string;
+  checks: AutoProgressCheck[];
+  /** 사람이 읽는 요약. AI 판단 기록에 남는 문장과 같습니다. */
+  summary?: string;
+}
+
 export interface MaterialRequest {
   id: string;
   mrNo: string;
@@ -135,6 +147,12 @@ export interface MaterialRequest {
   requestedDueDate?: string;
   /** 실패한 그래프가 실행 가능한 next 체크포인트를 보유한 경우에만 true입니다. */
   canRetry?: boolean;
+  /** 자동 진행 판정 결과. 조건에 걸려 사람에게 넘어온 건을 시스템 오류와
+   *  구분하려면 필요합니다 - 조건 미달은 고장이 아니라 설계대로 멈춘 것입니다. */
+  autoProgress?: AutoProgressVerdict;
+  /** 현재 라운드 견적 요청 대상 수와 회신 수. 회신율 경고 판단에 씁니다. */
+  quotationRecipientCount?: number;
+  quotationRespondedCount?: number;
   pendingTaskCount?: number;
   pendingTask?: PendingHumanTask;
   erpStatus?: string;

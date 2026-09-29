@@ -1,6 +1,7 @@
 import { fetchWithAuth } from '../../utils/auth';
 import { normalizeSpecificationText } from '../utils/itemSpecifications';
 import type {
+  AutoProgressVerdict,
   MaterialRequest,
   MaterialRequestAttachment,
   POItem,
@@ -401,6 +402,34 @@ const pendingTask = (entry: ProcurementCaseDTO) => {
   };
 };
 
+/** 자동 진행 판정 결과를 그래프 상태에서 꺼냅니다.
+ *
+ *  ⚠️ 조건에 걸려 멈춘 건은 last_error에도 판정 요약이 들어갑니다. 그것만 보면
+ *  '시스템 오류'와 구분되지 않아서, 대시보드가 정상적인 사람 호출을 장애로
+ *  분류하게 됩니다. 판정 원본을 따로 실어 보내 구분할 수 있게 합니다. */
+const autoProgressVerdict = (values: Record<string, unknown>): AutoProgressVerdict | undefined => {
+  const meta = values.quotation_ranking_meta;
+  if (!meta || typeof meta !== 'object') return undefined;
+  const raw = (meta as Record<string, unknown>).auto_progress;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const verdict = raw as Record<string, unknown>;
+  const checks = Array.isArray(verdict.checks) ? verdict.checks : [];
+  return {
+    allowed: verdict.allowed === true,
+    mode: text(verdict.mode),
+    node: text(verdict.node),
+    summary: text(verdict.summary) || undefined,
+    checks: checks
+      .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object')
+      .map((row) => ({
+        code: text(row.code),
+        label: text(row.label),
+        detail: text(row.detail),
+        status: text(row.status) || 'passed',
+      })),
+  };
+};
+
 export const friendlyWorkflowError = (value?: string | null): string | undefined => {
   if (!value) return undefined;
   const normalized = value.toLocaleLowerCase('en-US');
@@ -537,6 +566,9 @@ export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialReques
     quotationDeadlineAt: entry.quotation_deadline_at || undefined,
     requestedDueDate: text(summary.schedule_date),
     canRetry,
+    autoProgress: autoProgressVerdict(rawValues),
+    quotationRecipientCount: entry.quotation_snapshot?.recipient_count,
+    quotationRespondedCount: entry.quotation_snapshot?.responded_count,
     pendingTaskCount: entry.pending_task_count ?? 0,
     pendingTask: pendingTask(entry),
     erpStatus: text(summary.erp_status),
