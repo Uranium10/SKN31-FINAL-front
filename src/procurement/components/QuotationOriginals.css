@@ -1,0 +1,35 @@
+/* Fixed-layout quote tables must not inherit the filename's min-content width. */
+.quotation-originals {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.procurement-shell .quotation-originals .quotation-original-button {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.quotation-original-button > svg { flex-shrink: 0; }
+
+.quotation-original-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quotation-original-message {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

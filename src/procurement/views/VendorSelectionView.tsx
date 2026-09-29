@@ -3140,10 +3140,10 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           {/* 제출 첨부자료 */}
                           <td>
                             {selectedGroup.backendCaseId && q.quotationId ? <QuotationOriginals key={`${selectedGroup.backendCaseId}:${q.quotationId}`} caseId={selectedGroup.backendCaseId} quotationId={q.quotationId}/> : q.resAttachments.length > 0 ? (
-                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                              <div className="quotation-originals">
                                 {q.resAttachments.map((f, i) => (
-                                  <span key={i} style={{ fontSize: '11px', color: 'var(--primary)', backgroundColor: 'var(--primary-soft)', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                    <Paperclip size={10} /> {f}
+                                  <span key={i} title={f} style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', fontSize: '11px', color: 'var(--primary)', backgroundColor: 'var(--primary-soft)', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                    <Paperclip size={10} style={{ flexShrink: 0 }} /> <span className="quotation-original-name">{f}</span>
                                   </span>
                                 ))}
                               </div>

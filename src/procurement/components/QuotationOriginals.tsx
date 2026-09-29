@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { listQuotationOriginals, downloadQuotationOriginal, type QuotationOriginalFile } from '../api/cases';
+import './QuotationOriginals.css';
 
 /** Private ERP URLs/credentials never reach the browser; every download checks case access. */
 export function QuotationOriginals({caseId, quotationId}: {caseId: string; quotationId: string}) {
@@ -23,10 +24,10 @@ export function QuotationOriginals({caseId, quotationId}: {caseId: string; quota
     } catch (e) { setError(e instanceof Error ? e.message : '다운로드에 실패했습니다.'); }
     finally { setBusy(false); }
   };
-  return <div style={{display: 'grid', gap: 5}}>
-    {files === null && <button type="button" className="btn-sm btn-outline" disabled={busy} onClick={() => void load()}><Paperclip size={12}/>{busy ? '확인 중' : '원본 확인'}</button>}
-    {files?.map(file => <button key={file.file_id} type="button" className="btn-sm btn-outline" disabled={busy} onClick={() => void download(file)} title={file.file_name}>{file.file_name}</button>)}
-    {files?.length === 0 && <span>등록된 원본 첨부 없음</span>}
-    {error && <span role="alert" style={{color: 'var(--danger)'}}>{error}</span>}
+  return <div className="quotation-originals">
+    {files === null && <button type="button" className="btn-sm btn-outline quotation-original-button" disabled={busy} onClick={() => void load()}><Paperclip size={12}/><span className="quotation-original-name">{busy ? '확인 중' : '원본 확인'}</span></button>}
+    {files?.map(file => <button key={file.file_id} type="button" className="btn-sm btn-outline quotation-original-button" disabled={busy} onClick={() => void download(file)} title={file.file_name} aria-label={`${file.file_name} 다운로드`}><Paperclip size={12}/><span className="quotation-original-name">{file.file_name}</span></button>)}
+    {files?.length === 0 && <span className="quotation-original-message">등록된 원본 첨부 없음</span>}
+    {error && <span role="alert" className="quotation-original-message" style={{color: 'var(--danger)'}}>{error}</span>}
   </div>;
 }
