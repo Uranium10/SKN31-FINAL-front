@@ -23,8 +23,11 @@
 .vendor-selected-supplier { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .vendor-progress-track { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(100%, 300px); padding-top: 2px; }
 .vendor-progress-step { display: flex; flex-direction: column; align-items: center; gap: 5px; position: relative; min-width: 0; color: var(--text-muted); font-size: 10px; white-space: nowrap; }
-.vendor-progress-step i { z-index: 1; width: 12px; height: 12px; border-radius: 50%; background: var(--vendor-track-color); flex: 0 0 auto; }
-.vendor-progress-step:not(:last-child)::after { content: ''; position: absolute; top: 5px; left: calc(50% + 7px); width: calc(100% - 14px); height: 4px; border-radius: 4px; background: var(--vendor-track-color); }
+/* Color only the reached nodes and the connections leading up to the current step. */
+.vendor-progress-step i { z-index: 1; width: 12px; height: 12px; border-radius: 50%; background: #e4eaf0; flex: 0 0 auto; }
+.vendor-progress-step:not(:last-child)::after { content: ''; position: absolute; top: 5px; left: calc(50% + 7px); width: calc(100% - 14px); height: 4px; border-radius: 4px; background: #e4eaf0; }
+.vendor-progress-step.is-complete i, .vendor-progress-step.is-current i { background: var(--vendor-track-color); }
+.vendor-progress-step.is-complete:not(:last-child)::after { background: var(--vendor-track-color); }
 .vendor-progress-step.is-current { color: var(--text-main); font-weight: 650; }
 .vendor-progress-step.is-current i { box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 3px var(--vendor-track-color); }
 .vendor-response-link { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; background: none; border: 0; color: var(--text-muted); font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
