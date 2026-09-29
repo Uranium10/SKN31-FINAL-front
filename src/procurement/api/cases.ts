@@ -880,6 +880,8 @@ const supplierQuotations = (entry: ProcurementCaseDTO): SupplierQuotation[] => {
       aiEvaluated,
       specMatch: typeof row.spec_match === 'boolean' ? row.spec_match : undefined,
       fulfillsQuantity: typeof row.fulfills_qty === 'boolean' ? row.fulfills_qty : undefined,
+      // 특약은 평가 여부와 무관하게 있으면 보여준다(aiEvaluated로 막지 않는다).
+      termsText: text(row.terms_text) || undefined,
       aiIssues: Array.isArray(row.issues)
         ? row.issues.map((issue) => text(issue)).filter(Boolean)
         : [],
@@ -932,6 +934,7 @@ const quotationAiEvaluations = (entry: ProcurementCaseDTO): QuotationAiEvaluatio
       evaluationSource: text(row.evaluation_source) || undefined,
       specMatch: typeof row.spec_match === 'boolean' ? row.spec_match : undefined,
       fulfillsQuantity: typeof row.fulfills_qty === 'boolean' ? row.fulfills_qty : undefined,
+      termsText: text(row.terms_text) || undefined,
       aiIssues: Array.isArray(row.issues) ? row.issues.map((issue) => text(issue)).filter(Boolean) : [],
       scoreBreakdown: scoreBreakdownOf(row),
     });

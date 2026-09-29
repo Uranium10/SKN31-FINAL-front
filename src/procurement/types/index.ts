@@ -228,6 +228,9 @@ export interface SupplierQuotation {
   specMatch?: boolean;
   /** AI가 확인한 요청 수량 충족 여부입니다. 평가 전에는 undefined입니다. */
   fulfillsQuantity?: boolean;
+  /** 공급사가 적은 특약(그 외 사항) 원문. 점수와 자동 진행에는 쓰지 않고
+   *  담당자가 볼 수 있게 표시만 합니다. */
+  termsText?: string;
   /** 최종 선정 전 사람이 확인해야 할 AI 지적 사항입니다. */
   aiIssues?: string[];
   /** 4항목 점수 내역(가격·납기·규격·평가이력)과 페널티. 순위에 든 견적만 있다. */
@@ -320,6 +323,8 @@ export interface QuotationAiEvaluation {
   fulfillsQuantity?: boolean;
   aiIssues: string[];
   scoreBreakdown?: QuotationScoreBreakdown;
+  /** 특약 원문. 표시 전용입니다. */
+  termsText?: string;
 }
 
 /** 규격/정합성 검증에서 순위에 들지 못한 견적과 그 사유.
