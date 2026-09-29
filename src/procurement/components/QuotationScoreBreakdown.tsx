@@ -27,7 +27,7 @@ const scoreColor = (score: number): string => (
  */
 export function QuotationScoreBreakdown({ breakdown, compact = false }: { breakdown: Breakdown; compact?: boolean }) {
   const missing = new Map(breakdown.missingFactors.map((row) => [row.factor, row.reason]));
-  const integrityWarnings = breakdown.warnings.filter(w => /^\[(납기|규격) 확인\]/.test(w));
+  const integrityWarnings = breakdown.warnings.filter(w => /^\[(납기|규격|특약) 확인\]/.test(w));
   const otherWarnings = breakdown.warnings.filter(w => !integrityWarnings.includes(w));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '5px' }}>

@@ -20,6 +20,7 @@ import type {
 export type ProcurementDataMode = 'mock' | 'hybrid' | 'api';
 
 export interface ProcurementCaseDTO {
+  automation_paused?: boolean;
   case_id: string;
   mr_name: string;
   status: string;
@@ -149,6 +150,22 @@ export const listProcurementCases = async (): Promise<ProcurementCaseDTO[]> => {
   const response = await fetchWithAuth('/api/procurement/cases?include_closed=true&limit=200');
   const body = await parseJson<CaseListResponse>(response);
   return (Array.isArray(body.items) ? body.items : []).map(normalizeProcurementCase);
+};
+
+export const pauseCaseAutomation = async (caseId: string): Promise<void> => {
+  await parseJson(await fetchWithAuth(`/api/procurement/cases/${encodeURIComponent(caseId)}/automation/pause`, { method: 'POST' }));
+};
+
+export interface QuotationOriginalFile { file_id: string; file_name: string }
+export const listQuotationOriginals = async (caseId: string, quotationId: string): Promise<QuotationOriginalFile[]> => {
+  const body = await parseJson<{items: QuotationOriginalFile[]}>(await fetchWithAuth(
+    `/api/procurement/cases/${encodeURIComponent(caseId)}/quotation-attachments?quotation_id=${encodeURIComponent(quotationId)}`));
+  return body.items;
+};
+export const downloadQuotationOriginal = async (caseId: string, quotationId: string, fileId: string): Promise<Blob> => {
+  const response = await fetchWithAuth(`/api/procurement/cases/${encodeURIComponent(caseId)}/quotation-attachments/download?quotation_id=${encodeURIComponent(quotationId)}&file_id=${encodeURIComponent(fileId)}`);
+  if (!response.ok) await parseJson(response);
+  return response.blob();
 };
 
 export const syncDraftProcurementCases = async (
@@ -993,6 +1010,8 @@ export const caseToVendorSelectionGroup = (entry: ProcurementCaseDTO): VendorSel
     workflowStage: entry.stage,
     workflowError: friendlyWorkflowError(entry.last_error),
     orderStarted: ['PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED', 'PO_CREATION', 'DELIVERY', 'SCORECARD', 'COMPLETED'].includes(entry.stage),
+    automationPaused: entry.automation_paused === true,
+    selectionMode: values.selection_mode === 'auto' ? 'auto' : 'manual',
     mrNo: entry.mr_name,
     itemName: request.itemName,
     itemCode: request.itemCode,
@@ -1065,6 +1084,7 @@ export const caseToPOItem = (entry: ProcurementCaseDTO): POItem => {
     workflowStage: entry.stage,
     workflowError: friendlyWorkflowError(entry.last_error),
     prNo: poName || '발주 승인 대기',
+    selectionMode: values.selection_mode === 'auto' ? 'auto' : 'manual',
     mrNo: entry.mr_name,
     itemName: request.itemName,
     itemCode: request.itemCode,

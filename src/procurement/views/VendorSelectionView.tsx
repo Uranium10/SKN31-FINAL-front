@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { QuotationOriginals } from '../components/QuotationOriginals';
 import type {
   VendorSelectionGroup,
   MaterialRequest,
@@ -199,6 +200,7 @@ interface VendorSelectionViewProps {
   ) => Promise<boolean> | boolean;
   onCheckQuotations: (groupId: string) => Promise<boolean> | boolean;
   onAutoReview: (groupId: string) => Promise<boolean> | boolean;
+  onPauseAutomation?: (groupId: string) => Promise<void>;
   onDownloadAttachment?: (attachment: MaterialRequest['attachmentFiles'][number]) => void;
   /** '협력사 직접 입력' 자동완성 드롭다운 - 이름/이메일 각 입력란에서 기존
    * supplier 풀을 필드별로 검색한다(field='name'이면 이름만, 'email'이면
@@ -340,6 +342,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
   onSendRFQ,
   onCheckQuotations,
   onAutoReview,
+  onPauseAutomation,
   onDownloadAttachment,
   onSearchSuppliers,
   onLoadSupplierEvaluations,
@@ -1544,6 +1547,12 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                 });
               }
               if (group.workflowStage === 'QUOTATION_COLLECTION') {
+                if (onPauseAutomation) overflowItems.push({
+                  key: 'pause-automation',
+                  label: group.automationPaused ? '이 구매 건 자동 진행 꺼짐' : '이 구매 건 자동 진행 끄기',
+                  onClick: () => { void onPauseAutomation(group.id); },
+                  disabled: group.automationPaused === true,
+                });
                 overflowItems.push({
                   key: 'check-quotations',
                   label: (
@@ -1648,6 +1657,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                         <strong>{isOverdueUnsentRfq ? '납기 초과 · RFQ 미발송' : String(vendorFilterValue(group, 'status'))}</strong>
                         {selectedQuotation && <span className="vendor-selected-supplier" title={selectedQuotation.supplierName}>{selectedQuotation.supplierName}</span>}
                       </div>
+                      {group.automationPaused && <span className="vendor-muted">자동 진행 꺼짐 · 담당자 선정 대기</span>}
                       <div className="vendor-progress-track" aria-label={`진행 상태: ${String(vendorFilterValue(group, 'status'))}`}>
                         {['RFQ 발송', '견적 수집', '업체 선정'].map((label, index) => {
                           const current = hasSelection ? 3 : isRfqSending ? 0 : group.workflowStage === 'SUPPLIER_SELECTION' ? 2 : 1;
@@ -2220,7 +2230,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {dgCurrentRound.map((q) => (
                         <div key={q.quotationId ?? q.supplierId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '13px' }}>
-                          <span>{q.supplierName}</span>
+                          <span tabIndex={0} title={`이메일: ${q.email || '미등록'}\n연락처: ${q.phone || '미등록'}`} aria-label={`${q.supplierName}, 이메일 ${q.email || '미등록'}, 연락처 ${q.phone || '미등록'}`}>{q.supplierName}</span>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                             {/* 회신이 온 협력사는 AI 점수까지 같이 - 표에서는
                                 회신율만 보이고 업체별 점수는 비교 모달에만
@@ -3080,7 +3090,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                             />
                           </td>
                           {/* 협력사명 */}
-                          <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                          <td title={`이메일: ${q.email || '미등록'}\n연락처: ${q.phone || '미등록'}`} style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                             {q.supplierName}
                             <span className="badge badge-blue" style={{ marginLeft: '6px', fontSize: '10px' }}>
                               {q.rfqRound ?? 0}차
@@ -3129,7 +3139,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                           </td>
                           {/* 제출 첨부자료 */}
                           <td>
-                            {q.resAttachments.length > 0 ? (
+                            {selectedGroup.backendCaseId && q.quotationId ? <QuotationOriginals key={`${selectedGroup.backendCaseId}:${q.quotationId}`} caseId={selectedGroup.backendCaseId} quotationId={q.quotationId}/> : q.resAttachments.length > 0 ? (
                               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                                 {q.resAttachments.map((f, i) => (
                                   <span key={i} style={{ fontSize: '11px', color: 'var(--primary)', backgroundColor: 'var(--primary-soft)', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>

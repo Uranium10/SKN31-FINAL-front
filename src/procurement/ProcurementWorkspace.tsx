@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { pauseCaseAutomation } from './api/cases';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { SpecModal } from './components/SpecModal';
@@ -1509,7 +1510,7 @@ function ProcurementWorkspaceComponent({
       // start_order: 선정 화면에서 "수주 접수 요청 메일을 지금 보낸다"는
       // 확인을 이미 받았다는 뜻. 백엔드가 '발주 시작'과 'PR 요청' 확인을
       // 건너뛰고 메일 발송까지 이어서 진행한다.
-      const startOrder = options?.startOrder ? { start_order: true } : {};
+      const startOrder = { start_order: true };
       try {
         await answerProcurementTask(
           selectedGroup.pendingTaskId,
@@ -1528,12 +1529,10 @@ function ProcurementWorkspaceComponent({
           selectedGroup.pendingTask?.version,
         );
         clearNotificationsForMR(selectedGroup.mrNo);
-        showToast(options?.startOrder
-          ? `${selectedSupplier.supplierName}을(를) 선정하고 수주 접수 요청 메일을 발송했습니다.`
-          : `${selectedSupplier.supplierName}이(가) 최종 업체로 선정되었습니다. 발주 시작 전 상태입니다.`);
-        if (options?.startOrder) {
+        showToast(`${selectedSupplier.supplierName}을(를) 선정했습니다. 수주 접수 요청 처리 상태를 확인합니다.`);
+        {
           pushNotification({
-            title: '협력사 수주 접수 응답을 기다리는 중입니다',
+            title: '최종 선정 완료 · 수주 접수 요청 진행 상태를 확인하세요',
             detail: `${selectedGroup.mrNo} · ${selectedSupplier.supplierName}`,
             targetTab: 'po-manage',
             reference: selectedGroup.mrNo,
@@ -2279,6 +2278,15 @@ function ProcurementWorkspaceComponent({
                 onSendRFQ={handleSendRFQ}
                 onCheckQuotations={handleCheckQuotations}
                 onAutoReview={handleAutoReview}
+                onPauseAutomation={apiDataEnabled ? async (caseId) => {
+                  try {
+                    await pauseCaseAutomation(caseId);
+                    showToast('이 구매 건의 자동 진행을 껐습니다. 견적 수신·분석은 계속됩니다.');
+                    await loadMRsFromApi(false, true);
+                  } catch (error) {
+                    showToast(error instanceof Error ? error.message : '자동 진행을 끄지 못했습니다.');
+                  }
+                } : undefined}
                 onDownloadAttachment={(attachment) => void handleDownloadAttachment(attachment)}
                 onSearchSuppliers={handleSearchSuppliers}
                 onLoadSupplierEvaluations={apiDataEnabled ? getSupplierEvaluations : undefined}

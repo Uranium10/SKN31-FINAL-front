@@ -402,6 +402,8 @@ export interface RfqRoundSnapshot {
 }
 
 export interface VendorSelectionGroup {
+  automationPaused?: boolean;
+  selectionMode?: 'auto' | 'manual';
   id: string;
   mrNo: string;
   itemName: string;
@@ -461,6 +463,7 @@ export interface SupplierRecommendation {
 }
 
 export interface POItem {
+  selectionMode?: 'auto' | 'manual';
   id: string;
   prNo: string;
   mrNo: string;

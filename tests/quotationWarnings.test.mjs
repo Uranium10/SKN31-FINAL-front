@@ -25,3 +25,11 @@ test('detail rows preserve ordinary warnings and excluded factor reasons', () =>
   assert.match(html, /RFQ 규격 기준 없음/);
   assert.match(html, /규격 제외/);
 });
+
+test('special terms needing human review remain visible in compact rows', () => {
+  const html = renderToStaticMarkup(createElement(QuotationScoreBreakdown, {
+    breakdown: {...breakdown, warnings: ['[특약 확인] 선결제 조건을 확인하세요']}, compact:true,
+  }));
+  assert.match(html, /선결제 조건/);
+  assert.match(html, /var\(--danger/);
+});

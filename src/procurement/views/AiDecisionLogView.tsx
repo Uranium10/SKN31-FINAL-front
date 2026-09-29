@@ -8,6 +8,10 @@ import './AiDecisionLogView.css';
 
 const PAGE_SIZE = 100;
 const nodeLabels: Record<string, string> = {
+  direct_purchase_decision: '기존 거래처 직접구매',
+  urgent_purchase_cancelled: '긴급 구매 종료',
+  pr_request_created: '수주 접수 요청 처리',
+  automation_paused: '구매 건 자동 진행 중지',
   site_selection: '공식 사이트 선택',
   contact_extraction: '연락처 추출',
   company_name_extraction: '회사명 추출',

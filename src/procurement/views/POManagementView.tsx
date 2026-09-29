@@ -338,6 +338,7 @@ export const POManagementView: React.FC<POManagementViewProps> = ({
                           ))}
                         </div>
                         <div className="po-row-actions">
+                          {item.selectionMode === 'auto' && <span className="badge badge-blue" title="회사 정책의 자동 선정 조건을 통과한 견적입니다. PO 발송은 권한자의 최종 승인이 필요합니다.">AI 자동 선정</span>}
                           {item.pendingTask?.taskType === 'po_creation_failed' && onAnswerTask && (canApprovePO ? <WorkflowInterruptForm task={item.pendingTask} onSubmit={onAnswerTask} /> : <span className="po-inline-note">발주 승인 권한자의 재처리가 필요합니다.</span>)}
                           {!item.poCreated && item.pendingTask?.taskType === 'order_start' && <button className="btn-sm btn-primary" onClick={() => onStartOrder(item.id)}><Send size={13} />발주 시작</button>}
                           {!item.poCreated && (item.pendingTask?.taskType === 'pr_request' || item.supplierApprovalStatus === 'pending') && <button className="btn-sm btn-primary" onClick={() => handleRequestPRClick(item)}><ShoppingCart size={13} />PR 요청</button>}
