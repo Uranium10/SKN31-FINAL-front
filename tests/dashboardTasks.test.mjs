@@ -131,9 +131,6 @@ const STAGE_TABS = [
   ['PO_CREATION_FAILED', 'po-manage'],
   ['DELIVERY', 'po-manage'],
   ['SCORECARD', 'po-manage'],
-  // 협력사 서류 확인은 아직 어느 화면에도 처리 UI가 없다. 모든 건이 있는
-  // MR 목록이 그나마 맞는 곳이다(처리 화면이 생기면 함께 바꿀 자리).
-  ['SUPPLIER_DOCUMENT_REVIEW', 'mr-list'],
   ['HUMAN_REVIEW', 'mr-list'],
   ['PROCESSING', 'mr-list'],
 ];

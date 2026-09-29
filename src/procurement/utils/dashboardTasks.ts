@@ -64,7 +64,6 @@ const labels: Record<string, string> = {
   MR_REVIEW: '구매 요청 검토', ITEM_CHECK: '품목 확인', SUBSTITUTE_DECISION: '요청부서 응답 대기',
   BIDDING_DECISION: '구매 방식 확인', SUPPLIER_RECOMMENDATION: '공급사 탐색', RFQ_TARGET_SELECTION: '견적 요청 대상 선택',
   RFQ_SENDING: '견적 요청 발송', QUOTATION_COLLECTION: '견적 회신 대기', SUPPLIER_SELECTION: '최종 협력사 선택',
-  SUPPLIER_DOCUMENT_REVIEW: '신규 협력사 서류 확인',
   ORDER_START: '발주 진행 확인', PRE_PO_APPROVAL: '발주 승인', PR_REQUEST: '발주 확인 요청', PR_SENDING: '발주 확인 요청 발송',
   PR_RESPONSE_WAITING: '공급사 응답 대기', PR_REJECTED: '공급사 반려 확인', PO_CREATION: '발주서 생성',
   PO_CREATION_FAILED: '발주서 생성 실패', DELIVERY: '입고 대기', SCORECARD: '협력사 평가',
