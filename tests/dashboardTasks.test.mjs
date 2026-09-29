@@ -106,12 +106,73 @@ test('terminal work and duplicate MR rows are excluded', () => {
   for (const status of ['CANCELLED', 'COMPLETED', 'REJECTED']) assert.equal(dashboardTasks([mr('DELIVERY', status)]).length, 0);
   assert.equal(dashboardTasks([mr('MR_REVIEW'), mr('MR_REVIEW')]).length, 1);
 });
-test('actions link to existing workflow screens', () => {
-  for (const [stage, tab] of [['MR_REVIEW','mr-list'], ['RFQ_TARGET_SELECTION','mr-list'], ['SUPPLIER_SELECTION','vendor-select'], ['PRE_PO_APPROVAL','po-manage']]) {
-    const task = dashboardTasks([mr(stage)], [], undefined, { canApprovePO: true })[0];
-    assert.equal(task.bucket, 'attention');
-    assert.equal(task.tab, tab);
+// 백엔드 STATUS_TO_STAGE가 낼 수 있는 모든 단계와, 그 건의 행과 버튼이
+// 실제로 있는 화면. ProcurementWorkspace의 vendorGroups / poItems 조건과
+// 대조해서 적었다. 단계가 늘면 여기도 늘어야 하고, 빠뜨리면 아래 테스트가
+// MR 목록으로 조용히 떨어지는 것을 잡는다.
+const STAGE_TABS = [
+  ['MR_REVIEW', 'mr-list'],
+  ['ITEM_CHECK', 'mr-list'],
+  ['SUBSTITUTE_DECISION', 'mr-list'],
+  ['SUBSTITUTE_SELECTED', 'mr-list'],
+  ['BIDDING_DECISION', 'mr-list'],
+  ['SUPPLIER_RECOMMENDATION', 'vendor-select'],
+  ['RFQ_TARGET_SELECTION', 'vendor-select'],
+  ['RFQ_SENDING', 'vendor-select'],
+  ['QUOTATION_COLLECTION', 'vendor-select'],
+  ['SUPPLIER_SELECTION', 'vendor-select'],
+  ['ORDER_START', 'vendor-select'],
+  ['PRE_PO_APPROVAL', 'po-manage'],
+  ['PR_REQUEST', 'po-manage'],
+  ['PR_SENDING', 'po-manage'],
+  ['PR_RESPONSE_WAITING', 'po-manage'],
+  ['PR_REJECTED', 'po-manage'],
+  ['PO_CREATION', 'po-manage'],
+  ['PO_CREATION_FAILED', 'po-manage'],
+  ['DELIVERY', 'po-manage'],
+  ['SCORECARD', 'po-manage'],
+  // 협력사 서류 확인은 아직 어느 화면에도 처리 UI가 없다. 모든 건이 있는
+  // MR 목록이 그나마 맞는 곳이다(처리 화면이 생기면 함께 바꿀 자리).
+  ['SUPPLIER_DOCUMENT_REVIEW', 'mr-list'],
+  ['HUMAN_REVIEW', 'mr-list'],
+  ['PROCESSING', 'mr-list'],
+];
+test('every stage opens the screen that actually holds its row', () => {
+  for (const [stage, tab] of STAGE_TABS) {
+    assert.equal(dashboardTasks([mr(stage)], [], now, { canApprovePO: true })[0].tab, tab, stage);
   }
+  // 모르는 단계는 MR 목록으로. 그곳만이 모든 건을 담는다.
+  assert.equal(dashboardTasks([mr('SOME_NEW_STAGE')], [], now)[0].tab, 'mr-list');
+});
+test('no stage falls back to the generic label', () => {
+  for (const [stage] of STAGE_TABS) {
+    assert.notEqual(dashboardTasks([mr(stage)], [], now)[0].label, '상태 확인', stage);
+  }
+});
+test('an urgent direct purchase has no row on the supplier screen', () => {
+  // 비딩을 건너뛴 건은 견적 데이터가 없어 협력사 선정 화면에서 빠진다.
+  assert.equal(dashboardTasks([mr('ORDER_START', 'WAITING_INPUT', { directPurchase: true })], [], now)[0].tab, 'po-manage');
+  assert.equal(dashboardTasks([mr('ORDER_START', 'WAITING_INPUT', { directPurchase: false })], [], now)[0].tab, 'vendor-select');
+});
+test('full receipt asks for the scorecard instead of restating the notice', () => {
+  const row = dashboardTasks([mr('SCORECARD', 'WAITING_INPUT', {
+    pendingTask: { description: 'PO-0007 전체 입고가 확인되었습니다.' },
+  })], [], now)[0];
+  assert.equal(row.bucket, 'attention');
+  assert.equal(row.tab, 'po-manage');
+  assert.equal(row.label, '협력사 평가');
+  assert.equal(row.priority, 1);
+  assert.match(row.detail, /협력사 평가를 작성/);
+});
+test('a failed PO creation is breakage only for whoever can retry it', () => {
+  const request = mr('PO_CREATION_FAILED', 'WAITING_INPUT', { workflowError: 'ERPNext 필수 항목 누락' });
+  const manager = dashboardTasks([request], [], now, { canApprovePO: true })[0];
+  assert.equal(manager.bucket, 'blocked');
+  assert.equal(manager.detail, 'ERPNext 필수 항목 누락');
+  const staff = dashboardTasks([request], [], now)[0];
+  assert.equal(staff.bucket, 'waiting');
+  assert.match(staff.detail, /권한자의 재처리/);
+  assert.equal(staff.tab, 'po-manage');
 });
 test('unknown states stay visible instead of being fabricated as AI progress', () => {
   assert.equal(dashboardTasks([mr('UNKNOWN', 'NEW')])[0].bucket, 'other');

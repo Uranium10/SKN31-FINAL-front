@@ -64,10 +64,28 @@ const labels: Record<string, string> = {
   MR_REVIEW: '구매 요청 검토', ITEM_CHECK: '품목 확인', SUBSTITUTE_DECISION: '요청부서 응답 대기',
   BIDDING_DECISION: '구매 방식 확인', SUPPLIER_RECOMMENDATION: '공급사 탐색', RFQ_TARGET_SELECTION: '견적 요청 대상 선택',
   RFQ_SENDING: '견적 요청 발송', QUOTATION_COLLECTION: '견적 회신 대기', SUPPLIER_SELECTION: '최종 협력사 선택',
+  SUPPLIER_DOCUMENT_REVIEW: '신규 협력사 서류 확인',
   ORDER_START: '발주 진행 확인', PRE_PO_APPROVAL: '발주 승인', PR_REQUEST: '발주 확인 요청', PR_SENDING: '발주 확인 요청 발송',
-  PR_RESPONSE_WAITING: '공급사 응답 대기', PR_REJECTED: '공급사 반려 확인', PO_CREATION: '발주서 생성', DELIVERY: '입고 대기', HUMAN_REVIEW: '예외 확인 필요',
+  PR_RESPONSE_WAITING: '공급사 응답 대기', PR_REJECTED: '공급사 반려 확인', PO_CREATION: '발주서 생성',
+  PO_CREATION_FAILED: '발주서 생성 실패', DELIVERY: '입고 대기', SCORECARD: '협력사 평가',
+  SUBSTITUTE_SELECTED: '대체품 선택 완료', PROCESSING: '자동 처리 중', HUMAN_REVIEW: '예외 확인 필요',
 };
-const poStages = new Set(['ORDER_START', 'PRE_PO_APPROVAL', 'PR_REQUEST', 'PR_SENDING', 'PR_RESPONSE_WAITING', 'PR_REJECTED', 'PO_CREATION', 'DELIVERY']);
+/** 단계 -> 그 건을 실제로 처리할 수 있는 화면.
+ *
+ *  ProcurementWorkspace가 vendorGroups / poItems를 채우는 단계 목록과 같아야
+ *  한다. 행이 없는 탭으로 보내면 화면만 바뀌고 할 일은 못 한다. 여기 없는
+ *  단계는 MR 목록으로 보낸다 - MR 목록만이 모든 건을 담는다. */
+const stageTabs: Record<string, NavigationTab> = {
+  SUPPLIER_RECOMMENDATION: 'vendor-select', RFQ_TARGET_SELECTION: 'vendor-select',
+  RFQ_SENDING: 'vendor-select', QUOTATION_COLLECTION: 'vendor-select',
+  SUPPLIER_SELECTION: 'vendor-select', ORDER_START: 'vendor-select',
+  PRE_PO_APPROVAL: 'po-manage', PR_REQUEST: 'po-manage', PR_SENDING: 'po-manage',
+  PR_RESPONSE_WAITING: 'po-manage', PR_REJECTED: 'po-manage', PO_CREATION: 'po-manage',
+  PO_CREATION_FAILED: 'po-manage', DELIVERY: 'po-manage', SCORECARD: 'po-manage',
+};
+/** 재시도까지 발주 승인 권한(Purchase Manager)이 필요한 단계. 서버도
+ *  po_approval과 po_creation_failed 두 작업에서 같은 역할을 요구한다. */
+const poApproverStages = new Set(['PRE_PO_APPROVAL', 'PO_CREATION_FAILED']);
 const waits = new Set(['SUBSTITUTE_DECISION', 'QUOTATION_COLLECTION', 'PR_RESPONSE_WAITING', 'DELIVERY']);
 
 export function dashboardStageLabel(stage?: string): string {
@@ -94,7 +112,10 @@ export function dashboardTasks(
       && elapsed !== undefined && elapsed >= STALE_RUNNING_MS;
     const review = !!observed && ['QUOTATION_COLLECTION', 'SUPPLIER_SELECTION'].includes(stage)
       && ['BLOCKED', 'UNCERTAIN'].includes(observed.deadline_status || '');
-    const tab: NavigationTab = poStages.has(stage) ? 'po-manage' : ['QUOTATION_COLLECTION', 'SUPPLIER_SELECTION'].includes(stage) ? 'vendor-select' : 'mr-list';
+    // 긴급발주로 비딩을 건너뛴 건은 견적 데이터가 없어 협력사 선정 화면에
+    // 행이 아예 없다(isDirectPurchaseOrderStart). PO 관리에만 있다.
+    const tab: NavigationTab = stage === 'ORDER_START' && request.directPurchase
+      ? 'po-manage' : stageTabs[stage] ?? 'mr-list';
     const time = timeEvidence(request, now);
     // 자동 진행이 조건에 걸려 멈춘 것은 '고장'이 아니라 설계대로 사람을 부른
     // 것이다. last_error에도 판정 요약이 들어가므로 그것만 보면 시스템 오류와
@@ -105,7 +126,7 @@ export function dashboardTasks(
     const autoHeld = autoBlockers.length > 0;
     // PO 승인은 Purchase Manager 권한이 있어야 누를 수 있다. 권한이 없는
     // 담당자에게는 '내 할 일'이 아니라 '승인 대기'로 보여야 한다.
-    const approvalOnly = stage === 'PRE_PO_APPROVAL' && !canApprovePO;
+    const approvalOnly = poApproverStages.has(stage) && !canApprovePO;
     const missing = Math.max(0, (request.quotationRecipientCount ?? 0) - (request.quotationRespondedCount ?? 0));
     const quotationRisk = stage === 'QUOTATION_COLLECTION' && !autoHeld
       && (request.quotationRecipientCount ?? 0) > 0
@@ -118,7 +139,14 @@ export function dashboardTasks(
     let detail = request.pendingTask?.description || '상세 화면에서 현재 상태를 확인하세요.';
     // 기한과 별개로 '오늘 봐야 하는' 결정. 고장은 아니지만 미루면 건 전체가 선다.
     let pressing = autoHeld || quotationRisk;
-    if (autoHeld) {
+    if (stage === 'PO_CREATION_FAILED') {
+      // ERPNext에서 원인을 고친 뒤 재시도해야 하는 진짜 실패다. 다만 재시도도
+      // 발주 승인 권한자만 할 수 있어서, 권한이 없으면 내가 볼 일이 아니다.
+      bucket = approvalOnly ? 'waiting' : 'blocked';
+      detail = approvalOnly
+        ? '발주서 생성이 실패했습니다. 발주 승인 권한자의 재처리를 기다립니다.'
+        : request.workflowError || 'ERPNext에서 원인을 확인하고 고친 뒤 재시도해 주세요.';
+    } else if (autoHeld) {
       bucket = 'attention';
       detail = request.autoProgress?.summary || autoBlockers[0].detail;
     } else if (status === 'FAILED' || stage === 'HUMAN_REVIEW' || (request.workflowError && !waits.has(stage))) {
@@ -140,6 +168,10 @@ export function dashboardTasks(
           : `견적 회신율 ${Math.round(request.processStage.quotationProgressPercent)}% · 회신과 마감 조건 확인 중`)
         : stage === 'SUBSTITUTE_DECISION' ? '요청부서의 대체품 사용 여부를 기다립니다.'
         : stage === 'DELIVERY' ? '발주 후 입고를 기다립니다.' : '공급사의 발주 확인 응답을 기다립니다.';
+    } else if (stage === 'SCORECARD') {
+      // 백엔드 문구("전체 입고가 확인되었습니다")는 알림이라 할 일이 안 보인다.
+      bucket = 'attention'; pressing = true;
+      detail = '전체 입고가 확인됐습니다. 협력사 평가를 작성해 주세요.';
     } else if (['RUNNING', 'QUEUED'].includes(status)) {
       // '처리 중'만으로는 무엇을 하는지 알 수 없다. 단계 이름을 그대로 보여준다.
       bucket = 'processing';
@@ -155,6 +187,7 @@ export function dashboardTasks(
       : autoHeld ? '조건 미달 · 확인 필요'
       : quotationRisk ? '회신 부족 · 마감 임박'
       : stage === 'PR_REJECTED' ? '공급사 반려 · 확인 필요'
+      : stage === 'SCORECARD' ? '입고 완료 · 평가 필요'
       : time.overdue ? '기한 경과' : time.urgent ? '오늘 안에'
       : bucket === 'attention' ? '결정 대기' : '진행 중';
     return [{ request, bucket, label: labels[stage] || (request.status === '승인대기' ? '구매 요청 검토' : '상태 확인'), detail, tab,

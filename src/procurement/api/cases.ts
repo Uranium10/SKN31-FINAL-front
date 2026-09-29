@@ -567,6 +567,7 @@ export const caseToMaterialRequest = (entry: ProcurementCaseDTO): MaterialReques
     requestedDueDate: text(summary.schedule_date),
     canRetry,
     autoProgress: autoProgressVerdict(rawValues),
+    directPurchase: rawValues.direct_purchase === true,
     quotationRecipientCount: entry.quotation_snapshot?.recipient_count,
     quotationRespondedCount: entry.quotation_snapshot?.responded_count,
     pendingTaskCount: entry.pending_task_count ?? 0,

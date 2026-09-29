@@ -151,6 +151,8 @@ export interface MaterialRequest {
    *  구분하려면 필요합니다 - 조건 미달은 고장이 아니라 설계대로 멈춘 것입니다. */
   autoProgress?: AutoProgressVerdict;
   /** 현재 라운드 견적 요청 대상 수와 회신 수. 회신율 경고 판단에 씁니다. */
+  /** 긴급발주(비딩 생략). ORDER_START 건의 행이 PO 관리에만 있다는 뜻이다. */
+  directPurchase?: boolean;
   quotationRecipientCount?: number;
   quotationRespondedCount?: number;
   pendingTaskCount?: number;
