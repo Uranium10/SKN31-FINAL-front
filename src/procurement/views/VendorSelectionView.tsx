@@ -27,6 +27,7 @@ import { StageMovePlaceholderRow } from '../components/StageMovePlaceholderRow';
 import { ExcelColumnHeader } from '../components/ExcelColumnHeader';
 import { RowActionMenu, type RowActionMenuItem } from '../components/RowActionMenu';
 import { QuotationScoreBreakdown } from '../components/QuotationScoreBreakdown';
+import { QuotationTerms } from '../components/QuotationTerms';
 import {
   matchesTableRange,
   normalizeTableFilterValue,
@@ -3313,7 +3314,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                     {' · '}{q.aiReason}
                                   </div>
                                 )}
-                                {q.scoreBreakdown && <QuotationScoreBreakdown breakdown={q.scoreBreakdown} />}
+                                {q.scoreBreakdown && <QuotationScoreBreakdown breakdown={q.scoreBreakdown} termsShownSeparately={Boolean(q.termsText?.trim())} />}
                                 {q.aiIssues && q.aiIssues.length > 0 && (
                                   <div style={{ color: 'var(--danger)', marginTop: '3px' }}>
                                     확인 필요: {[...new Set(q.aiIssues)].join(', ')}
@@ -3321,17 +3322,8 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                 )}
                               </>
                             )}
-                            {/* 특약(그 외 사항). 점수와 자동 진행에는 쓰지 않는다 -
-                                공급사가 뭘 덧붙였는지 담당자가 보라고 띄울 뿐이다.
-                                있다는 이유로 멈추면 인사말 한 줄에도 사람이 붙는다. */}
-                            {q.termsText && (
-                              <div style={{
-                                marginTop: '6px', paddingTop: '5px', borderTop: '1px dashed var(--danger)',
-                                color: 'var(--danger)', fontWeight: 600, whiteSpace: 'pre-wrap',
-                              }}>
-                                특약: {q.termsText}
-                              </div>
-                            )}
+                            {/* Display only: full conditions are collapsed until opened. */}
+                            <QuotationTerms text={q.termsText} />
                           </td>
                         </tr>
                       );

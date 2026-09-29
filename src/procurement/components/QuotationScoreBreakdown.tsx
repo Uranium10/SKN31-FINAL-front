@@ -25,10 +25,11 @@ const scoreColor = (score: number): string => (
  * 실제 적용된 가중치, 빠진 항목(단독 응찰의 가격·신규 협력사의 평가이력 등),
  * 페널티를 그대로 보여준다 - "왜 이 순위인지"를 사람이 바로 검증할 수 있게.
  */
-export function QuotationScoreBreakdown({ breakdown, compact = false }: { breakdown: Breakdown; compact?: boolean }) {
+export function QuotationScoreBreakdown({ breakdown, compact = false, termsShownSeparately = false }: { breakdown: Breakdown; compact?: boolean; termsShownSeparately?: boolean }) {
   const missing = new Map(breakdown.missingFactors.map((row) => [row.factor, row.reason]));
-  const integrityWarnings = breakdown.warnings.filter(w => /^\[(납기|규격|특약) 확인\]/.test(w));
-  const otherWarnings = breakdown.warnings.filter(w => !integrityWarnings.includes(w));
+  const visibleWarnings = breakdown.warnings.filter(w => !termsShownSeparately || !w.startsWith('[특약 확인]'));
+  const integrityWarnings = visibleWarnings.filter(w => /^\[(납기|규격|특약) 확인\]/.test(w));
+  const otherWarnings = visibleWarnings.filter(w => !integrityWarnings.includes(w));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '5px' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
