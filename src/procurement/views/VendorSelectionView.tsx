@@ -1349,6 +1349,7 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
       aiEvaluated: Boolean(aiEval),
       specMatch: aiEval?.specMatch,
       fulfillsQuantity: aiEval?.fulfillsQuantity,
+      termsText: aiEval?.termsText,
       aiIssues: aiEval?.aiIssues,
       scoreBreakdown: aiEval?.scoreBreakdown,
       isSelected: false,
@@ -3319,6 +3320,17 @@ export const VendorSelectionView: React.FC<VendorSelectionViewProps> = ({
                                   </div>
                                 )}
                               </>
+                            )}
+                            {/* 특약(그 외 사항). 점수와 자동 진행에는 쓰지 않는다 -
+                                공급사가 뭘 덧붙였는지 담당자가 보라고 띄울 뿐이다.
+                                있다는 이유로 멈추면 인사말 한 줄에도 사람이 붙는다. */}
+                            {q.termsText && (
+                              <div style={{
+                                marginTop: '6px', paddingTop: '5px', borderTop: '1px dashed var(--danger)',
+                                color: 'var(--danger)', fontWeight: 600, whiteSpace: 'pre-wrap',
+                              }}>
+                                특약: {q.termsText}
+                              </div>
                             )}
                           </td>
                         </tr>
