@@ -13,6 +13,7 @@ import WaveTransition from './components/common/WaveTransition';
 import LoginPage from './components/auth/LoginPage';
 import AssistantDock from './components/assistant/AssistantDock';
 import { sendAssistantMessage } from './components/assistant/assistantApi';
+import { assistantNavigationCommand } from './components/assistant/assistantNavigation';
 import ProcurementWorkspace from './procurement/ProcurementWorkspace';
 
 const initialHelpSessions = [
@@ -153,15 +154,11 @@ export function App() {
   const handleAssistantAction = useCallback((action) => {
     // Treat model-assisted output as untrusted at the UI boundary too. Only
     // known BiddingFlow tabs can become navigation commands.
-    const allowedTargets = new Set([
-      'dashboard', 'item-register', 'mr-list', 'vendor-select', 'po-manage',
-    ]);
-    if (!action || !allowedTargets.has(action.target)) return;
+    const command = assistantNavigationCommand(action);
+    if (!command) return;
     setAssistantCommand({
       id: Date.now(),
-      type: 'navigate',
-      value: action.target,
-      searchQuery: action.search_query || action.highlight_reference || '',
+      ...command,
     });
   }, []);
 
