@@ -109,6 +109,7 @@
 }
 
 .assistant-panel {
+  position: relative;
   width: min(390px, calc(100vw - 32px));
   height: min(620px, calc(100vh - 108px));
   overflow: hidden;
@@ -559,6 +560,43 @@
   color: #86868B;
   font-size: 9.5px;
   text-align: center;
+}
+
+.assistant-panel--sessions { grid-template-rows: auto minmax(0, 1fr) auto; }
+.assistant-session-list { overflow-y: auto; padding: 22px 18px; }
+.assistant-session-list h3 { margin: 0; font-size: 18px; letter-spacing: -0.03em; }
+.assistant-session-list h3 span { color: #86868B; font-size: 13px; font-weight: 500; margin-left: 6px; }
+.assistant-session-list > p { color: #71717A; font-size: 12px; line-height: 1.5; margin: 8px 0 20px; }
+.assistant-session-row { position: relative; border-bottom: 1px solid #E4E4E7; }
+.assistant-session-item { width: 100%; display: grid; gap: 7px; padding: 16px 46px 16px 12px; border: 0; background: #FFF; color: #18181B; text-align: left; cursor: pointer; }
+.assistant-session-item:hover { background: #F4F4F5; }
+.assistant-session-item strong { font-size: 13px; }
+.assistant-session-item span { font-size: 12px; color: #71717A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-session-item small { font-size: 10px; color: #86868B; }
+.assistant-empty { padding: 18px 8px; color: #27272A; }
+.assistant-empty strong { font-size: 17px; }
+.assistant-empty p { font-size: 12px; line-height: 2; margin: 16px 0; }
+.assistant-empty small { color: #71717A; font-size: 11px; line-height: 1.7; }
+.assistant-panel__header-actions button:disabled { opacity: 0.35; cursor: default; }
+.assistant-session-delete { position: absolute; right: 8px; top: 14px; width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #DDD; border-radius: 8px; background: white; color: #27272A; cursor: pointer; opacity: 0; }
+.assistant-session-delete svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }
+.assistant-session-row:hover .assistant-session-delete, .assistant-session-row:focus-within .assistant-session-delete { opacity: 1; }
+.assistant-session-delete:hover { background: #18181B; color: white; }
+.assistant-confirm-backdrop { position: absolute; inset: 0; display: grid; place-items: center; padding: 22px; background: #0006; z-index: 2; }
+.assistant-confirm { padding: 24px; background: white; border: 1px solid #DDD; border-radius: 18px; box-shadow: 0 14px 40px #0003; }
+.assistant-confirm h3 { font-size: 18px; margin: 0 0 14px; }
+.assistant-confirm p { font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.assistant-confirm > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.assistant-confirm button { border: 1px solid #DDD; border-radius: 9px; padding: 9px 16px; background: white; color: #18181B; cursor: pointer; }
+.assistant-confirm button:last-child { background: #18181B; color: white; }
+.assistant-confirm button:disabled { opacity: 0.5; cursor: default; }
+.assistant-session-error { font-size: 12px; line-height: 1.5; color: #3F3F46; }
+.assistant-session-error button { border: 0; text-decoration: underline; background: none; color: inherit; cursor: pointer; }
+@media (hover: none) { .assistant-session-delete { opacity: 1; } }
+
+@media (max-width: 480px) {
+  .assistant-dock { right: 12px; bottom: 12px; }
+  .assistant-panel { width: calc(100vw - 24px); }
 }
 
 @keyframes assistant-panel-in {
