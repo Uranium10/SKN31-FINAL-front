@@ -109,7 +109,6 @@ export default function AssistantDock({
             {!currentSession.messages.length && <div className="assistant-empty">
               <strong>어떤 업무를 찾으시나요?</strong>
               <p>“외부 응답 대기 작업 보여줘”<br />“무선 마우스 구매 작업은 몇 건이야?”<br />“PO 승인은 어디서 해?”</p>
-              <small>조회한 목록에서 “그중 납기가 가까운 건”, “첫 번째 건”처럼 이어서 물어보세요.</small>
             </div>}
             {(currentSession?.messages || []).map((message, index) => (
               <div className={`assistant-message assistant-message--${message.sender}`} key={`${message.sender}-${index}`}>
