@@ -84,6 +84,17 @@ export const Header: React.FC<HeaderProps> = ({
             placeholder="MR / 품목명 / 아이템코드 검색..."
             value={draftQuery}
             onFocus={() => setSearchOpen(true)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setSearchOpen(false);
+              if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+              const exact = searchResults.find((result) => result.searchValue.toLowerCase() === draftQuery.trim().toLowerCase());
+              const result = exact || (draftQuery === searchQuery && searchResults.length === 1 ? searchResults[0] : undefined);
+              if (result) {
+                event.preventDefault();
+                onSelectSearchResult(result);
+                setSearchOpen(false);
+              }
+            }}
             onChange={(event) => {
               setDraftQuery(event.target.value);
               setSearchOpen(true);

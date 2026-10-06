@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { pauseCaseAutomation } from './api/cases';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { focusedMRReference } from '../components/assistant/assistantNavigation.js';
 import { SpecModal } from './components/SpecModal';
 import { RejectReasonModal } from './components/RejectReasonModal';
 import { NewMRModal } from './components/NewMRModal';
@@ -83,6 +84,7 @@ interface AssistantCommand {
   type: 'navigate';
   value: NavigationTab;
   searchQuery?: string;
+  focusedMrNo?: string;
 }
 
 interface ProcurementWorkspaceProps {
@@ -300,6 +302,16 @@ function ProcurementWorkspaceComponent({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [taskFocus, setTaskFocus] = useState<{ tab: NavigationTab; mrNo: string } | null>(null);
   useEffect(() => { if (taskFocus && taskFocus.tab !== currentTab) setTaskFocus(null); }, [currentTab, taskFocus]);
+  const taskFocusBanner = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!taskFocus || taskFocus.tab !== currentTab) return;
+    const frame = window.requestAnimationFrame(() => taskFocusBanner.current?.scrollIntoView({ block: 'start' }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [taskFocus, currentTab]);
+  useEffect(() => {
+    // Editing or clearing the search must not leave a hidden, stale MR filter.
+    if (taskFocus && searchQuery.trim().toUpperCase() !== taskFocus.mrNo) setTaskFocus(null);
+  }, [searchQuery, taskFocus]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.localStorage.getItem('biddingflow.sidebar.collapsed') === 'true'
   ));
@@ -677,8 +689,10 @@ function ProcurementWorkspaceComponent({
       // optionally reuse its normal search box. Business actions still require
       // the same buttons and confirmation paths as manual navigation.
       setCurrentTab(assistantCommand.value);
+      const mrNo = focusedMRReference(assistantCommand.value, assistantCommand.focusedMrNo || assistantCommand.searchQuery);
+      setTaskFocus(mrNo ? { tab: assistantCommand.value, mrNo } : null);
       if (assistantCommand.searchQuery !== undefined) {
-        setSearchQuery(assistantCommand.searchQuery);
+        setSearchQuery(mrNo || assistantCommand.searchQuery);
       }
     }
   }, [assistantCommand]);
@@ -902,7 +916,9 @@ function ProcurementWorkspaceComponent({
 
   const handleSelectSearchResult = (result: GlobalSearchResult) => {
     setCurrentTab(result.targetTab);
-    setSearchQuery(result.searchValue);
+    const mrNo = result.type === 'mr' ? focusedMRReference(result.targetTab, result.searchValue) : null;
+    setTaskFocus(mrNo ? { tab: result.targetTab, mrNo } : null);
+    setSearchQuery(mrNo || result.searchValue);
   };
 
   const handleDismissNotification = (notification: ProcurementNotification) => {
@@ -2193,7 +2209,7 @@ function ProcurementWorkspaceComponent({
             {canManagePolicy && <div hidden={currentTab !== 'ai-decision-log'}><AiDecisionLogView active={currentTab === 'ai-decision-log'} /></div>}
             {!canManagePolicy && currentTab === 'ai-decision-log' && <p role="alert">AI 판단 로그를 조회할 관리자 권한이 없습니다.</p>}
             {/* Screen 2: 대시보드 */}
-            {taskFocus?.tab === currentTab && <div className="task-focus-banner" role="status"><span><strong>{taskFocus.mrNo}</strong> 선택한 작업을 표시합니다. 기존 필터는 잠시 적용하지 않습니다.</span><button type="button" onClick={() => { setTaskFocus(null); setSearchQuery(''); }}>전체 목록으로</button></div>}
+            {taskFocus?.tab === currentTab && <div ref={taskFocusBanner} className="task-focus-banner" role="status"><span><strong>{taskFocus.mrNo}</strong> 선택한 작업만 표시합니다. 기존 필터는 잠시 적용하지 않습니다.</span><button type="button" onClick={() => { setTaskFocus(null); setSearchQuery(''); }}>전체 목록으로</button></div>}
             {currentTab === 'dashboard' && (
               <section
                 className={`dashboard-initial-load-region${initialDashboardLoading ? ' is-loading' : ''}`}
